@@ -1,0 +1,16 @@
+{
+	"name" : "ray_tracing",
+	"pipelines" : [
+		{
+			"name" : "ray_tracing",
+			"render_pass" : "ray_tracing_pass",
+			"shaders" : [
+				{
+					"stage" : "compute",
+					"shader" : "raytracing.glsl",
+					"includes" : [ "platform.h", "scene.h", "raytracing.h" ]
+				}
+			]
+		}
+	]
+}

@@ -1,13 +1,7 @@
-# Directories
-.vs/
+/out
 bin/
-bin-int/
-
-# Files
-*.vcxproj
-*.vcxproj.user
-*.vcxproj.filters
-*.sln
-
-# Exclude
-!vendor/bin
+build/
+assets/shaders/cache
+/.vs
+.idea/
+CMakeSettings.json
