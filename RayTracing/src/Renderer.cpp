@@ -102,7 +102,7 @@ glm::vec4 Renderer::PerPixel(u32 x, u32 y)
 
 		if (payload.HitDistance < 0.f)
 		{
-			glm::vec3 skyColor(0.6f, 0.7f, 0.9f);
+			glm::vec3 skyColor(0.0f, 0.0f, 0.0f);
 			finalColor += skyColor * multiplier;
 			break;
 		}
@@ -137,20 +137,20 @@ Renderer::HitPayload Renderer::TraceRay(const Ray& ray)
 	for (size_t i = 0; i < m_ActiveScene->Spheres.size(); ++i)
 	{
 		const Sphere& sphere = m_ActiveScene->Spheres[i];
-		const glm::vec3 rayOrigin = ray.Origin - sphere.Origin;
+		const glm::vec3 rayToSphere = sphere.Origin - ray.Origin;
 
 		// Quadratic discriminant
 		float a = glm::dot(rayDirection, rayDirection);
-		float b = 2.f * glm::dot(rayOrigin, rayDirection);
-		float c = glm::dot(rayOrigin, rayOrigin) - sphere.Radius * sphere.Radius;
+		float h = glm::dot(rayDirection, rayToSphere);
+		float c = glm::dot(rayToSphere, rayToSphere) - sphere.Radius * sphere.Radius;
 
-		float discriminant = (b * b) - (4.f * a * c);
+		float discriminant = (h * h) - (a * c);
 
 		if (discriminant < 0)
 			continue;
 
 		// Quadratic equation (-b +- sqrt(discriminant)) / 2a
-		float t1 = (-b - sqrt(discriminant)) / (2.f * a);
+		float t1 = (h - sqrt(discriminant)) / (a);
 
 		if (t1 > 0.f && t1 < hitDistance)
 		{
