@@ -52,8 +52,8 @@ bool hit_sphere(Ray ray, float ray_tmin, float ray_tmax, inout HitRecord hit_rec
 #define SPHERE_COUNT 3
 const Sphere world[SPHERE_COUNT] = Sphere[SPHERE_COUNT](
     Sphere(vec3(0.f, 0.f, -2.f), 0.5f),
-    Sphere(vec3(0.f, -100.5f, -1.f), 100.f),
-    Sphere(vec3(5.5f, 0.0f, -7.f), 1.f)
+    Sphere(vec3(0.f, -105.5f, -1.f), 100.f),
+    Sphere(vec3(1.5f, 0.0f, -2.f), 1.f)
 );
 
 bool hit_world(Ray ray, float ray_tmin, float ray_tmax, inout HitRecord hit_record){

@@ -250,8 +250,8 @@ namespace Helix {
     }; // struct GPUMeshletVertexData
 
     struct GPUSceneData {
-        glm::mat4               view_projection;
-        glm::mat4               view_projection_debug;
+        glm::mat4               inverse_view;
+        glm::mat4               inverse_projection;
         glm::mat4               inverse_view_projection;
         glm::mat4               view_matrix;
         glm::mat4               view_matrix_debug;

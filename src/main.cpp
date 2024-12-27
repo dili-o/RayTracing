@@ -238,7 +238,7 @@ int main(int argc, char** argv)
     int frame_count = 0;
     double last_time = 0.0;
 
-    float aspect_ratio = gpu.swapchain_width * 1.0f / gpu.swapchain_height;
+    float aspect_ratio = 16.0f / 9.0f;// gpu.swapchain_width * 1.0f / gpu.swapchain_height;
 
     while (!window.requested_exit) {
         ZoneScoped;
@@ -293,11 +293,12 @@ int main(int argc, char** argv)
 
                 if (ImGui::Begin("Viewport")) {
                     ImVec2 viewportPanelSize = ImGui::GetContentRegionAvail();
-                    float aspect_ratio = viewportPanelSize.x / viewportPanelSize.y;
                     float aspect = 16.f / 9.f;
-                    ImGui::Image((ImTextureID)&gpu.fullscreen_texture_handle, { viewportPanelSize.x, viewportPanelSize.x / aspect });
-                    scene->ray_tracing_pass.viewport = { viewportPanelSize.x, viewportPanelSize.y };
-                    aspect_ratio = viewportPanelSize.x * 1.0f / viewportPanelSize.y;
+                    float v_apsect = viewportPanelSize.x / viewportPanelSize.y;
+                    ImGui::Image((ImTextureID)&gpu.fullscreen_texture_handle, { viewportPanelSize.x, viewportPanelSize.x / v_apsect });
+                    //aspect_ratio = v_apsect;// viewportPanelSize.x / viewportPanelSize.y;
+                    aspect_ratio = viewportPanelSize.x / (viewportPanelSize.x / aspect);
+                    //scene->ray_tracing_pass.viewport = { viewportPanelSize.x, viewportPanelSize.y };
                 }
                 ImGui::End();
 
@@ -371,9 +372,9 @@ int main(int argc, char** argv)
                     }
 
                     glm::mat4 view = glm::lookAt(eye, (eye + look), glm::vec3( 0.0f, 1.0f, 0.0f ));
-                    float z_near = 0.01f;
+                    float z_near = 0.001f;
                     float z_far = 1000.0f;
-                    glm::mat4 projection = glm::perspective(glm::radians(60.0f), aspect_ratio, z_near, z_far);
+                    glm::mat4 projection = glm::perspective(glm::radians(45.f), aspect_ratio, z_near, z_far);
 
                     // Calculate view projection matrix
                     glm::mat4 view_projection = projection * view;
@@ -393,8 +394,9 @@ int main(int argc, char** argv)
 
                     //cb_data->light_position = glm::vec4(light_node->world_transform.translation.x, light_node->world_transform.translation.y, light_node->world_transform.translation.z, 1.0f);
                     GPUSceneData& scene_data = scene->scene_data;
-                    scene_data.previous_view_projection = scene_data.view_projection;   // Cache previous view projection
-                    scene_data.view_projection = view_projection;
+                    //scene_data.previous_view_projection = scene_data.view_projection;   // Cache previous view projection
+                    scene_data.inverse_view = glm::inverse(view);
+                    scene_data.inverse_projection = glm::inverse(projection);
                     scene_data.inverse_view_projection = projection;// TODO glm::inverse(view_projection);
                     scene_data.view_matrix = view;
                     scene_data.camera_position = glm::vec4(eye.x, eye.y, eye.z, 1.0f);
@@ -422,7 +424,7 @@ int main(int argc, char** argv)
                     if (!freeze_occlusion_camera) {
                         scene_data.camera_position_debug = scene_data.camera_position;
                         scene_data.view_matrix_debug = scene_data.view_matrix;
-                        scene_data.view_projection_debug = scene_data.view_projection;
+                        //scene_data.view_projection_debug = scene_data.view_projection;
                         projection_transpose = glm::transpose(projection);
                     }
 

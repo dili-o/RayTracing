@@ -5,8 +5,8 @@
 // Scene common code
 
 layout ( std140, set = MATERIAL_SET, binding = 0 ) uniform SceneConstants {
-    mat4        view_projection;
-    mat4        view_projection_debug;
+    mat4        inverse_view;
+    mat4        inverse_projection;
     mat4  		inverse_view_projection;
     mat4        world_to_camera; // view matrix
     mat4        world_to_camera_debug;
