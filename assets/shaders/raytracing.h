@@ -48,6 +48,15 @@ bool hit_sphere(Ray ray, float ray_tmin, float ray_tmax, inout HitRecord hit_rec
     return true;
 }
 
+// 0 to 1
+float rand(vec2 coord) {
+    return fract(sin(dot(coord, vec2(12.9898, 78.233))) * 43758.5453123);
+}
+
+float randInRange(vec2 coord, float min, float max) {
+    return min + (max - min) * rand(coord);
+}
+
 // Spheres
 #define SPHERE_COUNT 3
 const Sphere world[SPHERE_COUNT] = Sphere[SPHERE_COUNT](

@@ -389,15 +389,10 @@ int main(int argc, char** argv)
                     glm::mat4 sm = glm::scale(glm::mat4(1.0f), glm::vec3( model_scale));
 
 
-                    // TODO: Fix Hard coded the light node handle
-                    //LightNode* light_node = (LightNode*)scene->node_pool.access_node({0, NodeType::LightNode});
-
-                    //cb_data->light_position = glm::vec4(light_node->world_transform.translation.x, light_node->world_transform.translation.y, light_node->world_transform.translation.z, 1.0f);
                     GPUSceneData& scene_data = scene->scene_data;
-                    //scene_data.previous_view_projection = scene_data.view_projection;   // Cache previous view projection
                     scene_data.inverse_view = glm::inverse(view);
                     scene_data.inverse_projection = glm::inverse(projection);
-                    scene_data.inverse_view_projection = projection;// TODO glm::inverse(view_projection);
+                    scene_data.inverse_view_projection = projection;
                     scene_data.view_matrix = view;
                     scene_data.camera_position = glm::vec4(eye.x, eye.y, eye.z, 1.0f);
                     scene_data.light_position = glm::vec4(0.0f, 10.0f, 0.0f, 1.0f);
@@ -424,7 +419,6 @@ int main(int argc, char** argv)
                     if (!freeze_occlusion_camera) {
                         scene_data.camera_position_debug = scene_data.camera_position;
                         scene_data.view_matrix_debug = scene_data.view_matrix;
-                        //scene_data.view_projection_debug = scene_data.view_projection;
                         projection_transpose = glm::transpose(projection);
                     }
 
@@ -444,12 +438,8 @@ int main(int argc, char** argv)
                         gpu.unmap_buffer(cb_map);
                     }
                     
-                    //light_cb_data->view_projection = view_projection;
-                    //light_cb_data->camera_position_texture_index = glm::vec4(eye.x, eye.y, eye.z, scene->light_texture.handle.index);
 
                     glm::mat4 model = glm::mat4(1.0f);
-                    //model = glm::translate(model, light_node->world_transform.translation);
-                    //light_cb_data->model = model;
 
                     gpu.unmap_buffer(light_cb_map);
                 }
