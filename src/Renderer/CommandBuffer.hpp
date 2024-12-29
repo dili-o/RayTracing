@@ -33,6 +33,7 @@ namespace Helix {
         void                            set_scissor(const Rect2DInt* rect);
 
         void                            clear(f32 red, f32 green, f32 blue, f32 alpha);
+        void                            clear_color_image(f32 red, f32 green, f32 blue, f32 alpha, TextureHandle texture);
         void                            clear_depth_stencil(f32 depth, u8 stencil);
 
         void                            draw(TopologyType::Enum topology, u32 first_vertex, u32 vertex_count, u32 first_instance, u32 instance_count);

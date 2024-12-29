@@ -276,8 +276,8 @@ namespace Helix {
         u32                     occlusion_cull_meshlets;
         u32                     freeze_occlusion_camera;
 
-        f32                     resolution_x;
-        f32                     resolution_y;
+        f32                     seed_x;
+        f32                     seed_y;
         f32                     aspect_ratio;
         f32                     pad0001;
 
@@ -434,6 +434,9 @@ namespace Helix {
         PipelineHandle          pipeline_handle;
         DescriptorSetHandle     d_set;
         u32                     output_image_index;
+        TextureHandle           accumulated_image_handle;
+        u32                     frame_index = 1;
+        bool                    camera_moved = false;
         glm::vec2               viewport = { 0.f, 0.f };
 
     }; // struct RayTracingPass

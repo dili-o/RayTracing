@@ -1,5 +1,7 @@
 #include "Scene.hpp"
 
+#include <random>
+
 #include <vendor/imgui/stb_image.h>
 
 #include "Core/Gltf.hpp"
@@ -9,10 +11,22 @@
 #include <vendor/tracy/tracy/Tracy.hpp>
 #include <vendor/meshoptimizer/meshoptimizer.h>
 
+
 #include <imgui/imgui.h>
 #include <Core/Numerics.hpp>
 
 namespace Helix {
+    u32 random_uint(uint32_t min = 0, uint32_t max = UINT32_MAX) {
+        // Create a random device and a generator
+        static std::random_device rd; // Seed
+        static std::mt19937 gen(rd()); // Mersenne Twister RNG
+
+        // Define a uniform distribution for the range [min, max]
+        std::uniform_int_distribution<uint32_t> dist(min, max);
+
+        return dist(gen); // Generate and return a random uint
+    }
+
     float square(float r) {
         return r * r;
     }
@@ -178,6 +192,15 @@ namespace Helix {
         glTFScene* scene = (glTFScene*)scene_;
         Renderer* renderer = scene->renderer;
 
+        Texture* accumulated_image = renderer->gpu->access_texture(accumulated_image_handle);
+        util_add_image_barrier(gpu_commands->device, gpu_commands->vk_handle, accumulated_image, RESOURCE_STATE_UNORDERED_ACCESS, 0, 1, false);
+
+        if (camera_moved) {
+            gpu_commands->clear_color_image(0, 0, 0, 1.f, accumulated_image_handle);
+            camera_moved = false;
+            frame_index = 1;
+        }
+
         gpu_commands->bind_pipeline(pipeline_handle);
 
         gpu_commands->bind_descriptor_set(&d_set, 1, nullptr, 0);
@@ -187,15 +210,21 @@ namespace Helix {
 
         struct PushConst {
             glm::vec2 src_image_size;
+            u32 rng_state;
+            u32 frame_count;
         };
         PushConst push_const;
         push_const.src_image_size = viewport;
+        push_const.rng_state = random_uint();
+        push_const.frame_count = frame_index;
 
         vkCmdPushConstants(gpu_commands->vk_handle, rtx_pipeline->vk_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConst), &push_const);
 
         u32 group_x = (texture->width + rtx_pipeline->local_size[0] - 1) / rtx_pipeline->local_size[0];
         u32 group_y = (texture->height + rtx_pipeline->local_size[1] - 1) / rtx_pipeline->local_size[1];
         gpu_commands->dispatch(group_x, group_y, 1);
+
+        frame_index++;
     }
 
     void RayTracingPass::prepare_draws(Scene& scene, FrameGraph* frame_graph, Allocator* resident_allocator) {
@@ -213,6 +242,19 @@ namespace Helix {
 
         output_image_index = scene.fullscreen_texture_index;
 
+        TextureCreation tex_creation{};
+        tex_creation.set_size(gpu.swapchain_width, gpu.swapchain_height, 1)
+            .set_flags(1, TextureFlags::Compute_mask)
+            .set_layers(1)
+            .set_format_type(VK_FORMAT_R32G32B32A32_SFLOAT, TextureType::Texture2D)
+            .set_name("accumulated_image")
+            .set_data(0)
+            .set_alias({ k_invalid_index });
+
+        accumulated_image_handle = renderer->create_texture(tex_creation)->handle;
+
+
+
         // Cache frustum cull shader
         Program* rtx_program = renderer->resource_cache.programs.get(hash_calculate("ray_tracing"));
         {
@@ -223,7 +265,8 @@ namespace Helix {
             DescriptorSetCreation ds_creation{};
             ds_creation
                 .buffer(scene.scene_constant_buffer, 0)
-                .texture({ output_image_index }, 1) 
+                .texture(accumulated_image_handle, 1) 
+                .texture({ output_image_index }, 2) 
                 .set_layout(layout);
 
             d_set = gpu.create_descriptor_set(ds_creation);

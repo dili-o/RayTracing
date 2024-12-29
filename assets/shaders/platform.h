@@ -26,7 +26,8 @@ layout( set = GLOBAL_SET, binding = BINDLESS_IMAGES ) writeonly uniform image2D 
 
 
 // Common constants //////////////////////////////////////////////////////
-#define PI 3.1415926538
+const float pi = 3.14159265359f;
+const float two_pi = 2.0f * pi;
 #define INVALID_TEXTURE_INDEX 65535
 
 // Encoding/Decoding SRGB ////////////////////////////////////////////////

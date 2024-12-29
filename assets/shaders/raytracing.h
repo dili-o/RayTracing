@@ -48,21 +48,53 @@ bool hit_sphere(Ray ray, float ray_tmin, float ray_tmax, inout HitRecord hit_rec
     return true;
 }
 
-// 0 to 1
-float rand(vec2 coord) {
-    return fract(sin(dot(coord, vec2(12.9898, 78.233))) * 43758.5453123);
+// Random Number Generators
+uint wang_hash(inout uint seed)
+{
+    seed = uint(seed ^ uint(61)) ^ uint(seed >> uint(16));
+    seed *= uint(9);
+    seed = seed ^ (seed >> 4);
+    seed *= uint(0x27d4eb2d);
+    seed = seed ^ (seed >> 15);
+    return seed;
 }
 
-float randInRange(vec2 coord, float min, float max) {
-    return min + (max - min) * rand(coord);
+// Range 0 to 1
+float rand(inout uint seed) {
+    return float(wang_hash(seed)) / 4294967296.0;
+}
+
+float rand_in_range(inout uint seed, float min, float max) {
+    return min + (max - min) * rand(seed);
+}
+
+
+vec3 rand_unit_vector(inout uint seed) {
+    float z = rand_in_range(seed, -1, 1);
+    float a = rand(seed) * two_pi;
+    float r = sqrt(1.0f - z * z);
+    float x = r * cos(a);
+    float y = r * sin(a);
+    return vec3(x, y, z);
+}
+
+
+vec3 rand_on_hemisphere(inout uint seed, vec3 normal){
+    vec3 unit_vec = rand_unit_vector(seed);
+    if(dot(unit_vec, normal) > 0.0){
+        return unit_vec;
+    }else{
+        return -unit_vec;
+    }
 }
 
 // Spheres
-#define SPHERE_COUNT 3
+#define SPHERE_COUNT 4
 const Sphere world[SPHERE_COUNT] = Sphere[SPHERE_COUNT](
-    Sphere(vec3(0.f, 0.f, -2.f), 0.5f),
-    Sphere(vec3(0.f, -105.5f, -1.f), 100.f),
-    Sphere(vec3(1.5f, 0.0f, -2.f), 1.f)
+    Sphere(vec3(-10.f, 0.f, -20.f), 1.f),
+    Sphere(vec3(0.f, 0.f, -3.f), 1.f),
+    Sphere(vec3(10.f, 0.f, -20.f), 1.f),
+    Sphere(vec3(0.f, -101.f, -3.f), 100.f)
 );
 
 bool hit_world(Ray ray, float ray_tmin, float ray_tmax, inout HitRecord hit_record){

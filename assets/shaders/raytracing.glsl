@@ -1,12 +1,18 @@
 #if defined(COMPUTE)
 
-layout(set = MATERIAL_SET, binding = 1) uniform writeonly image2D out_image;
+layout(set = MATERIAL_SET, binding = 1, rgba32f) uniform image2D accumulated_image;
+
+layout(set = MATERIAL_SET, binding = 2) uniform writeonly image2D out_image;
 
 layout( push_constant ) uniform constants
 {
 	vec2 src_image_size;
+    uint rng_state;
+    uint frame_count;
 };
 
+const int k_num_bounces = 50;
+const int k_samples_per_pixel = 4;
 
 layout (local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 void main() {
@@ -34,13 +40,14 @@ void main() {
                              - viewport_v/2;
     vec3 pixel00_loc = viewport_upper_left + 0.5 * (pixel_delta_u + pixel_delta_v);
 
-    const int num_samples = 10;
     vec3 color = vec3(0.0f);
-    for (int i = 0; i < num_samples; ++i) {
+
+    uint seed = uint(uint(pos.x) * rng_state + uint(pos.y) * uint(9277) + frame_count * uint(26699)) | uint(1);
+    for (int i = 0; i < k_samples_per_pixel; ++i) {
 
         // Generate a random jitter within the pixel
-        float jitter_x = rand(vec2(pos) + float(i)) - 0.5;
-        float jitter_y = rand(vec2(pos.yx) + float(i)) - 0.5;
+        float jitter_x = rand(seed) - 0.5;
+        float jitter_y = rand(seed) - 0.5;
 
         vec3 pixel_center = pixel00_loc 
                           + (pos.x + jitter_x) * pixel_delta_u 
@@ -53,25 +60,35 @@ void main() {
         vec4 target = inverse_projection * vec4((pixel_center - camera_center).xy, 1, 1);
         ray.direction = (inverse_view * vec4(normalize(vec3(target.xyz)).xyz, 0)).xyz;
         
-        
-        
         HitRecord rec;
-        if (hit_world(ray, z_near, z_far, rec)){
-            color += 0.5f * (rec.normal + vec3(1.0f));
-        }else{
-            float a = 0.5 * normalize(ray.direction).y + 1.0;
-            color += vec3(1.0) * (1.0 - a) + a * vec3(0.5, 0.7, 1.0);
+        float attenuation = 1.0f;
+        float attenuation_factor = 0.5f;
+        for(int j = 0; j < k_num_bounces; j++){
+            if (hit_world(ray, z_near, z_far, rec)){
+                attenuation *= attenuation_factor;
+                ray.origin = rec.position;
+                ray.direction = rec.normal + rand_unit_vector(seed);// rand_on_hemisphere(seed, rec.normal);
+                //color += 0.5f * (rec.normal + vec3(1.0f));
+            }else{
+                float a = 0.5 * normalize(ray.direction).y + 1.0;
+                color += vec3(1.0) * (1.0 - a) + a * vec3(0.5, 0.7, 1.0);
+                break;
+            }
         }
+
+        color *= attenuation;
     }
 
-    //vec3 pixel_center = pixel00_loc + (pos.x * pixel_delta_u) + (pos.y * pixel_delta_v);
+    color /= float(k_samples_per_pixel);
 
-    color /= float(num_samples);
+    vec3 current_color = imageLoad(accumulated_image, pos).xyz;
+    vec3 new_color = (current_color + color);
     
-    
-    
+    imageStore(accumulated_image, pos, vec4(new_color.xyz, 1.0));
 
-    imageStore(out_image, pos, vec4(color.xyz, 1.0));
+    new_color /= float(frame_count);
+
+    imageStore(out_image, pos, vec4(new_color.xyz, 1.0));
 }
 
 

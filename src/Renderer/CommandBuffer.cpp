@@ -479,6 +479,32 @@ namespace Helix {
         clears[0].color = { red, green, blue, alpha };
     }
 
+    void CommandBuffer::clear_color_image(f32 red, f32 green, f32 blue, f32 alpha, TextureHandle texture_handle) {
+        Texture* texture = device->access_texture(texture_handle);
+
+        VkClearColorValue clearColor = {};
+        clearColor.float32[0] = red;
+        clearColor.float32[1] = green;
+        clearColor.float32[2] = blue;
+        clearColor.float32[3] = alpha;
+
+        VkImageSubresourceRange subresourceRange{};
+        subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        subresourceRange.baseMipLevel = texture->mip_base_level;
+        subresourceRange.levelCount = texture->mip_level_count;
+        subresourceRange.baseArrayLayer = texture->array_base_layer;
+        subresourceRange.layerCount = texture->array_layer_count;
+
+        vkCmdClearColorImage(
+            vk_handle,
+            texture->vk_image,
+            util_to_vk_image_layout2(texture->state), // TODO: Should the function be responsible for enusring the layout is VK_IMAGE_LAYOUT_GENERAL or VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
+            &clearColor,
+            1,
+            &subresourceRange
+        );
+    }
+
     void CommandBuffer::clear_depth_stencil(f32 depth, u8 value) {
         clears[1].depthStencil.depth = depth;
         clears[1].depthStencil.stencil = value;

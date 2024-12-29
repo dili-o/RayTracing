@@ -91,6 +91,16 @@ glm::vec4 normalize_plane(glm::vec4 plane) {
     return (plane / glm::length(normal));
 }
 
+inline double random_double() {
+    // Returns a random real in [0,1).
+    return std::rand() / (RAND_MAX + 1.0);
+}
+
+inline double random_double(double min, double max) {
+    // Returns a random real in [min,max).
+    return min + (max - min) * random_double();
+}
+
 int main(int argc, char** argv)
 {
     _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
@@ -349,26 +359,34 @@ int main(int argc, char** argv)
                         look = rym * look;
 
                         right = glm::cross(look, glm::vec3( 0.0f, 1.0f, 0.0f ));
+
+                        scene->ray_tracing_pass.camera_moved = true;
                     }
 
                     if (input_handler.is_key_down(Keys::KEY_W)) {
                         eye += look * (5.0f * delta_time);
+                        scene->ray_tracing_pass.camera_moved = true;
                     }
                     else if (input_handler.is_key_down(Keys::KEY_S)) {
                         eye -= look * (5.0f * delta_time);
+                        scene->ray_tracing_pass.camera_moved = true;
                     }
 
                     if (input_handler.is_key_down(Keys::KEY_D)) {
                         eye += right * (5.0f * delta_time);
+                        scene->ray_tracing_pass.camera_moved = true;
                     }
                     else if (input_handler.is_key_down(Keys::KEY_A)) {
                         eye -= right * (5.0f * delta_time);
+                        scene->ray_tracing_pass.camera_moved = true;
                     }
                     if (input_handler.is_key_down(Keys::KEY_E)) {
                         eye += up * (5.0f * delta_time);
+                        scene->ray_tracing_pass.camera_moved = true;
                     }
                     else if (input_handler.is_key_down(Keys::KEY_Q)) {
                         eye -= up * (5.0f * delta_time);
+                        scene->ray_tracing_pass.camera_moved = true;
                     }
 
                     glm::mat4 view = glm::lookAt(eye, (eye + look), glm::vec3( 0.0f, 1.0f, 0.0f ));
@@ -411,8 +429,11 @@ int main(int argc, char** argv)
                     scene_data.occlusion_cull_meshlets = 1;
                     scene_data.freeze_occlusion_camera = freeze_occlusion_camera ? 1 : 0;
 
-                    scene_data.resolution_x = gpu.swapchain_width * 1.f;
-                    scene_data.resolution_y = gpu.swapchain_height * 1.f;
+                    scene_data.seed_x = (f32)random_double();
+
+                    scene_data.seed_y = (f32)random_double();
+
+
                     scene_data.aspect_ratio = gpu.swapchain_width * 1.f / gpu.swapchain_height;
 
                     // Frustum computations
