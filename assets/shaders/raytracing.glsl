@@ -61,14 +61,20 @@ void main() {
         ray.direction = (inverse_view * vec4(normalize(vec3(target.xyz)).xyz, 0)).xyz;
         
         HitRecord rec;
-        float attenuation = 1.0f;
-        float attenuation_factor = 0.5f;
+        vec3 attenuation = vec3(1.0f);
+        //float attenuation_factor = 0.5f;
         for(int j = 0; j < k_num_bounces; j++){
+            Ray scattered_ray;
+            vec3 current_attenuation;
             if (hit_world(ray, z_near, z_far, rec)){
-                attenuation *= attenuation_factor;
-                ray.origin = rec.position;
-                ray.direction = rec.normal + rand_unit_vector(seed);// rand_on_hemisphere(seed, rec.normal);
-                //color += 0.5f * (rec.normal + vec3(1.0f));
+                // TODO: METALS
+                if(rec.mat.metal == true){
+                    scatter_metal(seed, rec.mat, ray, rec, current_attenuation, scattered_ray);
+                }else{
+                    scatter_lambertian(seed, rec.mat, ray, rec, current_attenuation, scattered_ray);
+                }
+                attenuation *= current_attenuation;
+                ray = scattered_ray;
             }else{
                 float a = 0.5 * normalize(ray.direction).y + 1.0;
                 color += vec3(1.0) * (1.0 - a) + a * vec3(0.5, 0.7, 1.0);
@@ -81,6 +87,9 @@ void main() {
 
     color /= float(k_samples_per_pixel);
 
+    // Gamma correction
+    color = linear_to_gamma(color);
+
     vec3 current_color = imageLoad(accumulated_image, pos).xyz;
     vec3 new_color = (current_color + color);
     
@@ -90,6 +99,5 @@ void main() {
 
     imageStore(out_image, pos, vec4(new_color.xyz, 1.0));
 }
-
 
 #endif // COMPUTE

@@ -1455,7 +1455,7 @@ namespace Helix {
 
         sizet current_marker = temporary_allocator->get_marker();
         StringBuffer temp_string_buffer;
-        temp_string_buffer.init(hkilo(4), temporary_allocator);
+        temp_string_buffer.init(hkilo(20), temporary_allocator);
 
         // Add uppercase define as STAGE_NAME
         char* stage_define = temp_string_buffer.append_use_f("%s_%s", to_stage_defines(stage), name);
