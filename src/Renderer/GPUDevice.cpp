@@ -58,8 +58,9 @@ namespace Helix {
 
     // Enable this to add debugging capabilities.
     // https://www.khronos.org/registry/vulkan/specs/1.2-extensions/man/html/VK_EXT_debug_utils.html
+#ifdef _DEBUG
 #define VULKAN_DEBUG_REPORT
-
+#endif
 //#define VULKAN_SYNCHRONIZATION_VALIDATION
 
     static cstring s_requested_extensions[] = {
@@ -1471,7 +1472,7 @@ namespace Helix {
 #if NVIDIA
         char* arguments = temp_string_buffer.append_use_f("glslangValidator.exe %s -V --target-env vulkan1.2 -o %s -S %s --D %s --D %s --D NVIDIA=1", temp_filename, final_spirv_filename, to_compiler_extension(stage), stage_define, to_stage_defines(stage));
 #else
-        char* arguments = temp_string_buffer.append_use_f("glslangValidator.exe %s -V --target-env vulkan1.2 -o %s -S %s --D %s --D %s", temp_filename, final_spirv_filename, to_compiler_extension(stage), stage_define, to_stage_defines(stage));
+        char* arguments = temp_string_buffer.append_use_f("glslangValidator.exe -g %s -V --target-env vulkan1.3 -o %s -S %s --D %s --D %s", temp_filename, final_spirv_filename, to_compiler_extension(stage), stage_define, to_stage_defines(stage));
 #endif // NVIDIA
 #else
         char* glsl_compiler_path = temp_string_buffer.append_use_f("%sglslangValidator", vulkan_binaries_path);
@@ -1727,35 +1728,65 @@ namespace Helix {
 
             // Vertex attributes.
             VkVertexInputAttributeDescription vertex_attributes[8];
-            if (creation.vertex_input_creation.num_vertex_attributes) {
-
-                for (u32 i = 0; i < creation.vertex_input_creation.num_vertex_attributes; ++i) {
-                    const VertexAttribute& vertex_attribute = creation.vertex_input_creation.vertex_attributes[i];
-                    vertex_attributes[i] = { vertex_attribute.location, vertex_attribute.binding, to_vk_vertex_format(vertex_attribute.format), vertex_attribute.offset };
-                }
-
-                vertex_input_info.vertexAttributeDescriptionCount = creation.vertex_input_creation.num_vertex_attributes;
+            if (strcmp(creation.name, "debug_bvh") == 0) {
+                vertex_attributes[0] = { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0}; // Vertex position
+                vertex_attributes[1] = { 1, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 0 }; // Instance color (first 4 bytes of InstanceData)
+                vertex_attributes[2] = { 2, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 16 }; // Instance transformation (first vec4 of mat4)
+                vertex_attributes[3] = { 3, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 16 * 2 }; // Instance transformation (first vec4 of mat4)
+                vertex_attributes[4] = { 4, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 16 * 3 }; // Instance transformation (first vec4 of mat4)
+                vertex_attributes[5] = { 5, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 16 * 4}; // Instance transformation (first vec4 of mat4)
+                    // Repeat for remaining rows of the transformation matrix
+                vertex_input_info.vertexAttributeDescriptionCount = 6;
                 vertex_input_info.pVertexAttributeDescriptions = vertex_attributes;
+
             }
             else {
-                vertex_input_info.vertexAttributeDescriptionCount = 0;
-                vertex_input_info.pVertexAttributeDescriptions = nullptr;
+                if (creation.vertex_input_creation.num_vertex_attributes) {
+
+                    for (u32 i = 0; i < creation.vertex_input_creation.num_vertex_attributes; ++i) {
+                        const VertexAttribute& vertex_attribute = creation.vertex_input_creation.vertex_attributes[i];
+                        vertex_attributes[i] = { vertex_attribute.location, vertex_attribute.binding, to_vk_vertex_format(vertex_attribute.format), vertex_attribute.offset };
+                    }
+
+                    vertex_input_info.vertexAttributeDescriptionCount = creation.vertex_input_creation.num_vertex_attributes;
+                    vertex_input_info.pVertexAttributeDescriptions = vertex_attributes;
+                }
+                else {
+                    vertex_input_info.vertexAttributeDescriptionCount = 0;
+                    vertex_input_info.pVertexAttributeDescriptions = nullptr;
+                }
             }
+            
             // Vertex bindings
             VkVertexInputBindingDescription vertex_bindings[8];
-            if (creation.vertex_input_creation.num_vertex_streams) {
-                vertex_input_info.vertexBindingDescriptionCount = creation.vertex_input_creation.num_vertex_streams;
+            if (strcmp(creation.name, "debug_bvh") == 0) {
+                // Binding 0: Per-vertex data
+                vertex_bindings[0].binding = 0;
+                vertex_bindings[0].stride = 12; // inPosition only
+                vertex_bindings[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-                for (u32 i = 0; i < creation.vertex_input_creation.num_vertex_streams; ++i) {
-                    const VertexStream& vertex_stream = creation.vertex_input_creation.vertex_streams[i];
-                    VkVertexInputRate vertex_rate = vertex_stream.input_rate == VertexInputRate::PerVertex ? VkVertexInputRate::VK_VERTEX_INPUT_RATE_VERTEX : VkVertexInputRate::VK_VERTEX_INPUT_RATE_INSTANCE;
-                    vertex_bindings[i] = { vertex_stream.binding, vertex_stream.stride, vertex_rate };
-                }
+                // Binding 1: Per-instance data
+                vertex_bindings[1].binding = 1;
+                vertex_bindings[1].stride = 16 * 5; // glm::vec4 color + glm::mat4 model
+                vertex_bindings[1].inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
+
+                vertex_input_info.vertexBindingDescriptionCount = 2;
                 vertex_input_info.pVertexBindingDescriptions = vertex_bindings;
-            }
-            else {
-                vertex_input_info.vertexBindingDescriptionCount = 0;
-                vertex_input_info.pVertexBindingDescriptions = nullptr;
+            }else{
+                if (creation.vertex_input_creation.num_vertex_streams) {
+                    vertex_input_info.vertexBindingDescriptionCount = creation.vertex_input_creation.num_vertex_streams;
+
+                    for (u32 i = 0; i < creation.vertex_input_creation.num_vertex_streams; ++i) {
+                        const VertexStream& vertex_stream = creation.vertex_input_creation.vertex_streams[i];
+                        VkVertexInputRate vertex_rate = vertex_stream.input_rate == VertexInputRate::PerVertex ? VkVertexInputRate::VK_VERTEX_INPUT_RATE_VERTEX : VkVertexInputRate::VK_VERTEX_INPUT_RATE_INSTANCE;
+                        vertex_bindings[i] = { vertex_stream.binding, vertex_stream.stride, vertex_rate };
+                    }
+                    vertex_input_info.pVertexBindingDescriptions = vertex_bindings;
+                }
+                else {
+                    vertex_input_info.vertexBindingDescriptionCount = 0;
+                    vertex_input_info.pVertexBindingDescriptions = nullptr;
+                }
             }
 
             pipeline_info.pVertexInputState = &vertex_input_info;
@@ -1763,7 +1794,7 @@ namespace Helix {
             //// Input Assembly
             VkPipelineInputAssemblyStateCreateInfo input_assembly{ VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO };
             // TODO: make this more configurable
-            input_assembly.topology = creation.shader_state_creation.stages_count == 3 ? VK_PRIMITIVE_TOPOLOGY_POINT_LIST : VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+            input_assembly.topology = creation.topology;
             input_assembly.primitiveRestartEnable = VK_FALSE;
 
             pipeline_info.pInputAssemblyState = &input_assembly;
@@ -1846,7 +1877,7 @@ namespace Helix {
             rasterizer.depthClampEnable = VK_FALSE;
             rasterizer.rasterizerDiscardEnable = VK_FALSE;
             rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
-            rasterizer.lineWidth = 1.0f;
+            rasterizer.lineWidth = 3.0f;
             rasterizer.cullMode = creation.rasterization_creation.cull_mode;
             rasterizer.frontFace = creation.rasterization_creation.front;
             rasterizer.depthBiasEnable = VK_FALSE;
@@ -1961,6 +1992,7 @@ namespace Helix {
         const bool use_global_buffer = (creation.type_flags & k_dynamic_buffer_mask) != 0;
         if (creation.usage == ResourceUsageType::Dynamic && use_global_buffer) {
             buffer->parent_buffer = dynamic_buffer;
+            buffer->global_offset = 0;
             return handle;
         }
 

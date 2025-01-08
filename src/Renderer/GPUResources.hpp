@@ -237,7 +237,7 @@ namespace Helix {
         VkBufferUsageFlags              type_flags = 0;
         ResourceUsageType::Enum         usage = ResourceUsageType::Immutable;
         u32                             size = 0;
-        u32                             persistent = 0;
+        u32                             persistent = 0; // Always mapped to the CPU
         u32                             device_only = 0;
         void*                           initial_data = nullptr;
 
@@ -541,6 +541,8 @@ namespace Helix {
         BlendStateCreation              blend_state_creation;
         VertexInputCreation             vertex_input_creation;
         ShaderStateCreation             shader_state_creation;
+
+        VkPrimitiveTopology             topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 
         RenderPassOutput                render_pass;
         DescriptorSetLayoutHandle       descriptor_set_layout[k_max_descriptor_set_layouts];

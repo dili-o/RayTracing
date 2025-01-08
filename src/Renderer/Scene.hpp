@@ -16,6 +16,22 @@
 #include <vendor/glm/glm/gtc/quaternion.hpp>
 #include <vendor/glm/glm/gtx/quaternion.hpp>
 
+
+inline f32 random_float() {
+    // Returns a random real in [0,1).
+    return std::rand() / (RAND_MAX + 1.0);
+}
+
+inline f32 random_float(f32 min, f32 max) {
+    // Returns a random real in [min,max).
+    return min + (max - min) * random_float();
+}
+
+inline i32 random_int(i32 min, i32 max) {
+    // Returns a random integer in [min,max].
+    return i32(random_float(min, max + 1));
+}
+
 namespace Helix {
     static const u16    INVALID_TEXTURE_INDEX = 0xffff;
 
@@ -254,15 +270,15 @@ namespace Helix {
         glm::mat4               inverse_projection;
         glm::mat4               inverse_view_projection;
         glm::mat4               view_matrix;
-        glm::mat4               view_matrix_debug;
+        glm::mat4               projection_matrix;
         glm::mat4               previous_view_projection;
 
         glm::vec4               camera_position;
         glm::vec4               camera_position_debug;
         glm::vec4               light_position;
 
-        f32                     light_range;
-        f32                     light_intensity;
+        u32                     sphere_count;
+        u32                     material_count;
         u32                     dither_texture_index;
         f32                     z_near;
 
@@ -392,10 +408,14 @@ namespace Helix {
         BufferHandle            meshlets_vertex_pos_buffer = k_invalid_buffer;
         BufferHandle            meshlets_vertex_data_buffer = k_invalid_buffer;
 
-        // Indirect data
-        BufferHandle            mesh_draw_count_buffers[k_max_frames];
-        BufferHandle            mesh_indirect_draw_early_command_buffers[k_max_frames];
-        BufferHandle            mesh_indirect_draw_late_command_buffers[k_max_frames];
+        // Ray Tracing Data
+        BufferHandle            spheres_buffer;
+        BufferHandle            materials_buffer;
+        BufferHandle            bvh_nodes_buffer;
+        BufferHandle            bvh_debug_vertex_buffer;
+        BufferHandle            bvh_debug_index_buffer;
+        BufferHandle            bvh_debug_instance_buffer;
+        BufferHandle            scene_info_buffer;
 
         // Gpu debug draw
         BufferHandle            debug_line_buffer = k_invalid_buffer;
@@ -412,17 +432,220 @@ namespace Helix {
 
         u32                     fullscreen_texture_index = u32_max;
 
-    }; // struct Scene
+    }; // struct 
 
-    struct Ray {
-        glm::vec3 origin;
-        glm::vec3 direction;
+    const f32 INF = std::numeric_limits<f32>::infinity();
+    
+    struct alignas(16)Interval {
+        f32 min = 0.f;
+        f32 max = 0.f;
+        f32 padding[2];
 
-        inline glm::vec3 at(float t) const {
-            return origin + direction * t;
+        Interval() : min(+INF), max(-INF) {}
+
+        Interval(float min, float max) :
+            min(min), max(max) {}
+
+        Interval(const Interval& a, const Interval& b) {
+            min = a.min <= b.min ? a.min : b.min;
+            max = a.max >= b.max ? a.max : b.max;
+        }
+
+        static Interval empty() {
+            return Interval(+INF, -INF);
+        }
+
+        static Interval universe() {
+            return Interval(-INF, +INF);
+        }
+
+        f32 size() const {
+            return max - min;
         }
     };
 
+    struct alignas(16) AABB { // For now AABB is stored in the Spheres 24 bytes
+        //Interval x;
+        //Interval y;
+        //Interval z;
+        //f32 padding[12];
+        glm::vec4 min;
+        glm::vec4 max;
+
+        AABB() {}
+
+        AABB(const Interval& x, const Interval& y, const Interval& z)
+            : min(glm::vec4(x.min, y.min, z.min, 1.0f)), 
+            max(glm::vec4(x.max, y.max, z.max, 1.0f))
+        {
+
+        }
+
+        AABB(const glm::vec3& a, const glm::vec3& b) {
+            min = glm::vec4(glm::min(a, b), 1.0f);
+            max = glm::vec4(glm::max(a, b), 1.0f);
+        }
+
+        AABB(const AABB& a, const AABB& b) {
+            glm::vec3 min_vec = glm::min(glm::vec3(a.min), glm::vec3(b.min));
+            glm::vec3 max_vec = glm::max(glm::vec3(a.max), glm::vec3(b.max));
+            min = glm::vec4(min_vec, 1.0f);
+            max = glm::vec4(max_vec, 1.0f);
+        }
+
+        const Interval& axis_interval(int n) const {
+            Interval x(min.x, max.x);
+            Interval y(min.y, max.y);
+            Interval z(min.z, max.z);
+            if (n == 1) return y;
+            if (n == 2) return z;
+            return x;
+        }
+
+        static AABB empty() {
+            return AABB(Interval::empty(), Interval::empty(), Interval::empty());
+        }
+
+        static AABB universe() {
+            return AABB(Interval::universe(), Interval::universe(), Interval::universe());
+        }
+
+        u32 longest_axis() const {
+            // Returns the index of the longest axis of the bounding box.
+
+            float extentX = max.x - min.x;
+            float extentY = max.y - min.y;
+            float extentZ = max.z - min.z;
+
+            // Determine the longest axis
+            if (extentX >= extentY && extentX >= extentZ) {
+                return 0; // X-axis
+            }
+            else if (extentY >= extentZ) {
+                return 1; // Y-axis
+            }
+            else {
+                return 2; // Z-axis
+            }
+        }
+    };
+
+    namespace MaterialType {
+        enum {
+            LAMBERTIAN = 1 << 0,
+            METAL = 1 << 1,
+            DIELECTRIC = 1 << 2,
+        };
+    }// MaterialType
+
+    struct alignas(16) GPUMaterial {
+        glm::vec3       albedo; //12
+        u32             type; // 4
+
+        f32             fuzz_ir; // Acts as the refraction_index for non metals // 4
+        f32             padding[3] = {}; // 12
+
+        GPUMaterial() = default;
+
+        GPUMaterial(glm::vec3 albedo_, u32 type_, f32 fuzz_ir_ = 1.0f) 
+            : albedo(albedo_), type(type_), fuzz_ir(fuzz_ir_) {};
+    };
+
+    struct alignas(16) Sphere {
+        glm::vec3       origin;
+        f32             radius;
+
+        AABB            bounding_box;
+
+        u32             material_index;
+        u32             padding[3];
+
+        Sphere(glm::vec3 origin_, f32 radius_, u32 index) 
+            : origin(origin_), radius(radius_), material_index(index){
+
+            glm::vec3 radius_v = glm::vec3(radius);
+            bounding_box = AABB(origin_ - radius_v, origin_ + radius_v);
+        };
+    };
+
+    struct alignas(16) BVHNode { // 48 bytes
+        u32 sphere_index = 0;
+        u32 sphere_count = 0;
+        u32 node_child_index = 0;
+        u32 padding;
+
+        AABB bounding_box;
+
+        glm::vec4 debug_color;
+
+        BVHNode() 
+        : sphere_index(0), sphere_count(0), node_child_index(0), bounding_box(AABB::empty())
+        {}
+
+        BVHNode(Array<BVHNode>& bvh_arr, Sphere* spheres, u32 start, u32 end, u32 max_depth)
+        : sphere_index(start)
+        {
+            debug_color = glm::vec4(random_float(0.f, 1.f), random_float(0.f, 1.f), random_float(0.f, 1.f), 1.f);
+
+            size_t test = sizeof(BVHNode);
+
+            bounding_box = AABB::empty();
+            for (u32 object_index = start; object_index < end; object_index++) {
+                bounding_box = AABB(bounding_box, spheres[object_index].bounding_box);
+            }
+
+            i32 axis = bounding_box.longest_axis();
+
+            auto comparator = (axis == 0) ? box_x_compare
+                            : (axis == 1) ? box_y_compare
+                            : box_z_compare;
+
+            u32 object_span = end - start;
+            sphere_count = object_span;
+
+            if (object_span <= max_depth) {
+                node_child_index = 0;
+            }else {
+                std::sort(spheres + start, spheres + end, comparator);
+
+                u32 mid = start + object_span / 2;
+
+                node_child_index = bvh_arr.size;
+
+                bvh_arr.push(BVHNode());
+                bvh_arr.push(BVHNode());
+
+                bvh_arr[node_child_index] = BVHNode(bvh_arr, spheres, start, mid, max_depth);
+                bvh_arr[node_child_index + 1] = BVHNode(bvh_arr, spheres, mid, end, max_depth);
+            }
+        }
+
+        static bool box_compare(
+            const Sphere& a, const Sphere& b, int axis_index
+        ) {
+            auto a_axis_interval = a.bounding_box.axis_interval(axis_index);
+            auto b_axis_interval = b.bounding_box.axis_interval(axis_index);
+            return a_axis_interval.min < b_axis_interval.min;
+        }
+
+        static bool box_x_compare(const Sphere& a, const Sphere& b) {
+            return box_compare(a, b, 0);
+        }
+
+        static bool box_y_compare(const Sphere& a, const Sphere& b) {
+            return box_compare(a, b, 1);
+        }
+
+        static bool box_z_compare(const Sphere& a, const Sphere& b) {
+            return box_compare(a, b, 2);
+        }
+    };
+
+    struct SceneInfo {
+        u32 total_bounce_count;
+    };
+
+    
     struct RayTracingPass : public FrameGraphRenderPass {
         void                    render(CommandBuffer* gpu_commands, Scene* scene) override;
 
@@ -437,9 +660,25 @@ namespace Helix {
         TextureHandle           accumulated_image_handle;
         u32                     frame_index = 1;
         bool                    camera_moved = false;
-        glm::vec2               viewport = { 0.f, 0.f };
+        u32                     node_index;
+        u32                     pad = 0;
+        u32                     bvh_count;
 
     }; // struct RayTracingPass
+
+    struct DebugBVHPass : public FrameGraphRenderPass {
+        void                    render(CommandBuffer* gpu_commands, Scene* scene) override;
+
+        void                    prepare_draws(Scene& scene, FrameGraph* frame_graph, Allocator* resident_allocator);
+        void                    free_gpu_resources();
+
+        Renderer* renderer = nullptr;
+
+        PipelineHandle          pipeline_handle;
+        DescriptorSetHandle     d_set;
+        u32                     bvh_count;
+
+    }; // struct DebugBVHPass
 
     struct glTFScene : public Scene {
 
@@ -486,6 +725,7 @@ namespace Helix {
         NodePool                node_pool;
 
         RayTracingPass          ray_tracing_pass;
+        DebugBVHPass            debug_bvh_pass;
 
         // Fullscreen data
         Program*                fullscreen_program = nullptr;

@@ -91,15 +91,7 @@ glm::vec4 normalize_plane(glm::vec4 plane) {
     return (plane / glm::length(normal));
 }
 
-inline double random_double() {
-    // Returns a random real in [0,1).
-    return std::rand() / (RAND_MAX + 1.0);
-}
 
-inline double random_double(double min, double max) {
-    // Returns a random real in [min,max).
-    return min + (max - min) * random_double();
-}
 
 int main(int argc, char** argv)
 {
@@ -233,7 +225,7 @@ int main(int argc, char** argv)
     i64 begin_frame_tick = Time::now();
     i64 absolute_begin_frame_tick = begin_frame_tick;
 
-    glm::vec3 eye = { 0.0f, 0.0f, 0.0f };
+    glm::vec3 eye = { 0.0f, 2.0f, -5.0f };
     glm::vec3 look = { 0.0f, 0.0, -1.0f };
     glm::vec3 right = { 1.0f, 0.0, 0.0f };
     glm::vec3 up = { 0.0f, 1.0f, 0.0f };
@@ -313,6 +305,21 @@ int main(int argc, char** argv)
                 ImGui::End();
 
                 if (ImGui::Begin("Scene Settings")) {
+                    if (ImGui::InputInt("Node Index", (i32*)&scene->ray_tracing_pass.node_index, 1)) {
+                        scene->ray_tracing_pass.camera_moved = true;
+                    }
+                    if (ImGui::SliderInt("Node Index", (i32*)&scene->ray_tracing_pass.pad, 0, 1)) {
+                        scene->ray_tracing_pass.camera_moved = true;
+                    }
+
+
+                    MapBufferParameters cb_map = { scene->scene_info_buffer, 0, 0 };
+                    SceneInfo* info_data = (SceneInfo*)renderer.gpu->map_buffer(cb_map);
+                    if (info_data) {
+                        ImGui::Text("Total bounce: %d", info_data->total_bounce_count);
+                        renderer.gpu->unmap_buffer(cb_map);
+                    }
+
                     ImGui::Text("x: %f, y: %f, z: %f", eye.x, eye.y, eye.z);
                     ImGui::Text("AABB \t minx: %f, miny: %f, maxx: %f, maxy: %f", scene->tester.x, scene->tester.y, scene->tester.z, scene->tester.w);
                     ImGui::Checkbox("Freeze Camera", &freeze_occlusion_camera);
@@ -343,8 +350,10 @@ int main(int argc, char** argv)
                 //LightUniform* light_cb_data = (LightUniform*)gpu.map_buffer(light_cb_map);
                 {
                     if (input_handler.is_mouse_down(MouseButtons::MOUSE_BUTTONS_RIGHT)) {
-                        pitch += (input_handler.mouse_position.y - input_handler.previous_mouse_position.y) * 0.1f;
-                        yaw += (input_handler.mouse_position.x - input_handler.previous_mouse_position.x) * 0.3f;
+                        float mouse_sensitivity = 0.15f;
+
+                        pitch += (input_handler.mouse_position.y - input_handler.previous_mouse_position.y) * mouse_sensitivity / 2.f;
+                        yaw += (input_handler.mouse_position.x - input_handler.previous_mouse_position.x) * mouse_sensitivity;
 
                         pitch = clamp(pitch, -60.0f, 60.0f);
 
@@ -363,31 +372,41 @@ int main(int argc, char** argv)
                         scene->ray_tracing_pass.camera_moved = true;
                     }
 
+                    float move_speed = 13.f;
                     if (input_handler.is_key_down(Keys::KEY_W)) {
-                        eye += look * (5.0f * delta_time);
+                        eye += look * (move_speed * delta_time);
                         scene->ray_tracing_pass.camera_moved = true;
                     }
                     else if (input_handler.is_key_down(Keys::KEY_S)) {
-                        eye -= look * (5.0f * delta_time);
+                        eye -= look * (move_speed * delta_time);
                         scene->ray_tracing_pass.camera_moved = true;
                     }
 
                     if (input_handler.is_key_down(Keys::KEY_D)) {
-                        eye += right * (5.0f * delta_time);
+                        eye += right * (move_speed * delta_time);
                         scene->ray_tracing_pass.camera_moved = true;
                     }
                     else if (input_handler.is_key_down(Keys::KEY_A)) {
-                        eye -= right * (5.0f * delta_time);
+                        eye -= right * (move_speed * delta_time);
                         scene->ray_tracing_pass.camera_moved = true;
                     }
                     if (input_handler.is_key_down(Keys::KEY_E)) {
-                        eye += up * (5.0f * delta_time);
+                        eye += up * (move_speed * delta_time);
                         scene->ray_tracing_pass.camera_moved = true;
                     }
                     else if (input_handler.is_key_down(Keys::KEY_Q)) {
-                        eye -= up * (5.0f * delta_time);
+                        eye -= up * (move_speed * delta_time);
                         scene->ray_tracing_pass.camera_moved = true;
                     }
+
+                    //else if (input_handler.is_key_down(Keys::KEY_RIGHT)) {
+                    //    scene->ray_tracing_pass.node_index = (scene->ray_tracing_pass.node_index + 1) % 9;
+                    //    scene->ray_tracing_pass.camera_moved = true;
+                    //}
+                    //else if (input_handler.is_key_down(Keys::KEY_LEFT)) {
+                    //    scene->ray_tracing_pass.node_index = (scene->ray_tracing_pass.node_index - 1 + 9) % 9;
+                    //    scene->ray_tracing_pass.camera_moved = true;
+                    //}
 
                     glm::mat4 view = glm::lookAt(eye, (eye + look), glm::vec3( 0.0f, 1.0f, 0.0f ));
                     float z_near = 0.001f;
@@ -410,12 +429,11 @@ int main(int argc, char** argv)
                     GPUSceneData& scene_data = scene->scene_data;
                     scene_data.inverse_view = glm::inverse(view);
                     scene_data.inverse_projection = glm::inverse(projection);
-                    scene_data.inverse_view_projection = projection;
                     scene_data.view_matrix = view;
+                    scene_data.projection_matrix = projection;
+                    scene_data.inverse_view_projection = projection;
                     scene_data.camera_position = glm::vec4(eye.x, eye.y, eye.z, 1.0f);
                     scene_data.light_position = glm::vec4(0.0f, 10.0f, 0.0f, 1.0f);
-                    scene_data.light_range = light_range;
-                    scene_data.light_intensity = light_intensity;
                     scene_data.dither_texture_index = k_invalid_index;
 
                     scene_data.z_near = z_near;
@@ -429,9 +447,9 @@ int main(int argc, char** argv)
                     scene_data.occlusion_cull_meshlets = 1;
                     scene_data.freeze_occlusion_camera = freeze_occlusion_camera ? 1 : 0;
 
-                    scene_data.seed_x = (f32)random_double();
+                    scene_data.seed_x = (f32)random_float();
 
-                    scene_data.seed_y = (f32)random_double();
+                    scene_data.seed_y = (f32)random_float();
 
 
                     scene_data.aspect_ratio = gpu.swapchain_width * 1.f / gpu.swapchain_height;
@@ -439,7 +457,6 @@ int main(int argc, char** argv)
                     // Frustum computations
                     if (!freeze_occlusion_camera) {
                         scene_data.camera_position_debug = scene_data.camera_position;
-                        scene_data.view_matrix_debug = scene_data.view_matrix;
                         projection_transpose = glm::transpose(projection);
                     }
 

@@ -195,6 +195,13 @@ namespace Helix {
         Texture* accumulated_image = renderer->gpu->access_texture(accumulated_image_handle);
         util_add_image_barrier(gpu_commands->device, gpu_commands->vk_handle, accumulated_image, RESOURCE_STATE_UNORDERED_ACCESS, 0, 1, false);
 
+        MapBufferParameters cb_map = { scene->scene_info_buffer, 0, 0 };
+        SceneInfo* info_data = (SceneInfo*)renderer->gpu->map_buffer(cb_map);
+        if (info_data) {
+            info_data->total_bounce_count = 0;
+            renderer->gpu->unmap_buffer(cb_map);
+        }
+
         if (camera_moved) {
             gpu_commands->clear_color_image(0, 0, 0, 1.f, accumulated_image_handle);
             camera_moved = false;
@@ -209,14 +216,18 @@ namespace Helix {
         const Texture* texture = renderer->gpu->access_texture({ output_image_index });
 
         struct PushConst {
-            glm::vec2 src_image_size;
+            u32 node_index;
+            u32 pad;
             u32 rng_state;
             u32 frame_count;
+            u32 bvh_count;
         };
         PushConst push_const;
-        push_const.src_image_size = viewport;
+        push_const.node_index = node_index;
+        push_const.pad = pad;
         push_const.rng_state = random_uint();
         push_const.frame_count = frame_index;
+        push_const.bvh_count = bvh_count;
 
         vkCmdPushConstants(gpu_commands->vk_handle, rtx_pipeline->vk_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConst), &push_const);
 
@@ -236,11 +247,12 @@ namespace Helix {
             return;
         }
         enabled = node->enabled;
-                
         renderer = scene.renderer;
         GpuDevice& gpu = *renderer->gpu;
 
         output_image_index = scene.fullscreen_texture_index;
+
+        node_index = 0;
 
         TextureCreation tex_creation{};
         tex_creation.set_size(gpu.swapchain_width, gpu.swapchain_height, 1)
@@ -262,11 +274,18 @@ namespace Helix {
             u32 pipeline_index = rtx_program->get_pass_index("ray_tracing");
             pipeline_handle = rtx_program->passes[pipeline_index].pipeline;
             DescriptorSetLayoutHandle layout = gpu.get_descriptor_set_layout(pipeline_handle, k_material_descriptor_set_index);
+
+            //DesciptorSetLayout* l = gpu.access_descriptor_set_layout(layout);
+
             DescriptorSetCreation ds_creation{};
             ds_creation
                 .buffer(scene.scene_constant_buffer, 0)
                 .texture(accumulated_image_handle, 1) 
                 .texture({ output_image_index }, 2) 
+                .buffer(scene.materials_buffer, 3) 
+                .buffer(scene.spheres_buffer, 4)
+                .buffer(scene.bvh_nodes_buffer, 5)
+                .buffer(scene.scene_info_buffer, 6)
                 .set_layout(layout);
 
             d_set = gpu.create_descriptor_set(ds_creation);
@@ -274,6 +293,63 @@ namespace Helix {
     }
 
     void RayTracingPass::free_gpu_resources() {
+        if (!renderer)
+            return;
+        GpuDevice& gpu = *renderer->gpu;
+        gpu.destroy_descriptor_set(d_set);
+    }
+
+
+    //
+    // DebugBVHPass /////////////////////////////////////////////////////////
+    void DebugBVHPass::render(CommandBuffer* gpu_commands, Scene* scene_) {
+        return;
+        if (!enabled)
+            return;
+        glTFScene* scene = (glTFScene*)scene_;
+        Renderer* renderer = scene->renderer;
+
+        gpu_commands->bind_pipeline(pipeline_handle);
+
+        gpu_commands->bind_descriptor_set(&d_set, 1, nullptr, 0);
+
+        gpu_commands->bind_vertex_buffer(scene->bvh_debug_vertex_buffer, 0, 0);
+        gpu_commands->bind_vertex_buffer(scene->bvh_debug_instance_buffer, 1, 0);
+        gpu_commands->bind_index_buffer(scene->bvh_debug_index_buffer, 0, VK_INDEX_TYPE_UINT16);
+
+        gpu_commands->draw_indexed(TopologyType::Line, 24, bvh_count, 0, 0, 0);
+    }
+
+    void DebugBVHPass::prepare_draws(Scene& scene, FrameGraph* frame_graph, Allocator* resident_allocator) {
+
+        FrameGraphNode* node = frame_graph->get_node("debug_bvh_pass");
+        if (node == nullptr) {
+            enabled = false;
+
+            return;
+        }
+        enabled = node->enabled;
+        renderer = scene.renderer;
+        GpuDevice& gpu = *renderer->gpu;
+
+        // Cache frustum cull shader
+        Program* rtx_program = renderer->resource_cache.programs.get(hash_calculate("ray_tracing"));
+        {
+
+            u32 pipeline_index = rtx_program->get_pass_index("debug_bvh");
+            pipeline_handle = rtx_program->passes[pipeline_index].pipeline;
+            DescriptorSetLayoutHandle layout = gpu.get_descriptor_set_layout(pipeline_handle, k_material_descriptor_set_index);
+
+            DescriptorSetCreation ds_creation{};
+            ds_creation
+                .buffer(scene.scene_constant_buffer, 0)
+                .set_layout(layout);
+
+            d_set = gpu.create_descriptor_set(ds_creation);
+        }
+    }
+
+    void DebugBVHPass::free_gpu_resources() {
         if (!renderer)
             return;
         GpuDevice& gpu = *renderer->gpu;
@@ -415,6 +491,7 @@ namespace Helix {
         GpuDevice& gpu = *renderer->gpu;
 
         ray_tracing_pass.free_gpu_resources();
+        debug_bvh_pass.free_gpu_resources();
 
         gpu.destroy_descriptor_set(fullscreen_ds);
 
@@ -451,10 +528,224 @@ namespace Helix {
     void glTFScene::register_render_passes(FrameGraph* frame_graph_) {
         frame_graph = frame_graph_;
         frame_graph->builder->register_render_pass("ray_tracing_pass", &ray_tracing_pass);
+        frame_graph->builder->register_render_pass("debug_bvh_pass", &debug_bvh_pass);
+    }
+
+    void getNodesAtDepth(const BVHNode* nodes, int rootIndex, int totalNodes, int depth, int* result) {
+
+        int resultSize = 0;
+
+        int currentLevel[15];
+        int nextLevel[15];
+        int currentSize = 0;
+        int nextSize = 0;
+
+        currentLevel[currentSize++] = rootIndex; // Start with the root node index
+
+        for (int currentDepth = 0; currentDepth < depth; ++currentDepth) {
+            nextSize = 0; // Reset next level size
+
+            // Process each node in the current level
+            for (int i = 0; i < currentSize; ++i) {
+                int index = currentLevel[i];
+                const BVHNode& node = nodes[index];
+
+                // Check if the node has a left child (child_index != 0)
+                if (node.node_child_index != 0 && node.node_child_index < totalNodes) {
+                    nextLevel[nextSize++] = node.node_child_index;
+
+                    // Add the right child (left child + 1) if it is within bounds
+                    if (node.node_child_index + 1 < totalNodes) {
+                        nextLevel[nextSize++] = node.node_child_index + 1;
+                    }
+                }
+            }
+
+            // Copy nextLevel to currentLevel for the next iteration
+            for (int i = 0; i < nextSize; ++i) {
+                currentLevel[i] = nextLevel[i];
+            }
+            currentSize = nextSize;
+        }
+
+        // Copy the current level to the result array
+        for (int i = 0; i < currentSize; ++i) {
+            result[i] = currentLevel[i];
+        }
+        resultSize = currentSize;
     }
 
     void glTFScene::prepare_draws(Renderer* renderer, StackAllocator* stack_allocator) {
+        Array<GPUMaterial> materials;
+        materials.init(main_allocator, 5);
+        materials.push(GPUMaterial(glm::vec3(0.5f, 0.5f, 0.5f), MaterialType::LAMBERTIAN));
+        materials.push(GPUMaterial(glm::vec3(1.0f, 1.0f, 1.0f), MaterialType::DIELECTRIC, 1.5f));
+        materials.push(GPUMaterial(glm::vec3(0.4f, 0.2f, 0.1f), MaterialType::LAMBERTIAN));
+        materials.push(GPUMaterial(glm::vec3(0.7f, 0.6f, 0.5f), MaterialType::METAL, 0.0f));
+        
+        Array<Sphere> spheres;
+        spheres.init(main_allocator, 4);
+
+        spheres.push(Sphere(glm::vec3(0.0f, -1000.f, 0), 1000.0f, 0));
+        spheres.push(Sphere(glm::vec3(0.0f, 1.0f, 0.0f), 1.0f, 1));
+        spheres.push(Sphere(glm::vec3(-4.0f, 1.0f, 0.0f), 1.0f, 2));
+        spheres.push(Sphere(glm::vec3(4.0f, 1.0f, 0.f), 1.0f, 3));
+
+        for (int a = -11; a < 11; a++) {
+            for (int b = -11; b < 11; b++) {
+                float choose_mat = random_float();
+                glm::vec3 center(a + 0.9 * random_float(), 0.2, b + 0.9 * random_float());
+        
+                if ((center - glm::vec3(4, 0.2, 0)).length() > 0.9) {
+                    GPUMaterial sphere_material;
+        
+                    if (choose_mat < 0.8) {
+                        // diffuse
+                        glm::vec3 albedo = glm::vec3(random_float(0.f, 1.f), random_float(0.f, 1.f), random_float(0.f, 1.f));
+                        sphere_material = GPUMaterial(albedo, MaterialType::LAMBERTIAN);
+                    }
+                    else if (choose_mat < 0.95) {
+                        // metal
+                        glm::vec3 albedo = glm::vec3(random_float(0.5f, 1.0f));
+                        float fuzz = random_float(0.0f, 0.5f);
+                        sphere_material = GPUMaterial(albedo, MaterialType::METAL, fuzz);
+                    }
+                    else {
+                        // glass
+                        sphere_material = GPUMaterial(glm::vec3(1.0f), MaterialType::DIELECTRIC, 1.5);
+                    }
+        
+                    materials.push(sphere_material);
+                    Sphere sphere = Sphere(center, 0.2f, materials.size - 1);
+        
+                    spheres.push(sphere);
+                }
+            }
+        }
+
+        //for (int z = 0; z < 20; z++) {
+        //    for (int x = 0; x < 20; x++) {
+        //        spheres.push(Sphere(glm::vec3(-10 + x * 2, -5 + z * 2, -10.f), 1.f, 0));
+        //    }
+        //}
+
+        Array<BVHNode> bvh_arr;
+        bvh_arr.init(main_allocator, 4, 1);
+        bvh_arr[0] = BVHNode(bvh_arr, spheres.data, 0, spheres.size, 25);
+
+        BufferCreation creation{};
+        creation.reset()
+            .set(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(GPUMaterial) * materials.size)
+            .set_data(materials.data)
+            .set_name("material_buffer")
+            .set_persistent(true)
+            .set_device_only(false);
+        materials_buffer = renderer->create_buffer(creation)->handle;
+
+        creation.reset()
+            .set(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(Sphere) * spheres.size)
+            .set_data(spheres.data)
+            .set_name("sphere_buffer")
+            .set_persistent(true)
+            .set_device_only(false);
+        spheres_buffer = renderer->create_buffer(creation)->handle;
+
+        scene_data.material_count = materials.size;
+        scene_data.sphere_count = spheres.size;
+
+        creation.reset()
+            .set(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(BVHNode) * bvh_arr.size)
+            .set_data(bvh_arr.data)
+            .set_name("bvh_nodes_buffer")
+            .set_persistent(true)
+            .set_device_only(false);
+        bvh_nodes_buffer = renderer->create_buffer(creation)->handle;
+
+
+        std::vector<glm::vec3> cubeVertices = {
+            {-1.0f, -1.0f, -1.0f}, // 0: Bottom-back-left
+            { 1.0f, -1.0f, -1.0f}, // 1: Bottom-back-right
+            { 1.0f,  1.0f, -1.0f}, // 2: Top-back-right
+            {-1.0f,  1.0f, -1.0f}, // 3: Top-back-left
+            {-1.0f, -1.0f,  1.0f}, // 4: Bottom-front-left
+            { 1.0f, -1.0f,  1.0f}, // 5: Bottom-front-right
+            { 1.0f,  1.0f,  1.0f}, // 6: Top-front-right
+            {-1.0f,  1.0f,  1.0f}  // 7: Top-front-left
+        };
+
+        std::vector<uint16_t> cubeEdgeIndices = {
+            // Back face edges
+            0, 1, 1, 2, 2, 3, 3, 0,
+            // Front face edges
+            4, 5, 5, 6, 6, 7, 7, 4,
+            // Connecting edges between front and back faces
+            0, 4, 1, 5, 2, 6, 3, 7
+        };
+
+        creation.reset()
+            .set(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, ResourceUsageType::Stream, sizeof(glm::vec3) * cubeVertices.size())
+            .set_data(cubeVertices.data())
+            .set_name("bvh_debug_vertex_buffer")
+            .set_persistent(true)
+            .set_device_only(false);
+        bvh_debug_vertex_buffer = renderer->create_buffer(creation)->handle;
+
+        creation.reset()
+            .set(VK_BUFFER_USAGE_INDEX_BUFFER_BIT, ResourceUsageType::Stream, sizeof(uint16_t) * cubeEdgeIndices.size())
+            .set_data(cubeEdgeIndices.data())
+            .set_name("bvh_debug_index_buffer")
+            .set_persistent(true)
+            .set_device_only(false);
+        bvh_debug_index_buffer = renderer->create_buffer(creation)->handle;
+
+        struct InstanceData {
+            glm::vec4 color;
+            glm::mat4 model;
+        };
+
+        std::vector<InstanceData> instance_data(bvh_arr.size);
+        debug_bvh_pass.bvh_count = bvh_arr.size;
+
+        for (u32 i = 0; i < bvh_arr.size; i++) {
+            InstanceData& data = instance_data[i];
+            const BVHNode& node = bvh_arr[i];
+
+            glm::mat4 model(1.0f);
+            glm::vec3 translation = (node.bounding_box.max + node.bounding_box.min) / 2.f;
+
+            glm::vec3 scale = (node.bounding_box.max - node.bounding_box.min) / 2.f;
+
+            model = glm::scale(model, scale);
+            model = glm::translate(model, translation);
+
+            data.model = model;
+            data.color = glm::vec4(random_float(0.f, 1.f), random_float(0.f, 1.f), random_float(0.f, 1.f), 1.f);
+        }
+        
+        creation.reset()
+            .set(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, ResourceUsageType::Stream, sizeof(InstanceData)* instance_data.size())
+            .set_data(instance_data.data())
+            .set_name("bvh_debug_instance_buffer")
+            .set_persistent(true)
+            .set_device_only(false);
+        bvh_debug_instance_buffer = renderer->create_buffer(creation)->handle;
+
+        creation.reset()
+            .set(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(SceneInfo))
+            .set_name("scene_info_buffer")
+            .set_persistent(true)
+            .set_device_only(false);
+        scene_info_buffer = renderer->create_buffer(creation)->handle;
+
+        
+
         ray_tracing_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator);
+        ray_tracing_pass.bvh_count = bvh_arr.size;
+        debug_bvh_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator);
+
+        spheres.shutdown();
+        bvh_arr.shutdown();
+        materials.shutdown();
     }
 
     void glTFScene::fill_pbr_material(Renderer& renderer, glTF::Material& material, PBRMaterial& pbr_material) {

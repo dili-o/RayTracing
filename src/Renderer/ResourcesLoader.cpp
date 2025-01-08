@@ -77,6 +77,12 @@ namespace Helix {
 				std::string pipeline_name;
 				pipeline["name"].get_to(pipeline_name);
 
+				// Check if the "topology" property exists
+				if (pipeline.contains("topology")) {
+					pipeline_creation.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+				}
+				
+
 				pipeline_creation.name = resource_name_buffer.append_use_f("%s", pipeline_name.c_str());
 
 				json inherit_from = pipeline["inherit_from"];
@@ -252,6 +258,8 @@ namespace Helix {
 				pc.vertex_input_creation.add_vertex_stream(vertex_stream);
 			}
 		}
+
+
 
 		// Parse Depth
 		json depth = pipeline["depth"];

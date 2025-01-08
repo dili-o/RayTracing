@@ -278,6 +278,7 @@ namespace Helix {
         SamplerHandle                   default_sampler;
         // Dummy resources
         // TODO: Remove the word "Dummy"
+        u32                             global_offset = 0;
         TextureHandle                   default_texture;
         BufferHandle                    default_constant_buffer;
 
