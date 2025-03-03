@@ -59,7 +59,7 @@ void main() {
             Ray scattered_ray;
             vec3 current_attenuation = vec3(1.0f);
             sphere_test++;
-#define BVH 1
+#define BVH 0
 #if BVH
             if(traverse_BVH(ray, z_near, z_far, rec, hit_attenuation)){
                 switch(rec.mat.type){

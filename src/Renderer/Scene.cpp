@@ -591,8 +591,10 @@ namespace Helix {
         spheres.push(Sphere(glm::vec3(-4.0f, 1.0f, 0.0f), 1.0f, 2));
         spheres.push(Sphere(glm::vec3(4.0f, 1.0f, 0.f), 1.0f, 3));
 
-        for (int a = -11; a < 11; a++) {
-            for (int b = -11; b < 11; b++) {
+        i32 width = 5;
+        i32 height = 5;
+        for (int a = -height; a < height; a++) {
+            for (int b = -width; b < width; b++) {
                 float choose_mat = random_float();
                 glm::vec3 center(a + 0.9 * random_float(), 0.2, b + 0.9 * random_float());
         
@@ -631,7 +633,7 @@ namespace Helix {
 
         Array<BVHNode> bvh_arr;
         bvh_arr.init(main_allocator, 4, 1);
-        bvh_arr[0] = BVHNode(bvh_arr, spheres.data, 0, spheres.size, 25);
+        bvh_arr[0] = BVHNode(bvh_arr, spheres.data, 0, spheres.size, spheres.size / 8);
 
         BufferCreation creation{};
         creation.reset()

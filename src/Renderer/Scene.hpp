@@ -585,6 +585,8 @@ namespace Helix {
         BVHNode(Array<BVHNode>& bvh_arr, Sphere* spheres, u32 start, u32 end, u32 max_depth)
         : sphere_index(start)
         {
+            if (max_depth == 0)
+                max_depth++;
             debug_color = glm::vec4(random_float(0.f, 1.f), random_float(0.f, 1.f), random_float(0.f, 1.f), 1.f);
 
             size_t test = sizeof(BVHNode);

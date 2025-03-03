@@ -1480,8 +1480,12 @@ namespace Helix {
         char* arguments = temp_string_buffer.append_use_f("%s -V --target-env vulkan1.2 -o %s -S %s --D %s --D %s", temp_filename, final_spirv_filename, to_compiler_extension(stage), stage_define, to_stage_defines(stage));
 #endif
         process_execute(".", glsl_compiler_path, arguments, "");
-
+#ifdef _DEBUG
         bool optimize_shaders = false;
+#else
+        bool optimize_shaders = true;
+#endif
+        
 
         if (optimize_shaders) {
             // TODO: add optional optimization stage

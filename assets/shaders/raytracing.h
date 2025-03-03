@@ -6,19 +6,11 @@ struct Ray{
     vec3 inv_dir;
 };
 
-
 struct Interval{ // 16 bytes
     float min;
     float max;
     float padding[2];
 };
-
-//struct AABB{ // 48 bytes
-//    Interval x;
-//    Interval y;
-//    Interval z;
-//    float padding[12];
-//};
 
 struct AABB{
     vec4 min;
@@ -119,24 +111,13 @@ AABB AABB_create(vec3 a, vec3 b){
 }
 
 bool AABB_hit(AABB aabb, Ray r, Interval ray_t){
-    for(int axis = 0; axis < 3; axis++){
-
-        float min_v = aabb.min[axis];
-        float max_v = aabb.max[axis];
-        
-        float t0 = (min_v - r.origin[axis]) * r.inv_dir[axis];
-        float t1 = (max_v - r.origin[axis]) * r.inv_dir[axis];
-
-        float t_min = min(t0, t1);
-        float t_max = max(t0, t1);
-
-        ray_t.min = max(ray_t.min, t_min);
-        ray_t.max = min(ray_t.max, t_max);
-
-        if (ray_t.max <= ray_t.min)
-            return false;
-    }
-    return true;
+    vec3 tMin = (aabb.min.xyz - r.origin) / r.direction;
+    vec3 tMax = (aabb.max.xyz - r.origin) / r.direction;
+    vec3 t1 = min(tMin, tMax);
+    vec3 t2 = max(tMin, tMax);
+    float tNear = max(max(t1.x, t1.y), t1.z);
+    float tFar = min(min(t2.x, t2.y), t2.z);
+    return tFar > tNear;
 }
 ///////////////////////////////////////////////////////////////
 //
