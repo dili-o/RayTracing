@@ -2,76 +2,70 @@ cmake_minimum_required (VERSION 3.13)
 
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Release>:Release>")
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-project(HelixEngine)
+project(RayTracer)
 set(CMAKE_CXX_STANDARD 17)
 
 # Ensure Vulkan SDK environment variable is correctly normalized
-file(TO_CMAKE_PATH "$ENV{VULKAN_SDK}" VULKAN_SDK_NORMALIZED)
+file(TO_CMAKE_PATH "$ENV{VULKAN_SDK}" VULKAN_SDK)
 
 # Find and include SPIRV-Reflect headers
-set(SPIRV_REFLECT_INCLUDE_DIR "${VULKAN_SDK_NORMALIZED}/Source/SPIRV-Reflect")
+set(SPIRV_REFLECT_INCLUDE_DIR "${VULKAN_SDK}/Source/SPIRV-Reflect")
 
-file(GLOB_RECURSE SOURCE_LIST "src/*.h" "src/*.hpp" "src/*.cpp" 
-    "vendor/imgui/*.cpp" 
-    "vendor/imgui/*.h"
-    "vendor/enkiTS/TaskScheduler.cpp"
-    "vendor/tlsf.c"
-    "vendor/meshoptimizer/*.cpp"
+file(GLOB_RECURSE SOURCE_LIST "Src/*.h" "Src/*.hpp" "Src/*.cpp" 
     "${SPIRV_REFLECT_INCLUDE_DIR}/spirv_reflect.c"
 )
 
-# Create the shaders cache directory
-file(MAKE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/cache")
+add_executable (${PROJECT_NAME} ${SOURCE_LIST})
 
-add_executable (HelixEngine ${SOURCE_LIST}  "src/Renderer/FrameGraph.cpp" )
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/Assets/Shaders/Spirv")
+target_compile_definitions(${PROJECT_NAME} PRIVATE ASSETS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/Assets")
+target_compile_definitions(${PROJECT_NAME} PRIVATE SHADER_PATH="${CMAKE_CURRENT_SOURCE_DIR}/Assets/Shaders/")
+
 
 find_package(Vulkan REQUIRED)
 
 if(Vulkan_FOUND)
     # Include Vulkan headers
-    target_include_directories(HelixEngine PUBLIC ${Vulkan_INCLUDE_DIRS})
+    target_include_directories(${PROJECT_NAME} PRIVATE ${Vulkan_INCLUDE_DIRS})
 
     # Link against Vulkan library using keyword signature
-    target_link_libraries(HelixEngine PUBLIC ${Vulkan_LIBRARIES})
+    target_link_libraries(${PROJECT_NAME} PRIVATE ${Vulkan_LIBRARIES})
 else()
     message(FATAL_ERROR "Vulkan SDK not found. Make sure it is installed and accessible.")
 endif()
 
-
-target_include_directories(HelixEngine PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/")
-target_include_directories(HelixEngine PUBLIC "src/")
-target_include_directories(HelixEngine PUBLIC "vendor/")
-target_include_directories(HelixEngine PUBLIC "vendor/spdlog/include")
-target_include_directories(HelixEngine PUBLIC "vendor/SDL2/include")
-target_include_directories(HelixEngine PUBLIC "${SPIRV_REFLECT_INCLUDE_DIR}/")
-
-# Vendor Libraries
-# Find SDL2 library
-find_library(SDL2_LIBRARY SDL2 PATHS ${CMAKE_CURRENT_SOURCE_DIR}/vendor/SDL2/lib/x64)
-
-if(SDL2_LIBRARY)
-    target_link_libraries(HelixEngine PRIVATE ${SDL2_LIBRARY})
-else()
-    message(FATAL_ERROR "SDL2 library not found. Make sure it is installed and accessible.")
+# ----------------- Vendors
+# Volk
+if(WIN32)
+  target_compile_definitions(${PROJECT_NAME} PRIVATE VK_USE_PLATFORM_WIN32_KHR)
+  set(VOLK_STATIC_DEFINES VK_USE_PLATFORM_WIN32_KHR)
 endif()
+add_subdirectory(Vendor/volk)
+target_link_libraries(${PROJECT_NAME} PRIVATE volk_headers)
+# SPDLOG
+add_subdirectory(Vendor/spdlog)
+target_link_libraries(${PROJECT_NAME} PRIVATE spdlog::spdlog)
+# -------------------------
 
-# Set output directory to bin/Engine
-set_target_properties(HelixEngine PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/bin/$<CONFIG>/HelixEngine"
-    ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/bin/$<CONFIG>/HelixEngine"
-    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/bin/$<CONFIG>/HelixEngine"
+target_include_directories(${PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/")
+target_include_directories(${PROJECT_NAME} PRIVATE "Src/")
+target_include_directories(${PROJECT_NAME} PRIVATE "${SPIRV_REFLECT_INCLUDE_DIR}/")
+target_include_directories(${PROJECT_NAME} PRIVATE "Vendor/")
+
+# Set output directory to Bin/Engine
+set_target_properties(${PROJECT_NAME} PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/Bin/$<CONFIG>/${PROJECT_NAME}"
+    ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/Bin/$<CONFIG>/${PROJECT_NAME}"
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/Bin/$<CONFIG>/${PROJECT_NAME}"
 )
 
-
-target_compile_definitions(HelixEngine PRIVATE
+target_compile_definitions(${PROJECT_NAME} PRIVATE
     $<$<CONFIG:DEBUG>:_DEBUG>
     CONSOLE
     UNICODE
     _UNICODE
     VEXPORT
     _CRT_SECURE_NO_WARNINGS
-    HELIX_SHADER_FOLDER="${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/"
-    HELIX_TEXTURE_FOLDER="${CMAKE_CURRENT_SOURCE_DIR}/assets/textures/"
-    HELIX_FRAMEGRAPH_FOLDER="${CMAKE_CURRENT_SOURCE_DIR}/assets/frame_graphs/"
 )

@@ -20,16 +20,6 @@ SPDLOG_INLINE std::shared_ptr<logger> get(const std::string &name) {
     return details::registry::instance().get(name);
 }
 
-#if __cplusplus >= 201703L  // C++17
-SPDLOG_INLINE std::shared_ptr<logger> get(std::string_view name) {
-    return details::registry::instance().get(name);
-}
-
-SPDLOG_INLINE std::shared_ptr<logger> get(const char *name) {
-    return details::registry::instance().get(name);
-}
-#endif
-
 SPDLOG_INLINE void set_formatter(std::unique_ptr<spdlog::formatter> formatter) {
     details::registry::instance().set_formatter(std::move(formatter));
 }
@@ -67,6 +57,10 @@ SPDLOG_INLINE void set_error_handler(void (*handler)(const std::string &msg)) {
 
 SPDLOG_INLINE void register_logger(std::shared_ptr<logger> logger) {
     details::registry::instance().register_logger(std::move(logger));
+}
+
+SPDLOG_INLINE void register_or_replace(std::shared_ptr<logger> logger) {
+    details::registry::instance().register_or_replace(std::move(logger));
 }
 
 SPDLOG_INLINE void apply_all(const std::function<void(std::shared_ptr<logger>)> &fun) {
