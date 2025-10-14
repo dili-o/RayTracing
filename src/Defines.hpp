@@ -41,10 +41,6 @@
 #define HLX_LINE_STRING HLX_MAKESTRING(__LINE__)
 #define HLX_FILELINE(MESSAGE) __FILE__ "(" HLX_LINE_STRING ") : " MESSAGE
 
-// GLM Defines
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE
-#define GLM_ENABLE_EXPERIMENTAL
-
 // Unique names
 #define HLX_UNIQUE_SUFFIX(PARAM) HLX_CONCAT(PARAM, __LINE__)
 
@@ -72,6 +68,12 @@ static const u16 u16_max = UINT16_MAX;
 static const i16 i16_max = INT16_MAX;
 static const u8 u8_max = UINT8_MAX;
 static const i8 i8_max = INT8_MAX;
+
+#ifdef USE_DOUBLE_PRECISION
+typedef double real;
+#else
+typedef float real;
+#endif
 
 #if defined(_WIN32)
 #ifdef HELIX_EXPORT

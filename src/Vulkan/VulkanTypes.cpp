@@ -1,6 +1,7 @@
 #include "VulkanTypes.hpp"
 #include "Log.hpp"
 #include "Vulkan/VulkanUtils.hpp"
+#include "vulkan/vulkan_core.h"
 // Vendor
 
 #ifdef _DEBUG
@@ -399,7 +400,7 @@ bool VkContext::Init() {
       VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_RESERVE_BINDING_SLOT_EXT,
       VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT,
       VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT,
-  };
+      VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT};
   VkValidationFeaturesEXT features = {};
   features.sType = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT;
   features.pNext = (VkDebugUtilsMessengerCreateInfoEXT *)&debugCreateInfo;
@@ -413,10 +414,10 @@ bool VkContext::Init() {
 
   createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
   createInfo.pApplicationInfo = &appInfo;
-  createInfo.enabledExtensionCount = requiredExtensions.size();
+  createInfo.enabledExtensionCount = (u32)requiredExtensions.size();
   createInfo.ppEnabledExtensionNames = requiredExtensions.data();
   createInfo.enabledLayerCount = 0;
-  createInfo.enabledLayerCount = validationLayerNames.size();
+  createInfo.enabledLayerCount = (u32)validationLayerNames.size();
   createInfo.ppEnabledLayerNames = validationLayerNames.data();
   VK_CHECK(vkCreateInstance(&createInfo, nullptr, &vkInstance));
   volkLoadInstance(vkInstance);
@@ -436,6 +437,7 @@ bool VkContext::Init() {
 
   std::vector<cstring> deviceExtensions{};
   deviceExtensions.push_back(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME);
+  deviceExtensions.push_back(VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME);
 
   // Create Physical Device
   if (!SelectPhysicalDevice(vkInstance, vkPhysicalDevice,
@@ -487,9 +489,9 @@ bool VkContext::Init() {
 
   VkDeviceCreateInfo deviceCreateInfo{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
   deviceCreateInfo.pQueueCreateInfos = queueCreateInfos.data();
-  deviceCreateInfo.queueCreateInfoCount = queueCreateInfos.size();
+  deviceCreateInfo.queueCreateInfoCount = (u32)queueCreateInfos.size();
   deviceCreateInfo.pEnabledFeatures = &deviceFeatures;
-  deviceCreateInfo.enabledExtensionCount = deviceExtensions.size();
+  deviceCreateInfo.enabledExtensionCount = (u32)deviceExtensions.size();
   deviceCreateInfo.ppEnabledExtensionNames = deviceExtensions.data();
 
   // 16bit storage buffers

@@ -10,6 +10,7 @@ Assets/Shaders/Spirv
 Session.vim
 .cache/
 *.rad
+*.png
 CMakeCache.txt
 CMakeFiles/
 Makefile

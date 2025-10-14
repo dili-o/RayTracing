@@ -1,4 +1,5 @@
 #include "Log.hpp"
+#include "Ray.hpp"
 #include "Vulkan/VulkanTypes.hpp"
 // Vendor
 #include <Vendor/stb_image_write.h>
@@ -6,13 +7,33 @@
 
 #define CHANNEL_NUM 3
 
+static cstring image_cpu = "image_cpu.png";
+static cstring image_gpu = "image_gpu.png";
+
+static bool HitSphere(const Point3 &center, real radius, const Ray &r) {
+  Vec3 oc = center - r.Origin();
+  real a = Dot(r.Direction(), r.Direction());
+  real b = -2.0 * Dot(r.Direction(), oc);
+  real c = Dot(oc, oc) - radius * radius;
+  real discriminant = b * b - 4 * a * c;
+  return (discriminant >= 0);
+}
+
+static Color RayColor(const Ray &r) {
+  if (HitSphere(Point3(0, 0, -1), 0.5, r))
+    return Color(1, 0, 0);
+  Vec3 unitDirection = UnitVector(r.Direction());
+  real a = 0.5 * (unitDirection.y() + 1.0);
+  return (1.0 - a) * Color(1.0, 1.0, 1.0) + a * Color(0.5, 0.7, 1.0);
+}
+
 int main(int argc, cstring *argv) {
   using namespace hlx;
   Logger logger;
 
   bool useCPU = false;
   bool useGPU = false;
-  for (u32 i = 1; i < argc; ++i) {
+  for (i32 i = 1; i < argc; ++i) {
     if (!strcmp(argv[i], "-cpu")) {
       useCPU = true;
     } else if (!strcmp(argv[i], "-gpu")) {
@@ -29,23 +50,50 @@ int main(int argc, cstring *argv) {
   }
 
   // Image
-  u32 imageWidth = 256;
-  u32 imageHeight = 256;
+  real aspectRatio = 16.0 / 9.0;
+  u32 imageWidth = 400;
+  // Calculate the image height, and ensure that it's at least 1.
+  u32 imageHeight = u32(imageWidth / aspectRatio);
+  imageHeight = (imageHeight < 1) ? 1 : imageHeight;
+
+  // Camera
+  real focalLength = 1.0;
+  real viewportHeight = 2.0;
+  real viewportWidth = viewportHeight * (real(imageWidth) / imageHeight);
+  Point3 cameraCenter = Point3(0, 0, 0);
+
+  // Calculate the vectors across the horizontal and down the vertical viewport
+  // edges.
+  Vec3 viewportU = Vec3(viewportWidth, 0, 0);
+  Vec3 viewportV = Vec3(0, -viewportHeight, 0);
+
+  // Calculate the horizontal and vertical delta vectors from pixel to pixel.
+  Vec3 pixelDeltaU = viewportU / imageWidth;
+  Vec3 pixelDeltaV = viewportV / imageHeight;
+
+  // Calculate the location of the upper left pixel.
+  Vec3 viewportUpperLeft =
+      cameraCenter - Vec3(0, 0, focalLength) - viewportU / 2 - viewportV / 2;
+  Vec3 pixel00Loc = viewportUpperLeft + 0.5 * (pixelDeltaU + pixelDeltaV);
+
   u8 *pixels = new u8[imageWidth * imageHeight * CHANNEL_NUM];
 
   if (useCPU) {
     // Render
     u32 index = 0;
-    for (int j = 0; j < imageHeight; j++) {
+    for (u32 j = 0; j < imageHeight; j++) {
       std::clog << "\rScanlines remaining: " << (imageHeight - j) << ' '
                 << std::flush;
-      for (int i = 0; i < imageWidth; i++) {
-        f64 r = f64(i) / (imageWidth - 1);
-        f64 g = f64(j) / (imageHeight - 1);
-        f64 b = 0.0;
-        i32 ir = i32(255.99 * r);
-        i32 ig = i32(255.99 * g);
-        i32 ib = i32(255.99 * b);
+      for (u32 i = 0; i < imageWidth; i++) {
+        Vec3 pixelCenter = pixel00Loc + (i * pixelDeltaU) + (j * pixelDeltaV);
+        Vec3 rayDirection = pixelCenter - cameraCenter;
+
+        Ray r(cameraCenter, rayDirection);
+
+        Color pixelColor = RayColor(r);
+        i32 ir = i32(255.99 * pixelColor.x());
+        i32 ig = i32(255.99 * pixelColor.y());
+        i32 ib = i32(255.99 * pixelColor.z());
 
         pixels[index++] = ir;
         pixels[index++] = ig;
@@ -54,6 +102,7 @@ int main(int argc, cstring *argv) {
     }
     std::clog << "\rDone.                 \n";
   } else {
+
     VkContext ctx;
     ctx.Init();
 
@@ -131,6 +180,10 @@ int main(int argc, cstring *argv) {
     pipelineLayoutInfo.setLayoutCount = 1;
     pipelineLayoutInfo.pSetLayouts = &vkSetLayout;
     struct ShaderPushConstant {
+      f32 pixel00Loc[4];
+      f32 pixelDeltaU[4];
+      f32 pixelDeltaV[4];
+      f32 cameraCenter[4];
       u32 imageWidth;
       u32 imageHeight;
     };
@@ -218,7 +271,13 @@ int main(int argc, cstring *argv) {
     vkCmdPushDescriptorSetKHR(vkCommandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,
                               vkPipelineLayout, 0, 1, &descriptorWrite);
 
-    ShaderPushConstant pushConstant{imageWidth, imageHeight};
+    ShaderPushConstant pushConstant{};
+    Vec3::SetFloat4(pushConstant.pixel00Loc, pixel00Loc);
+    Vec3::SetFloat4(pushConstant.pixelDeltaU, pixelDeltaU);
+    Vec3::SetFloat4(pushConstant.pixelDeltaV, pixelDeltaV);
+    Vec3::SetFloat4(pushConstant.cameraCenter, cameraCenter);
+    pushConstant.imageWidth = imageWidth;
+    pushConstant.imageHeight = imageHeight;
 
     vkCmdPushConstants(vkCommandBuffer, vkPipelineLayout,
                        VK_SHADER_STAGE_COMPUTE_BIT, 0,
@@ -295,8 +354,8 @@ int main(int argc, cstring *argv) {
                  &imageBuffer.pMappedData);
     u32 index = 0;
     u32 bufferIndex = 0;
-    for (int j = 0; j < imageHeight; j++) {
-      for (int i = 0; i < imageWidth; i++) {
+    for (u32 j = 0; j < imageHeight; j++) {
+      for (u32 i = 0; i < imageWidth; i++) {
         f32 r = ((f32 *)imageBuffer.pMappedData)[bufferIndex++];
         f32 g = ((f32 *)imageBuffer.pMappedData)[bufferIndex++];
         f32 b = ((f32 *)imageBuffer.pMappedData)[bufferIndex++];
@@ -326,8 +385,8 @@ int main(int argc, cstring *argv) {
     ctx.Shutdown();
   }
 
-  if (!stbi_write_png("image.png", imageWidth, imageHeight, CHANNEL_NUM, pixels,
-                      imageWidth * CHANNEL_NUM)) {
+  if (!stbi_write_png(useCPU ? image_cpu : image_gpu, imageWidth, imageHeight,
+                      CHANNEL_NUM, pixels, imageWidth * CHANNEL_NUM)) {
     HERROR("Failed to write to file: {}", "image.png");
     return 1;
   }

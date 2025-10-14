@@ -64,10 +64,13 @@ bool CompileShader(const std::string &path, const std::string &shaderName,
   std::string compilerPath =
       std::string("\"") + vulkanSdk + "\\Bin\\slangc.exe\"";
   std::string args = " " + shaderName +
-                     " -target spirv -profile spirv_1_4 -emit-spirv-directly "
+                     " -target spirv -profile spirv_1_3 -emit-spirv-directly "
                      "-fvk-use-entrypoint-name -entry computeMain " +
                      " -o Spirv/" + outputName;
   std::string command = compilerPath + args;
+  if (generateDebugSymbols) {
+    command += " -g";
+  }
 
   try {
     std::filesystem::current_path(shaderPath);
