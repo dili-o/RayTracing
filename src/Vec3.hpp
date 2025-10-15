@@ -35,7 +35,7 @@ public:
     return *this;
   }
 
-  static void SetFloat4(f32 float4[4], const Vec3 &vec) {
+  static void set_float4(f32 float4[4], const Vec3 &vec) {
     float4[0] = vec.x();
     float4[1] = vec.y();
     float4[2] = vec.z();
@@ -43,9 +43,11 @@ public:
 
   Vec3 &operator/=(real t) { return *this *= 1 / t; }
 
-  real Length() const { return std::sqrt(LengthSquared()); }
+  real length() const { return std::sqrt(length_squared()); }
 
-  real LengthSquared() const { return e[0] * e[0] + e[1] * e[1] + e[2] * e[2]; }
+  real length_squared() const {
+    return e[0] * e[0] + e[1] * e[1] + e[2] * e[2];
+  }
 };
 
 // Point3 is just an alias for Vec3, but useful for geometric clarity in the
@@ -79,16 +81,16 @@ inline Vec3 operator*(const Vec3 &v, real t) { return t * v; }
 
 inline Vec3 operator/(const Vec3 &v, real t) { return (1 / t) * v; }
 
-inline real Dot(const Vec3 &u, const Vec3 &v) {
+inline real dot(const Vec3 &u, const Vec3 &v) {
   return u.e[0] * v.e[0] + u.e[1] * v.e[1] + u.e[2] * v.e[2];
 }
 
-inline Vec3 Cross(const Vec3 &u, const Vec3 &v) {
+inline Vec3 cross(const Vec3 &u, const Vec3 &v) {
   return Vec3(u.e[1] * v.e[2] - u.e[2] * v.e[1],
               u.e[2] * v.e[0] - u.e[0] * v.e[2],
               u.e[0] * v.e[1] - u.e[1] * v.e[0]);
 }
 
-inline Vec3 UnitVector(const Vec3 &v) { return v / v.Length(); }
+inline Vec3 unit_vector(const Vec3 &v) { return v / v.length(); }
 
 #endif

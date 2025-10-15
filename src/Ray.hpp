@@ -10,10 +10,10 @@ public:
   Ray(const Point3 &origin, const Vec3 &direction)
       : orig(origin), dir(direction) {}
 
-  const Point3 &Origin() const { return orig; }
-  const Vec3 &Direction() const { return dir; }
+  const Point3 &origin() const { return orig; }
+  const Vec3 &direction() const { return dir; }
 
-  Point3 At(real t) const { return orig + t * dir; }
+  Point3 at(real t) const { return orig + t * dir; }
 
 private:
   Point3 orig;

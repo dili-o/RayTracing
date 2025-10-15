@@ -1,28 +1,34 @@
+#include "Defines.hpp"
+#include "HittableList.hpp"
 #include "Log.hpp"
-#include "Ray.hpp"
+#include "Sphere.hpp"
 #include "Vulkan/VulkanTypes.hpp"
 // Vendor
+#include <Vendor/renderdoc_app.h>
 #include <Vendor/stb_image_write.h>
-#include <iostream>
+
+RENDERDOC_API_1_6_0 *rdoc_api = nullptr;
+
+void InitRenderDocAPI() {
+  if (HMODULE mod = GetModuleHandleA("renderdoc.dll")) {
+    pRENDERDOC_GetAPI RENDERDOC_GetAPI =
+        (pRENDERDOC_GetAPI)GetProcAddress(mod, "RENDERDOC_GetAPI");
+    if (RENDERDOC_GetAPI)
+      RENDERDOC_GetAPI(eRENDERDOC_API_Version_1_6_0, (void **)&rdoc_api);
+  }
+}
 
 #define CHANNEL_NUM 3
 
 static cstring image_cpu = "image_cpu.png";
 static cstring image_gpu = "image_gpu.png";
 
-static bool HitSphere(const Point3 &center, real radius, const Ray &r) {
-  Vec3 oc = center - r.Origin();
-  real a = Dot(r.Direction(), r.Direction());
-  real b = -2.0 * Dot(r.Direction(), oc);
-  real c = Dot(oc, oc) - radius * radius;
-  real discriminant = b * b - 4 * a * c;
-  return (discriminant >= 0);
-}
-
-static Color RayColor(const Ray &r) {
-  if (HitSphere(Point3(0, 0, -1), 0.5, r))
-    return Color(1, 0, 0);
-  Vec3 unitDirection = UnitVector(r.Direction());
+static Color ray_color(const Ray &r, const Hittable &world) {
+  HitRecord rec;
+  if (world.hit(r, 0, infinity, rec)) {
+    return 0.5 * (rec.normal + Color(1, 1, 1));
+  }
+  Vec3 unitDirection = unit_vector(r.direction());
   real a = 0.5 * (unitDirection.y() + 1.0);
   return (1.0 - a) * Color(1.0, 1.0, 1.0) + a * Color(0.5, 0.7, 1.0);
 }
@@ -56,6 +62,15 @@ int main(int argc, cstring *argv) {
   u32 imageHeight = u32(imageWidth / aspectRatio);
   imageHeight = (imageHeight < 1) ? 1 : imageHeight;
 
+  // World
+  HittableList world;
+  world.add(make_shared<Sphere>(Point3(0, 0, -1), 0.5));
+  world.add(make_shared<Sphere>(Point3(0, -100.5, -1), 100));
+
+  std::vector<GpuSphere> spheres;
+  spheres.push_back(GpuSphere(Point3(0, 0, -1), 0.5));
+  spheres.push_back(GpuSphere(Point3(0, -100.5, -1), 100));
+
   // Camera
   real focalLength = 1.0;
   real viewportHeight = 2.0;
@@ -77,8 +92,9 @@ int main(int argc, cstring *argv) {
   Vec3 pixel00Loc = viewportUpperLeft + 0.5 * (pixelDeltaU + pixelDeltaV);
 
   u8 *pixels = new u8[imageWidth * imageHeight * CHANNEL_NUM];
-
+  std::chrono::steady_clock::time_point start;
   if (useCPU) {
+    start = std::chrono::high_resolution_clock::now();
     // Render
     u32 index = 0;
     for (u32 j = 0; j < imageHeight; j++) {
@@ -90,10 +106,10 @@ int main(int argc, cstring *argv) {
 
         Ray r(cameraCenter, rayDirection);
 
-        Color pixelColor = RayColor(r);
-        i32 ir = i32(255.99 * pixelColor.x());
-        i32 ig = i32(255.99 * pixelColor.y());
-        i32 ib = i32(255.99 * pixelColor.z());
+        Color pixel_color = ray_color(r, world);
+        i32 ir = i32(255.99 * pixel_color.x());
+        i32 ig = i32(255.99 * pixel_color.y());
+        i32 ib = i32(255.99 * pixel_color.z());
 
         pixels[index++] = ir;
         pixels[index++] = ig;
@@ -144,7 +160,7 @@ int main(int argc, cstring *argv) {
 
     // Pipeline
     if (!CompileShader(SHADER_PATH, "RayTracing.slang", "RayTracing.spv",
-                       VK_SHADER_STAGE_COMPUTE_BIT, false)) {
+                       VK_SHADER_STAGE_COMPUTE_BIT, true)) {
       HERROR("Failed to compile RayTracing.slang!");
     }
 
@@ -158,6 +174,26 @@ int main(int argc, cstring *argv) {
     compShaderStageInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
     compShaderStageInfo.module = compShaderModule;
     compShaderStageInfo.pName = "computeMain";
+
+    // Spheres buffer
+    VulkanBuffer spheresBuffer{};
+    util::CreateVmaBuffer(ctx.vmaAllocator, ctx.vkDevice, spheresBuffer,
+                          sizeof(GpuSphere) * spheres.size(),
+                          VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                              VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                          VMA_MEMORY_USAGE_UNKNOWN, 0,
+                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    ctx.SetResourceName(VK_OBJECT_TYPE_BUFFER, (u64)spheresBuffer.vkHandle,
+                        "spheresBuffer");
+    // Uniform buffer
+    VulkanBuffer uniformBuffer{};
+    util::CreateVmaBuffer(
+        ctx.vmaAllocator, ctx.vkDevice, uniformBuffer, sizeof(VkDeviceAddress),
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+        VMA_MEMORY_USAGE_UNKNOWN, 0, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    ctx.SetResourceName(VK_OBJECT_TYPE_BUFFER, (u64)uniformBuffer.vkHandle,
+                        "uniformBuffer");
+
     // Descriptor Set layout
     VkDescriptorSetLayout vkSetLayout;
     VkDescriptorSetLayoutBinding outImageBinding{};
@@ -166,11 +202,20 @@ int main(int argc, cstring *argv) {
     outImageBinding.descriptorCount = 1;
     outImageBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
+    VkDescriptorSetLayoutBinding uniformBinding{};
+    uniformBinding.binding = 1;
+    uniformBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    uniformBinding.descriptorCount = 1;
+    uniformBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+    VkDescriptorSetLayoutBinding bindings[2] = {outImageBinding,
+                                                uniformBinding};
+
     VkDescriptorSetLayoutCreateInfo layoutInfo{
         VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
     layoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
-    layoutInfo.bindingCount = 1;
-    layoutInfo.pBindings = &outImageBinding;
+    layoutInfo.bindingCount = ArraySize(bindings);
+    layoutInfo.pBindings = bindings;
     VK_CHECK(vkCreateDescriptorSetLayout(
         ctx.vkDevice, &layoutInfo, ctx.vkAllocationCallbacks, &vkSetLayout));
     // Pipeline layout
@@ -179,6 +224,7 @@ int main(int argc, cstring *argv) {
         VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
     pipelineLayoutInfo.setLayoutCount = 1;
     pipelineLayoutInfo.pSetLayouts = &vkSetLayout;
+
     struct ShaderPushConstant {
       f32 pixel00Loc[4];
       f32 pixelDeltaU[4];
@@ -186,6 +232,7 @@ int main(int argc, cstring *argv) {
       f32 cameraCenter[4];
       u32 imageWidth;
       u32 imageHeight;
+      u32 sphereCount;
     };
 
     VkPushConstantRange pushRange{};
@@ -225,11 +272,20 @@ int main(int argc, cstring *argv) {
     cbAllocInfo.commandBufferCount = 1;
     VK_CHECK(
         vkAllocateCommandBuffers(ctx.vkDevice, &cbAllocInfo, &vkCommandBuffer));
+    // Transfer data to Spheres buffer
+    ctx.CopyToBuffer(spheresBuffer.vkHandle, 0, spheresBuffer.size,
+                     spheres.data(), vkCommandPool);
+    // Transfer data to Uniform buffer
+    ctx.CopyToBuffer(uniformBuffer.vkHandle, 0, uniformBuffer.size,
+                     &spheresBuffer.deviceAddress, vkCommandPool);
 
     // Rendering
     VkCommandBufferBeginInfo beginInfo{
         VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     VK_CHECK(vkBeginCommandBuffer(vkCommandBuffer, &beginInfo));
+    InitRenderDocAPI();
+    if (rdoc_api)
+      rdoc_api->StartFrameCapture(nullptr, nullptr);
 
     // Pipeline Barrier
     VkImageMemoryBarrier2 imageBarrier{
@@ -260,24 +316,43 @@ int main(int argc, cstring *argv) {
     descritorImageInfo.imageView = imageView.vkHandle;
     descritorImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 
-    VkWriteDescriptorSet descriptorWrite{
+    VkDescriptorBufferInfo descritorBufferInfo{};
+    descritorBufferInfo.buffer = uniformBuffer.vkHandle;
+    descritorBufferInfo.offset = 0;
+    descritorBufferInfo.range = uniformBuffer.size;
+
+    VkWriteDescriptorSet imageDescriptorWrite{
         VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-    descriptorWrite.dstSet = VK_NULL_HANDLE;
-    descriptorWrite.dstBinding = 0;
-    descriptorWrite.dstArrayElement = 0;
-    descriptorWrite.descriptorCount = 1;
-    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-    descriptorWrite.pImageInfo = &descritorImageInfo;
+    imageDescriptorWrite.dstSet = VK_NULL_HANDLE;
+    imageDescriptorWrite.dstBinding = 0;
+    imageDescriptorWrite.dstArrayElement = 0;
+    imageDescriptorWrite.descriptorCount = 1;
+    imageDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    imageDescriptorWrite.pImageInfo = &descritorImageInfo;
+
+    VkWriteDescriptorSet bufferDescriptorWrite{
+        VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+    bufferDescriptorWrite.dstSet = VK_NULL_HANDLE;
+    bufferDescriptorWrite.dstBinding = 1;
+    bufferDescriptorWrite.dstArrayElement = 0;
+    bufferDescriptorWrite.descriptorCount = 1;
+    bufferDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    bufferDescriptorWrite.pBufferInfo = &descritorBufferInfo;
+
+    VkWriteDescriptorSet descriptorWrites[2] = {imageDescriptorWrite,
+                                                bufferDescriptorWrite};
     vkCmdPushDescriptorSetKHR(vkCommandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,
-                              vkPipelineLayout, 0, 1, &descriptorWrite);
+                              vkPipelineLayout, 0, ArraySize(descriptorWrites),
+                              descriptorWrites);
 
     ShaderPushConstant pushConstant{};
-    Vec3::SetFloat4(pushConstant.pixel00Loc, pixel00Loc);
-    Vec3::SetFloat4(pushConstant.pixelDeltaU, pixelDeltaU);
-    Vec3::SetFloat4(pushConstant.pixelDeltaV, pixelDeltaV);
-    Vec3::SetFloat4(pushConstant.cameraCenter, cameraCenter);
+    Vec3::set_float4(pushConstant.pixel00Loc, pixel00Loc);
+    Vec3::set_float4(pushConstant.pixelDeltaU, pixelDeltaU);
+    Vec3::set_float4(pushConstant.pixelDeltaV, pixelDeltaV);
+    Vec3::set_float4(pushConstant.cameraCenter, cameraCenter);
     pushConstant.imageWidth = imageWidth;
     pushConstant.imageHeight = imageHeight;
+    pushConstant.sphereCount = world.objects.size();
 
     vkCmdPushConstants(vkCommandBuffer, vkPipelineLayout,
                        VK_SHADER_STAGE_COMPUTE_BIT, 0,
@@ -311,6 +386,8 @@ int main(int argc, cstring *argv) {
                           VMA_MEMORY_USAGE_UNKNOWN, 0,
                           VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
                               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+    ctx.SetResourceName(VK_OBJECT_TYPE_BUFFER, (u64)imageBuffer.vkHandle,
+                        "imageBuffer");
     VkBufferImageCopy2 copyRegion{VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2};
     copyRegion.bufferOffset = 0;
     copyRegion.bufferRowLength = 0;   // tightly packed
@@ -348,6 +425,8 @@ int main(int argc, cstring *argv) {
         vkQueueSubmit(ctx.vkGraphicsQueue, 1, &submitInfo, VK_NULL_HANDLE));
 
     vkQueueWaitIdle(ctx.vkGraphicsQueue);
+    if (rdoc_api)
+      rdoc_api->EndFrameCapture(nullptr, nullptr);
 
     // Copy mapped buffer to pixels array
     vmaMapMemory(ctx.vmaAllocator, imageBuffer.vmaAllocation,
@@ -379,11 +458,18 @@ int main(int argc, cstring *argv) {
     vkDestroyPipeline(ctx.vkDevice, vkPipeline, nullptr);
     vkDestroyDescriptorSetLayout(ctx.vkDevice, vkSetLayout, nullptr);
     vkDestroyShaderModule(ctx.vkDevice, compShaderModule, nullptr);
+    util::DestroyVmaBuffer(ctx.vmaAllocator, spheresBuffer);
+    util::DestroyVmaBuffer(ctx.vmaAllocator, uniformBuffer);
     util::DestroyVmaBuffer(ctx.vmaAllocator, imageBuffer);
     util::DestroyVmaImage(ctx.vmaAllocator, image);
     util::DestroyImageView(ctx.vkDevice, ctx.vkAllocationCallbacks, imageView);
     ctx.Shutdown();
   }
+
+  auto end = std::chrono::high_resolution_clock::now();
+
+  double seconds = std::chrono::duration<double>(end - start).count();
+  std::cout << "Total time: " << seconds << " seconds\n";
 
   if (!stbi_write_png(useCPU ? image_cpu : image_gpu, imageWidth, imageHeight,
                       CHANNEL_NUM, pixels, imageWidth * CHANNEL_NUM)) {

@@ -128,6 +128,7 @@ void CreateBuffer(VkPhysicalDevice physicalDevice, VkDevice device,
 
   buffer.usage = usage;
   buffer.properties = properties;
+  buffer.size = size;
   buffer.pMappedData = nullptr;
   buffer.deviceAddress = 0;
 
@@ -172,6 +173,7 @@ void CreateVmaBuffer(VmaAllocator vmaAllocator, VkDevice device,
   buffer.vmaMemoryUsage = vmaUsage;
   buffer.pMappedData = nullptr;
   buffer.deviceAddress = 0;
+  buffer.size = size;
 
   buffer.deviceMemory = VK_NULL_HANDLE;
 
@@ -437,7 +439,6 @@ bool VkContext::Init() {
 
   std::vector<cstring> deviceExtensions{};
   deviceExtensions.push_back(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME);
-  deviceExtensions.push_back(VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME);
 
   // Create Physical Device
   if (!SelectPhysicalDevice(vkInstance, vkPhysicalDevice,
@@ -695,7 +696,7 @@ void VkContext::CopyToBuffer(VkBuffer dstBuffer, VkDeviceSize dstOffset,
                      dstOffset, dstBuffer);
 
   util::EndSingleTimeCommandBuffer(vkDevice, singleTimeBuffer, commandPool,
-                                   vkTransferQueue);
+                                   vkGraphicsQueue);
 
   DestroyBuffer(stagingBuffer);
 }

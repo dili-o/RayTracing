@@ -31,6 +31,7 @@ struct HLX_API VulkanBuffer {
   VkBufferUsageFlags usage;
   VkDeviceAddress deviceAddress;
   VkMemoryPropertyFlags properties;
+  VkDeviceSize size;
 };
 
 struct HLX_API VulkanImage {
