@@ -80,13 +80,13 @@ typedef float real;
 
 // Constants
 const real infinity = std::numeric_limits<real>::infinity();
-const real pi = 3.1415926535897932385;
+const real pi = 3.1415926535897932385f;
 
 // Utility Functions
-inline real degrees_to_radians(real degrees) { return degrees * pi / 180.0; }
+inline real degrees_to_radians(real degrees) { return degrees * pi / 180.f; }
 
 inline real random_real() {
-  static std::uniform_real_distribution<real> distribution(0.0, 1.0);
+  static std::uniform_real_distribution<real> distribution(0.f, 1.f);
   static std::mt19937 generator;
   return distribution(generator);
 }

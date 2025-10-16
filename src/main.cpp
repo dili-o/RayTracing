@@ -1,3 +1,4 @@
+#include "Camera.hpp"
 #include "Defines.hpp"
 #include "HittableList.hpp"
 #include "Log.hpp"
@@ -23,65 +24,6 @@ void InitRenderDocAPI() {
 static cstring image_cpu = "image_cpu.png";
 static cstring image_gpu = "image_gpu.png";
 
-static u32 samples_per_pixel = 100;
-static real pixel_samples_scale = 1.0 / samples_per_pixel;
-// Image
-real aspect_ratio = 16.0 / 9.0;
-u32 image_width = 400;
-// Calculate the image height, and ensure that it's at least 1.
-u32 image_height = u32(image_width / aspect_ratio);
-// image_height = (image_height < 1) ? 1 : image_height;
-real focal_length = 1.0;
-real viewport_height = 2.0;
-real viewport_width = viewport_height * (real(image_width) / image_height);
-Point3 camera_center = Point3(0, 0, 0);
-
-// Calculate the vectors across the horizontal and down the vertical viewport
-// edges.
-Vec3 viewport_u = Vec3(viewport_width, 0, 0);
-Vec3 viewport_v = Vec3(0, -viewport_height, 0);
-
-// Calculate the horizontal and vertical delta vectors from pixel to pixel.
-Vec3 pixel_delta_u = viewport_u / image_width;
-Vec3 pixel_delta_v = viewport_v / image_height;
-
-// Calculate the location of the upper left pixel.
-Vec3 viewport_upperLeft =
-    camera_center - Vec3(0, 0, focal_length) - viewport_u / 2 - viewport_v / 2;
-Vec3 pixel00_loc = viewport_upperLeft + 0.5 * (pixel_delta_u + pixel_delta_v);
-
-static const Interval intensity(0.000, 0.999);
-
-static Color ray_color(const Ray &r, const Hittable &world) {
-  HitRecord rec;
-  if (world.hit(r, Interval(0.0, infinity), rec)) {
-    return 0.5 * (rec.normal + Color(1, 1, 1));
-  }
-  Vec3 unitDirection = unit_vector(r.direction());
-  real a = 0.5 * (unitDirection.y() + 1.0);
-  return (1.0 - a) * Color(1.0, 1.0, 1.0) + a * Color(0.5, 0.7, 1.0);
-}
-
-static Vec3 sample_square() {
-  // Returns the vector to a random point in the [-.5,-.5]-[+.5,+.5] unit
-  // square.
-  return Vec3(random_real() - 0.5, random_real() - 0.5, 0);
-}
-
-static Ray get_ray(i32 i, i32 j) {
-  // Construct a camera ray originating from the origin and directed at randomly
-  // sampled point around the pixel location i, j.
-
-  Vec3 offset = sample_square();
-  Vec3 pixel_sample = pixel00_loc + ((i + offset.x()) * pixel_delta_u) +
-                      ((j + offset.y()) * pixel_delta_v);
-
-  Vec3 ray_origin = camera_center;
-  Vec3 ray_direction = pixel_sample - ray_origin;
-
-  return Ray(ray_origin, ray_direction);
-}
-
 int main(int argc, cstring *argv) {
   using namespace hlx;
   Logger logger;
@@ -106,45 +48,23 @@ int main(int argc, cstring *argv) {
 
   // World
   HittableList world;
-  world.add(make_shared<Sphere>(Point3(0, 0, -1), 0.5));
-  world.add(make_shared<Sphere>(Point3(0, -100.5, -1), 100));
+  world.add(make_shared<Sphere>(Point3(0.f, 0.f, -1.f), 0.5f));
+  world.add(make_shared<Sphere>(Point3(0.f, -100.5f, -1), 100.f));
 
   std::vector<GpuSphere> spheres;
-  spheres.push_back(GpuSphere(Point3(0, 0, -1), 0.5));
-  spheres.push_back(GpuSphere(Point3(0, -100.5, -1), 100));
+  spheres.push_back(GpuSphere(Point3(0.f, 0.f, -1.f), 0.5f));
+  spheres.push_back(GpuSphere(Point3(0.f, -100.5f, -1.f), 100.f));
 
-  u8 *pixels = new u8[image_width * image_height * CHANNEL_NUM];
+  Camera camera;
+  camera.initialize(384, 16.f / 9.f, 30);
+
+  u8 *pixels = new u8[camera.image_width * camera.image_height * CHANNEL_NUM];
   std::chrono::steady_clock::time_point start;
+
   if (useCPU) {
     start = std::chrono::high_resolution_clock::now();
     // Render
-    u32 index = 0;
-    for (u32 j = 0; j < image_height; j++) {
-      std::clog << "\rScanlines remaining: " << (image_height - j) << ' '
-                << std::flush;
-      for (u32 i = 0; i < image_width; i++) {
-        Color pixel_color(0, 0, 0);
-        for (u32 sample = 0; sample < samples_per_pixel; ++sample) {
-
-          Ray r = get_ray(i, j);
-
-          pixel_color += ray_color(r, world);
-        }
-        pixel_color *= pixel_samples_scale;
-
-        real r = pixel_color.x();
-        real g = pixel_color.y();
-        real b = pixel_color.z();
-
-        i32 ir = i32(256 * intensity.clamp(r));
-        i32 ig = i32(256 * intensity.clamp(g));
-        i32 ib = i32(256 * intensity.clamp(b));
-
-        pixels[index++] = ir;
-        pixels[index++] = ig;
-        pixels[index++] = ib;
-      }
-    }
+    camera.render(world, pixels);
     std::clog << "\rDone.                 \n";
   } else {
     start = std::chrono::high_resolution_clock::now();
@@ -156,7 +76,7 @@ int main(int argc, cstring *argv) {
     VkImageCreateInfo imageCreateInfo{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
     imageCreateInfo.imageType = VK_IMAGE_TYPE_2D;
     imageCreateInfo.format = imageFormat;
-    imageCreateInfo.extent = {image_width, image_height, 1};
+    imageCreateInfo.extent = {camera.image_width, camera.image_height, 1};
     imageCreateInfo.mipLevels = 1;
     imageCreateInfo.arrayLayers = 1;
     imageCreateInfo.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -380,21 +300,22 @@ int main(int argc, cstring *argv) {
                               descriptorWrites);
 
     ShaderPushConstant pushConstant{};
-    Vec3::set_float4(pushConstant.pixel00_loc, pixel00_loc);
-    Vec3::set_float4(pushConstant.pixel_delta_u, pixel_delta_u);
-    Vec3::set_float4(pushConstant.pixel_delta_v, pixel_delta_v);
-    Vec3::set_float4(pushConstant.camera_center, camera_center);
-    pushConstant.image_width = image_width;
-    pushConstant.image_height = image_height;
-    pushConstant.sphere_count = world.objects.size();
-    pushConstant.samples_per_pixel = samples_per_pixel;
-    pushConstant.pixel_samples_scale = pixel_samples_scale;
+    Vec3::set_float4(pushConstant.pixel00_loc, camera.pixel00_loc);
+    Vec3::set_float4(pushConstant.pixel_delta_u, camera.pixel_delta_u);
+    Vec3::set_float4(pushConstant.pixel_delta_v, camera.pixel_delta_v);
+    Vec3::set_float4(pushConstant.camera_center, camera.center);
+    pushConstant.image_width = camera.image_width;
+    pushConstant.image_height = camera.image_height;
+    pushConstant.sphere_count = (u32)world.objects.size();
+    pushConstant.samples_per_pixel = camera.samples_per_pixel;
+    pushConstant.pixel_samples_scale = camera.pixel_samples_scale;
 
     vkCmdPushConstants(vkCommandBuffer, vkPipelineLayout,
                        VK_SHADER_STAGE_COMPUTE_BIT, 0,
                        sizeof(ShaderPushConstant), &pushConstant);
 
-    vkCmdDispatch(vkCommandBuffer, image_width / 8, image_height / 8, 1);
+    vkCmdDispatch(vkCommandBuffer, camera.image_width / 8,
+                  camera.image_height / 8, 1);
 
     // Pipeline Barrier
     imageBarrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
@@ -416,12 +337,12 @@ int main(int argc, cstring *argv) {
 
     // Copy result into buffer
     VulkanBuffer imageBuffer{};
-    util::CreateVmaBuffer(ctx.vmaAllocator, ctx.vkDevice, imageBuffer,
-                          image_width * image_height * 4 * 4,
-                          VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                          VMA_MEMORY_USAGE_UNKNOWN, 0,
-                          VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
-                              VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+    util::CreateVmaBuffer(
+        ctx.vmaAllocator, ctx.vkDevice, imageBuffer,
+        camera.image_width * camera.image_height * sizeof(f32) * 4,
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_UNKNOWN, 0,
+        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
     ctx.SetResourceName(VK_OBJECT_TYPE_BUFFER, (u64)imageBuffer.vkHandle,
                         "imageBuffer");
     VkBufferImageCopy2 copyRegion{VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2};
@@ -433,7 +354,7 @@ int main(int argc, cstring *argv) {
     copyRegion.imageSubresource.baseArrayLayer = 0;
     copyRegion.imageSubresource.layerCount = 1;
     copyRegion.imageOffset = {0, 0, 0};
-    copyRegion.imageExtent = {image_width, image_height, 1};
+    copyRegion.imageExtent = {camera.image_width, camera.image_height, 1};
 
     VkCopyImageToBufferInfo2 copyInfo{
         VK_STRUCTURE_TYPE_COPY_IMAGE_TO_BUFFER_INFO_2};
@@ -469,16 +390,16 @@ int main(int argc, cstring *argv) {
                  &imageBuffer.pMappedData);
     u32 index = 0;
     u32 bufferIndex = 0;
-    for (u32 j = 0; j < image_height; j++) {
-      for (u32 i = 0; i < image_width; i++) {
+    for (u32 j = 0; j < camera.image_height; j++) {
+      for (u32 i = 0; i < camera.image_width; i++) {
         f32 r = ((f32 *)imageBuffer.pMappedData)[bufferIndex++];
         f32 g = ((f32 *)imageBuffer.pMappedData)[bufferIndex++];
         f32 b = ((f32 *)imageBuffer.pMappedData)[bufferIndex++];
         bufferIndex++; // Extra increment because of 4 components
 
-        i32 ir = i32(256 * intensity.clamp(r));
-        i32 ig = i32(256 * intensity.clamp(g));
-        i32 ib = i32(256 * intensity.clamp(b));
+        i32 ir = i32(255.99f * r);
+        i32 ig = i32(255.99f * g);
+        i32 ib = i32(255.99f * b);
 
         pixels[index++] = ir;
         pixels[index++] = ig;
@@ -507,9 +428,18 @@ int main(int argc, cstring *argv) {
   double seconds = std::chrono::duration<double>(end - start).count();
   std::cout << "Total time: " << seconds << " seconds\n";
 
-  if (!stbi_write_png(useCPU ? image_cpu : image_gpu, image_width, image_height,
-                      CHANNEL_NUM, pixels, image_width * CHANNEL_NUM)) {
+  if (!stbi_write_png(useCPU ? image_cpu : image_gpu, camera.image_width,
+                      camera.image_height, CHANNEL_NUM, pixels,
+                      camera.image_width * CHANNEL_NUM)) {
     HERROR("Failed to write to file: {}", "image.png");
     return 1;
   }
+  if (!rdoc_api)
+    ShellExecuteA(nullptr,                        // parent window (none)
+                  "open",                         // operation
+                  useCPU ? image_cpu : image_gpu, // file to open
+                  nullptr,                        // parameters (none)
+                  nullptr,                        // default directory
+                  SW_SHOW                         // show the window
+    );
 }

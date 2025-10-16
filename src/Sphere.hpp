@@ -7,7 +7,7 @@
 class Sphere : public Hittable {
 public:
   Sphere(const Point3 &center, real radius)
-      : center(center), radius(std::fmax(0, radius)) {}
+      : center(center), radius(std::fmax(0.f, radius)) {}
 
   bool hit(const Ray &r, Interval ray_t, HitRecord &rec) const override {
     Vec3 oc = center - r.origin();

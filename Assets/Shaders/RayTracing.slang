@@ -1,6 +1,5 @@
-#include "Ray.slang"
-#include "Sphere.slang"
 #include "Random.slang"
+#include "World.slang"
 
 struct ShaderPushConstant {
   float4 pixel00_loc;   // 16 
@@ -34,33 +33,22 @@ void computeMain(uint3 dispatch_thread_id : SV_DispatchThreadID,
     int2 pixel_coord  = int2(dispatch_thread_id.xy);
 
     if (pixel_coord.x < pc.image_width && pixel_coord.y < pc.image_height) {
-      float3 ray_origin = pc.camera_center.xyz;
       float3 ray_color = float3(0.f);
-
-      // Sample random direction
       uint seed = pixel_coord.x + pixel_coord.y * 1973u;
+
       for (uint sample = 0; sample < pc.samples_per_pixel; ++sample) {
         float2 jitter = float2(rand(seed), rand(seed));
-        float3 pixel_sample = pc.pixel00_loc.xyz
-                              + ((pixel_coord.x + jitter.x) * pc.pixel_delta_u.xyz)
-                              + ((pixel_coord.y + jitter.y) * pc.pixel_delta_v.xyz);
-        float3 ray_direction = pixel_sample - ray_origin;
 
-        // Test ray against all spheres
-        Ray r = Ray(ray_origin, ray_direction);
-        HitRecord rec;
+        float3 pixel_sample = pc.pixel00_loc.xyz +
+                            ((pixel_coord.x + jitter.x) * pc.pixel_delta_u.xyz) +
+                            ((pixel_coord.y + jitter.y) * pc.pixel_delta_v.xyz);
+        float3 ray_direction = pixel_sample - pc.camera_center.xyz;
+
+        Ray r = Ray(pc.camera_center.xyz, ray_direction);
         Interval ray_t = Interval(0.f, 1000.f);
-        bool hit_sphere = false;
-        float closest_so_far = ray_t.max;
-        for (uint i = 0; i < pc.sphere_count; ++i) {
-          Sphere sphere = uniform_buffer[0].spheres[i];
-          if(sphere_hit(sphere, r, Interval(ray_t.min, closest_so_far), rec)){
-            hit_sphere = true;
-            closest_so_far = rec.t;
-          }
-        }
-
-        if (hit_sphere) {
+        HitRecord rec;
+        // Test ray against all spheres
+        if (hit_world(r, ray_t, rec, uniform_buffer[0].spheres, pc.sphere_count)) {
           ray_color += 0.5f * (rec.normal + float3(1.f));
         } else {
           float3 unitDirection = normalize(r.direction);
