@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstdlib>
 #include <limits>
+#include <random>
 #include <stdint.h>
 
 #if !defined(_MSC_VER)
@@ -77,13 +79,21 @@ typedef float real;
 #endif
 
 // Constants
-const double infinity = std::numeric_limits<double>::infinity();
-const double pi = 3.1415926535897932385;
+const real infinity = std::numeric_limits<real>::infinity();
+const real pi = 3.1415926535897932385;
 
 // Utility Functions
+inline real degrees_to_radians(real degrees) { return degrees * pi / 180.0; }
 
-inline double degrees_to_radians(double degrees) {
-  return degrees * pi / 180.0;
+inline real random_real() {
+  static std::uniform_real_distribution<real> distribution(0.0, 1.0);
+  static std::mt19937 generator;
+  return distribution(generator);
+}
+
+inline real random_real(real min, real max) {
+  // Returns a random real in [min,max).
+  return min + (max - min) * random_real();
 }
 
 #if defined(_WIN32)

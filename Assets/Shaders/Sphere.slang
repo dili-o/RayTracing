@@ -1,13 +1,13 @@
 #pragma once
 #include "HitRecord.slang"
+#include "Interval.slang"
 
 struct Sphere {
   float3 center;
   float  radius;
 };
 
-bool sphere_hit(in Sphere sphere, in Ray r, float ray_tmin,
-                float ray_tmax, inout HitRecord rec) {
+bool sphere_hit(in Sphere sphere, in Ray r, Interval ray_t, inout HitRecord rec) {
     float3 oc = sphere.center - r.origin;
     float a = dot(r.direction, r.direction);
     float h = dot(r.direction, oc);
@@ -21,9 +21,9 @@ bool sphere_hit(in Sphere sphere, in Ray r, float ray_tmin,
 
     // Find the nearest root that lies in the acceptable range.
     float root = (h - sqrtd) / a;
-    if (root <= ray_tmin || ray_tmax <= root) {
+    if (!ray_t.surrounds(root)) {
       root = (h + sqrtd) / a;
-      if (root <= ray_tmin || ray_tmax <= root)
+      if (!ray_t.surrounds(root))
         return false;
     }
 
