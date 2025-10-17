@@ -1,5 +1,6 @@
 #include "Random.slang"
 #include "World.slang"
+#include "Material.slang"
 
 struct ShaderPushConstant {
   float4 pixel00_loc;   // 16 
@@ -13,11 +14,15 @@ struct ShaderPushConstant {
   uint samples_per_pixel;
 
   float pixel_samples_scale;
-  float padding[3];
+  uint max_depth;
+  float padding[2];
 };
 
 struct Uniforms{
   Sphere *spheres;
+  MaterialLambert *lambert_mats;
+  MaterialMetal *metal_mats;
+  MaterialDielectric *dielectric_mats;
 };
 
 [[vk::binding(0, 0)]]
@@ -33,6 +38,7 @@ void computeMain(uint3 dispatch_thread_id : SV_DispatchThreadID,
     int2 pixel_coord  = int2(dispatch_thread_id.xy);
 
     if (pixel_coord.x < pc.image_width && pixel_coord.y < pc.image_height) {
+      Interval ray_t = Interval(0.001f, 1000.f);
       float3 ray_color = float3(0.f);
       uint seed = pixel_coord.x + pixel_coord.y * 1973u;
 
@@ -45,16 +51,43 @@ void computeMain(uint3 dispatch_thread_id : SV_DispatchThreadID,
         float3 ray_direction = pixel_sample - pc.camera_center.xyz;
 
         Ray r = Ray(pc.camera_center.xyz, ray_direction);
-        Interval ray_t = Interval(0.f, 1000.f);
-        HitRecord rec;
-        // Test ray against all spheres
-        if (hit_world(r, ray_t, rec, uniform_buffer[0].spheres, pc.sphere_count)) {
-          ray_color += 0.5f * (rec.normal + float3(1.f));
-        } else {
-          float3 unitDirection = normalize(r.direction);
-          float a = 0.5f * (unitDirection.y + 1.f);
-          ray_color += (1.f - a) * float3(1.f, 1.f, 1.f) + a * float3(0.5f, 0.7f, 1.f);
+        float3 attenuation = float3(1.f);
+        for (uint d = 0; d < pc.max_depth; ++d) {
+          HitRecord rec;
+          // Test ray against all spheres
+          if (hit_world(r, ray_t, rec, uniform_buffer[0].spheres, pc.sphere_count)) {
+            Ray scattered;
+            float3 material_attenuation = float3(0.f);
+
+            switch (rec.material_type) {
+            case MATERIAL_LAMBERT: {
+                scatter_ray_lambert(seed, uniform_buffer[0].lambert_mats[rec.material_index],
+                    rec, material_attenuation, scattered);
+                break;
+            }
+            case MATERIAL_METALLIC: {
+                scatter_ray_metal(seed, r, uniform_buffer[0].metal_mats[rec.material_index],
+                                  rec, material_attenuation, scattered);
+                break;
+            }
+            case MATERIAL_DIELECTRIC: {
+                scatter_ray_dielectric(seed, r, uniform_buffer[0].dielectric_mats[rec.material_index],
+                                       rec, material_attenuation, scattered);
+                break;
+            }
+            default: break;
+            }
+
+            r = scattered;
+            attenuation *= material_attenuation;
+          } else {
+            float3 unit_direction = normalize(r.direction);
+            float a = 0.5f * (unit_direction.y + 1.f);
+            attenuation *= (1.f - a) * float3(1.f, 1.f, 1.f) + a * float3(0.5f, 0.7f, 1.f);
+            break;
+          }
         }
+        ray_color += attenuation;
       }
 
       ray_color *= pc.pixel_samples_scale;

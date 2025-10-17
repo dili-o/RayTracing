@@ -2,6 +2,7 @@
 #include "Defines.hpp"
 #include "HittableList.hpp"
 #include "Log.hpp"
+#include "Material.hpp"
 #include "Sphere.hpp"
 #include "Vulkan/VulkanTypes.hpp"
 // Vendor
@@ -46,17 +47,47 @@ int main(int argc, cstring *argv) {
     return 1;
   }
 
+  auto material_ground = make_shared<Lambertian>(Color(0.8f, 0.8f, 0.f));
+  auto material_center = make_shared<Lambertian>(Color(0.1f, 0.2f, 0.5f));
+  auto material_left = make_shared<Dielectric>(1.5f);
+  auto material_bubble = make_shared<Dielectric>(1.0f / 1.5f);
+  auto material_right = make_shared<Metal>(Color(0.8f, 0.6f, 0.2f), 1.f);
+
   // World
   HittableList world;
-  world.add(make_shared<Sphere>(Point3(0.f, 0.f, -1.f), 0.5f));
-  world.add(make_shared<Sphere>(Point3(0.f, -100.5f, -1), 100.f));
+  world.add(
+      make_shared<Sphere>(Point3(0.f, -100.5f, -1.f), 100.f, material_ground));
+  world.add(
+      make_shared<Sphere>(Point3(0.f, 0.f, -1.2f), 0.5f, material_center));
+  world.add(make_shared<Sphere>(Point3(-1.f, 0.f, -1.f), 0.5f, material_left));
+  world.add(
+      make_shared<Sphere>(Point3(-1.f, 0.f, -1.f), 0.4f, material_bubble));
+  world.add(make_shared<Sphere>(Point3(1.f, 0.f, -1.f), 0.5f, material_right));
+
+  std::vector<GpuLambert> lambert_materials;
+  lambert_materials.push_back({0.8f, 0.8f, 0.0f, 1.f}); // Ground
+  lambert_materials.push_back({0.1f, 0.2f, 0.5f, 1.f}); // Center
+  std::vector<GpuMetal> metal_materials;
+  // metal_materials.push_back({0.8f, 0.8f, 0.8f, 0.3f}); // Left
+  metal_materials.push_back({0.8f, 0.6f, 0.2f, 1.f}); // Right
+  std::vector<GpuDielectric> dielectric_materials;
+  dielectric_materials.push_back({1.5f});       // Left
+  dielectric_materials.push_back({1.f / 1.5f}); // Bubble
 
   std::vector<GpuSphere> spheres;
-  spheres.push_back(GpuSphere(Point3(0.f, 0.f, -1.f), 0.5f));
-  spheres.push_back(GpuSphere(Point3(0.f, -100.5f, -1.f), 100.f));
+  spheres.push_back(
+      GpuSphere(Point3(0.f, 0.f, -1.2f), 0.5f, 1, GPUMATERIAL_LAMBERT));
+  spheres.push_back(
+      GpuSphere(Point3(-1.f, 0.f, -1.f), 0.5f, 0, GPUMATERIAL_DIELECTRIC));
+  spheres.push_back(
+      GpuSphere(Point3(-1.f, 0.f, -1.f), 0.4f, 1, GPUMATERIAL_DIELECTRIC));
+  spheres.push_back(
+      GpuSphere(Point3(1.f, 0.f, -1.f), 0.5f, 0, GPUMATERIAL_METAL));
+  spheres.push_back(
+      GpuSphere(Point3(0.f, -100.5f, -1.f), 100.f, 0, GPUMATERIAL_LAMBERT));
 
   Camera camera;
-  camera.initialize(384, 16.f / 9.f, 30);
+  camera.initialize(384, 16.f / 9.f, 100, 50, 90);
 
   u8 *pixels = new u8[camera.image_width * camera.image_height * CHANNEL_NUM];
   std::chrono::steady_clock::time_point start;
@@ -134,10 +165,54 @@ int main(int argc, cstring *argv) {
                           VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
     ctx.SetResourceName(VK_OBJECT_TYPE_BUFFER, (u64)spheresBuffer.vkHandle,
                         "spheresBuffer");
+    // Lambert materials buffer
+    VulkanBuffer lambert_buffer{};
+    util::CreateVmaBuffer(ctx.vmaAllocator, ctx.vkDevice, lambert_buffer,
+                          sizeof(GpuLambert) * lambert_materials.size(),
+                          VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                              VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                          VMA_MEMORY_USAGE_UNKNOWN, 0,
+                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    ctx.SetResourceName(VK_OBJECT_TYPE_BUFFER, (u64)lambert_buffer.vkHandle,
+                        "lambert_buffer");
+    // Metal materials buffer
+    VulkanBuffer metal_buffer{};
+    util::CreateVmaBuffer(ctx.vmaAllocator, ctx.vkDevice, metal_buffer,
+                          sizeof(GpuMetal) * metal_materials.size(),
+                          VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                              VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                          VMA_MEMORY_USAGE_UNKNOWN, 0,
+                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    ctx.SetResourceName(VK_OBJECT_TYPE_BUFFER, (u64)metal_buffer.vkHandle,
+                        "metal_buffer");
+    // Dielectric materials buffer
+    VulkanBuffer dielectric_buffer{};
+    util::CreateVmaBuffer(ctx.vmaAllocator, ctx.vkDevice, dielectric_buffer,
+                          sizeof(GpuDielectric) * dielectric_materials.size(),
+                          VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                              VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                          VMA_MEMORY_USAGE_UNKNOWN, 0,
+                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    ctx.SetResourceName(VK_OBJECT_TYPE_BUFFER, (u64)dielectric_buffer.vkHandle,
+                        "dielectric_buffer");
+
+    struct UniformBuffer {
+      VkDeviceAddress spheres;
+      VkDeviceAddress lambert_materials;
+      VkDeviceAddress metal_materials;
+      VkDeviceAddress dielectric_materials;
+    };
+
+    UniformBuffer uniform_buffer_data{};
+    uniform_buffer_data.spheres = spheresBuffer.deviceAddress;
+    uniform_buffer_data.lambert_materials = lambert_buffer.deviceAddress;
+    uniform_buffer_data.metal_materials = metal_buffer.deviceAddress;
+    uniform_buffer_data.dielectric_materials = dielectric_buffer.deviceAddress;
+
     // Uniform buffer
     VulkanBuffer uniformBuffer{};
     util::CreateVmaBuffer(
-        ctx.vmaAllocator, ctx.vkDevice, uniformBuffer, sizeof(VkDeviceAddress),
+        ctx.vmaAllocator, ctx.vkDevice, uniformBuffer, sizeof(UniformBuffer),
         VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
         VMA_MEMORY_USAGE_UNKNOWN, 0, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
     ctx.SetResourceName(VK_OBJECT_TYPE_BUFFER, (u64)uniformBuffer.vkHandle,
@@ -186,7 +261,8 @@ int main(int argc, cstring *argv) {
       u32 samples_per_pixel;
 
       f32 pixel_samples_scale;
-      f32 padding[3];
+      u32 max_depth;
+      f32 padding[2];
     };
 
     VkPushConstantRange pushRange{};
@@ -229,9 +305,15 @@ int main(int argc, cstring *argv) {
     // Transfer data to Spheres buffer
     ctx.CopyToBuffer(spheresBuffer.vkHandle, 0, spheresBuffer.size,
                      spheres.data(), vkCommandPool);
+    ctx.CopyToBuffer(lambert_buffer.vkHandle, 0, lambert_buffer.size,
+                     lambert_materials.data(), vkCommandPool);
+    ctx.CopyToBuffer(metal_buffer.vkHandle, 0, metal_buffer.size,
+                     metal_materials.data(), vkCommandPool);
+    ctx.CopyToBuffer(dielectric_buffer.vkHandle, 0, dielectric_buffer.size,
+                     dielectric_materials.data(), vkCommandPool);
     // Transfer data to Uniform buffer
     ctx.CopyToBuffer(uniformBuffer.vkHandle, 0, uniformBuffer.size,
-                     &spheresBuffer.deviceAddress, vkCommandPool);
+                     &uniform_buffer_data, vkCommandPool);
 
     // Rendering
     VkCommandBufferBeginInfo beginInfo{
@@ -306,9 +388,10 @@ int main(int argc, cstring *argv) {
     Vec3::set_float4(pushConstant.camera_center, camera.center);
     pushConstant.image_width = camera.image_width;
     pushConstant.image_height = camera.image_height;
-    pushConstant.sphere_count = (u32)world.objects.size();
+    pushConstant.sphere_count = (u32)spheres.size();
     pushConstant.samples_per_pixel = camera.samples_per_pixel;
     pushConstant.pixel_samples_scale = camera.pixel_samples_scale;
+    pushConstant.max_depth = camera.max_depth;
 
     vkCmdPushConstants(vkCommandBuffer, vkPipelineLayout,
                        VK_SHADER_STAGE_COMPUTE_BIT, 0,
@@ -397,6 +480,10 @@ int main(int argc, cstring *argv) {
         f32 b = ((f32 *)imageBuffer.pMappedData)[bufferIndex++];
         bufferIndex++; // Extra increment because of 4 components
 
+        r = linear_to_gamma(r);
+        g = linear_to_gamma(g);
+        b = linear_to_gamma(b);
+
         i32 ir = i32(255.99f * r);
         i32 ig = i32(255.99f * g);
         i32 ib = i32(255.99f * b);
@@ -416,6 +503,9 @@ int main(int argc, cstring *argv) {
     vkDestroyDescriptorSetLayout(ctx.vkDevice, vkSetLayout, nullptr);
     vkDestroyShaderModule(ctx.vkDevice, compShaderModule, nullptr);
     util::DestroyVmaBuffer(ctx.vmaAllocator, spheresBuffer);
+    util::DestroyVmaBuffer(ctx.vmaAllocator, lambert_buffer);
+    util::DestroyVmaBuffer(ctx.vmaAllocator, metal_buffer);
+    util::DestroyVmaBuffer(ctx.vmaAllocator, dielectric_buffer);
     util::DestroyVmaBuffer(ctx.vmaAllocator, uniformBuffer);
     util::DestroyVmaBuffer(ctx.vmaAllocator, imageBuffer);
     util::DestroyVmaImage(ctx.vmaAllocator, image);

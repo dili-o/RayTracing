@@ -5,6 +5,10 @@
 struct Sphere {
   float3 center;
   float  radius;
+
+  uint material_index;
+  uint material_type;
+  uint padding[2];
 };
 
 bool sphere_hit(in Sphere sphere, in Ray r, Interval ray_t, inout HitRecord rec) {
@@ -31,6 +35,8 @@ bool sphere_hit(in Sphere sphere, in Ray r, Interval ray_t, inout HitRecord rec)
     rec.p = r.at(rec.t);
     float3 outward_normal = (rec.p - sphere.center) / sphere.radius;
     rec.set_face_normal(r, outward_normal);
+    rec.material_index = sphere.material_index;
+    rec.material_type = sphere.material_type;
 
     return true;
 }

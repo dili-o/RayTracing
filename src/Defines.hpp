@@ -87,13 +87,18 @@ inline real degrees_to_radians(real degrees) { return degrees * pi / 180.f; }
 
 inline real random_real() {
   static std::uniform_real_distribution<real> distribution(0.f, 1.f);
-  static std::mt19937 generator;
+  static std::mt19937 generator(std::random_device{}());
   return distribution(generator);
 }
 
 inline real random_real(real min, real max) {
-  // Returns a random real in [min,max).
   return min + (max - min) * random_real();
+}
+
+inline real linear_to_gamma(real linear_component) {
+  if (linear_component > 0.f)
+    return std::sqrt(linear_component);
+  return 0.f;
 }
 
 #if defined(_WIN32)

@@ -3,8 +3,8 @@
 #include "Ray.slang"
 
 struct HitRecord {
-  float3 p;
-  float3 normal;
+  float3 p;       uint material_index;
+  float3 normal;  uint material_type;
   float t;
   bool front_face;
 

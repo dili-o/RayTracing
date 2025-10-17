@@ -1,6 +1,7 @@
 #ifndef VEC3_H
 #define VEC3_H
 
+#include "Assert.hpp"
 #include "Defines.hpp"
 
 #include <cmath>
@@ -48,6 +49,22 @@ public:
   real length_squared() const {
     return e[0] * e[0] + e[1] * e[1] + e[2] * e[2];
   }
+
+  bool near_zero() const {
+    // Return true if the vector is close to zero in all dimensions.
+    real s = 1e-8f;
+    return (std::fabs(e[0]) < s) && (std::fabs(e[1]) < s) &&
+           (std::fabs(e[2]) < s);
+  }
+
+  static Vec3 random() {
+    return Vec3(random_real(), random_real(), random_real());
+  }
+
+  static Vec3 random(real min, real max) {
+    return Vec3(random_real(min, max), random_real(min, max),
+                random_real(min, max));
+  }
 };
 
 // Point3 is just an alias for Vec3, but useful for geometric clarity in the
@@ -93,4 +110,32 @@ inline Vec3 cross(const Vec3 &u, const Vec3 &v) {
 
 inline Vec3 unit_vector(const Vec3 &v) { return v / v.length(); }
 
+inline Vec3 random_unit_vector() {
+  while (true) {
+    Vec3 p = Vec3::random(-1.f, 1.f);
+    real lensq = p.length_squared();
+    if (1e-6f < lensq && lensq <= 1.f)
+      return (p / sqrt(lensq));
+  }
+}
+
+inline Vec3 random_on_hemisphere(const Vec3 &normal) {
+  Vec3 on_unit_sphere = random_unit_vector();
+  if (dot(normal, on_unit_sphere) > 0.f)
+    return on_unit_sphere;
+  else
+    return -on_unit_sphere;
+}
+
+inline Vec3 reflect(const Vec3 &v, const Vec3 &n) {
+  return v - 2.f * dot(v, n) * n;
+}
+
+inline Vec3 refract(const Vec3 &uv, const Vec3 &n, real etai_over_etat) {
+  real cos_theta = std::fmin(dot(-uv, n), 1.f);
+  Vec3 r_out_perp = etai_over_etat * (uv + cos_theta * n);
+  Vec3 r_out_parallel =
+      -std::sqrt(std::fabs(1.f - r_out_perp.length_squared())) * n;
+  return r_out_perp + r_out_parallel;
+}
 #endif
