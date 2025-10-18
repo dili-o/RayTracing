@@ -73,6 +73,7 @@ bool CompileShader(const std::string &path, const std::string &shaderName,
   if (generateDebugSymbols) {
     command += " -g";
   }
+  // command += " -g1";
 
   try {
     std::filesystem::current_path(shaderPath);

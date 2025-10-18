@@ -119,6 +119,14 @@ inline Vec3 random_unit_vector() {
   }
 }
 
+inline Vec3 random_in_unit_disk() {
+  while (true) {
+    Vec3 p = Vec3(random_real(-1, 1), random_real(-1, 1), 0);
+    if (p.length_squared() < 1)
+      return p;
+  }
+}
+
 inline Vec3 random_on_hemisphere(const Vec3 &normal) {
   Vec3 on_unit_sphere = random_unit_vector();
   if (dot(normal, on_unit_sphere) > 0.f)

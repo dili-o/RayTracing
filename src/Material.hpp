@@ -90,11 +90,7 @@ private:
   }
 };
 
-enum GpuMaterial {
-  GPUMATERIAL_LAMBERT,
-  GPUMATERIAL_METAL,
-  GPUMATERIAL_DIELECTRIC
-};
+enum MaterialType { MATERIAL_LAMBERT, MATERIAL_METAL, MATERIAL_DIELECTRIC };
 
 struct alignas(16) GpuLambert {
   f32 albedo[4];
@@ -106,6 +102,11 @@ struct alignas(16) GpuMetal {
 
 struct GpuDielectric {
   f32 refraction_index;
+};
+
+struct MaterialHandle {
+  MaterialType type;
+  u32 index;
 };
 
 #endif

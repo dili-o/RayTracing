@@ -49,8 +49,23 @@ float3 rand_on_hemisphere(inout uint seed, float3 normal) {
     return -on_unit_sphere;
 }
 
-bool near_zero(float3 v) {
+inline bool near_zero(float3 v) {
   // Return true if the vector is close to zero in all dimensions.
   float s = 1e-8;
   return (abs(v.x) < s) && (abs(v.y) < s) && (abs(v.z) < s);
+}
+
+inline float3 rand_in_unit_disk(inout uint seed) {
+  while (true) {
+      float3 p = float3(rand_range(seed, -1.f, 1.f), rand_range(seed, -1.f,1.f), 0.f);
+      if (dot(p, p) < 1.f)
+          return p;
+  }
+}
+
+inline float3 defocus_disk_sample(inout uint seed, float3 center,
+                                  float3 defocus_disk_u, float3 defocus_disk_v) {
+  // Returns a random point in the camera defocus disk.
+  float3 p = rand_in_unit_disk(seed);
+  return (center + (p.x * defocus_disk_u) + (p.y * defocus_disk_v));
 }
