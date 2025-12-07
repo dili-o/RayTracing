@@ -439,6 +439,9 @@ bool VkContext::Init() {
 
   std::vector<cstring> deviceExtensions{};
   deviceExtensions.push_back(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME);
+#ifdef VULKAN_EXTRA_VALIDATION
+  deviceExtensions.push_back(VK_EXT_DEVICE_FAULT_EXTENSION_NAME);
+#endif
 
   // Create Physical Device
   if (!SelectPhysicalDevice(vkInstance, vkPhysicalDevice,
@@ -528,7 +531,6 @@ bool VkContext::Init() {
   VkPhysicalDeviceFaultFeaturesEXT deviceFaultFeatures{
       VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FAULT_FEATURES_EXT};
   deviceFaultFeatures.deviceFault = VK_TRUE;
-  deviceFaultFeatures.deviceFaultVendorBinary = VK_TRUE;
 
   features12.vulkanMemoryModel = VK_TRUE;
   features12.vulkanMemoryModelDeviceScope = VK_TRUE;
@@ -540,15 +542,7 @@ bool VkContext::Init() {
 #endif
   features11.pNext = &features12;
 
-  // Mesh Shaders
-  VkPhysicalDeviceMeshShaderFeaturesEXT meshShaderFeature{
-      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT};
-  meshShaderFeature.taskShader = VK_TRUE;
-  meshShaderFeature.meshShader = VK_TRUE;
-  meshShaderFeature.meshShaderQueries = VK_TRUE;
-  meshShaderFeature.pNext = &features13;
-
-  deviceCreateInfo.pNext = &meshShaderFeature;
+  deviceCreateInfo.pNext = &features13;
 
   VkResult ress = (vkCreateDevice(vkPhysicalDevice, &deviceCreateInfo,
                                   vkAllocationCallbacks, &vkDevice));
@@ -596,6 +590,9 @@ bool VkContext::Init() {
   allocatorCreateInfo.flags = VMA_ALLOCATOR_CREATE_EXTERNALLY_SYNCHRONIZED_BIT |
                               VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
 
+  HASSERT(vkPhysicalDevice);
+  HASSERT(vkDevice);
+  HASSERT(vkInstance);
   VK_CHECK(vmaCreateAllocator(&allocatorCreateInfo, &vmaAllocator));
 
   //  Get the function pointers to Debug Utils functions.

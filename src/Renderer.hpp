@@ -130,5 +130,5 @@ private:
   std::vector<GpuLambert> lambert_mats;
   std::vector<GpuMetal> metal_mats;
   std::vector<GpuDielectric> dielectric_mats;
-  std::vector<SpherePacked> spheres;
+  std::vector<SphereGPU> spheres;
 };

@@ -14,12 +14,13 @@ file(TO_CMAKE_PATH "$ENV{VULKAN_SDK}" VULKAN_SDK)
 set(SPIRV_REFLECT_INCLUDE_DIR "${VULKAN_SDK}/Source/SPIRV-Reflect")
 
 file(GLOB_RECURSE SOURCE_LIST "Src/*.h" "Src/*.hpp" "Src/*.cpp" 
-    "${SPIRV_REFLECT_INCLUDE_DIR}/spirv_reflect.c"
+    "${SPIRV_REFLECT_INCLUDE_DIR}/spirv_reflect.c" "Vendor/simdjson/simdjson.cpp"
 )
 
 add_executable (${PROJECT_NAME} ${SOURCE_LIST})
 
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/Assets/Shaders/Spirv")
+target_compile_definitions(${PROJECT_NAME} PRIVATE HOME_PATH="${CMAKE_CURRENT_SOURCE_DIR}")
 target_compile_definitions(${PROJECT_NAME} PRIVATE ASSETS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/Assets")
 target_compile_definitions(${PROJECT_NAME} PRIVATE SHADER_PATH="${CMAKE_CURRENT_SOURCE_DIR}/Assets/Shaders/")
 
@@ -37,14 +38,14 @@ else()
 endif()
 
 # ----------------- Vendors
-# Volk
+# volk
 if(WIN32)
   target_compile_definitions(${PROJECT_NAME} PRIVATE VK_USE_PLATFORM_WIN32_KHR)
   set(VOLK_STATIC_DEFINES VK_USE_PLATFORM_WIN32_KHR)
 endif()
 add_subdirectory(Vendor/volk)
 target_link_libraries(${PROJECT_NAME} PRIVATE volk_headers)
-# SPDLOG
+# spdlog
 add_subdirectory(Vendor/spdlog)
 target_link_libraries(${PROJECT_NAME} PRIVATE spdlog::spdlog)
 # -------------------------

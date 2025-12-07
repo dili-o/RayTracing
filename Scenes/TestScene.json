@@ -1,0 +1,55 @@
+{
+  "camera": {
+    "center": [ 13.0, 2.0, 3.0 ],
+    "lookat": [ 0.0, 0.0, 0.0 ],
+    "vup": [ 0.0, 1.0, 0.0 ],
+    "defocus_angle": 0.6,
+    "focus_dist": 10.0,
+    "screen_width": 384,
+    "aspect_ratio": 1.77777777778,
+    "samples_per_pixel": 150,
+    "max_depth": 10,
+    "vfov_deg": 20.0
+  },
+  "materials": [
+    {
+      "type_id": 0,
+      "albedo": [ 0.8, 0.8, 0.1 ]
+    },
+    {
+      "type_id": 0,
+      "albedo": [ 0.1, 0.2, 0.5 ]
+    },
+    {
+      "type_id": 1,
+      "albedo": [ 0.8, 0.8, 0.8 ],
+      "fuzz": 0.05
+    },
+    {
+      "type_id": 2,
+      "ior": 1.5
+    }
+  ],
+  "spheres": [
+    {
+      "center": [0.0, -100.5, -1.0],
+      "radius": 100.0,
+      "material_index": 0
+    },
+    {
+      "center": [0.0, 0.0, -1.0],
+      "radius": 0.5,
+      "material_index": 1
+    },
+    {
+      "center": [-1.0, 0.0, -1.0],
+      "radius": 0.5,
+      "material_index": 2
+    },
+    {
+      "center": [1.0, 0.0, -1.0],
+      "radius": 0.5,
+      "material_index": 3
+    }
+  ]
+}

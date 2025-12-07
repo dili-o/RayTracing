@@ -44,8 +44,8 @@ private:
   std::shared_ptr<Material> mat;
 };
 
-struct alignas(16) SpherePacked {
-  SpherePacked(const Point3 &origin, f32 radius, u32 material_index,
+struct alignas(16) SphereGPU {
+  SphereGPU(const Point3 &origin, f32 radius, u32 material_index,
                u32 material_type)
       : origin(origin), radius(radius), material_index(material_index),
         material_type(material_type) {}

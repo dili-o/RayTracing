@@ -10,12 +10,12 @@
     HASSERT_MSGS(result_ == VK_SUCCESS, "Error code: {}", (u32)result_);       \
   } while (0)
 
+#ifdef _DEBUG
 static VkBool32
 DebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
               VkDebugUtilsMessageTypeFlagsEXT messageType,
               const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
               void *pUserData) {
-
   if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
     HERROR(" MessageID: {} {}\nMessage: {}\n", pCallbackData->pMessageIdName,
            pCallbackData->messageIdNumber, pCallbackData->pMessage);
@@ -31,6 +31,7 @@ DebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
 
   return VK_FALSE;
 }
+#endif // _DEBUG
 
 namespace hlx {
 void HLX_API PrintVmaStats(VmaAllocator vmaAllocator, VkBool32);

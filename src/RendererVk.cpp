@@ -1,4 +1,5 @@
 #include "Renderer.hpp"
+#include "Log.hpp"
 #include "Vulkan/VulkanTypes.hpp"
 // Vendor
 #include <Vendor/renderdoc_app.h>
@@ -76,7 +77,7 @@ MaterialHandle RendererVk::add_dielectric_material(real refraction_index) {
 
 void RendererVk::add_sphere(const Vec3 &origin, real radius,
                             MaterialHandle mat) {
-  spheres.push_back(SpherePacked(origin, radius, mat.index, mat.type));
+  spheres.push_back(SphereGPU(origin, radius, mat.index, mat.type));
 }
 
 void RendererVk::init(u32 image_width_, real aspect_ratio_,
@@ -121,7 +122,7 @@ void RendererVk::init(u32 image_width_, real aspect_ratio_,
 
   // Pipeline
   if (!CompileShader(SHADER_PATH, "RayTracing.slang", "RayTracing.spv",
-                     VK_SHADER_STAGE_COMPUTE_BIT, false)) {
+                     VK_SHADER_STAGE_COMPUTE_BIT, true)) {
     HERROR("Failed to compile RayTracing.slang!");
   }
 
@@ -136,7 +137,7 @@ void RendererVk::init(u32 image_width_, real aspect_ratio_,
   compShaderStageInfo.pName = "computeMain";
 
   // Spheres buffer
-  ctx.CreateVmaBuffer(spheresBuffer, sizeof(SpherePacked) * spheres.size(),
+  ctx.CreateVmaBuffer(spheresBuffer, sizeof(SphereGPU) * spheres.size(),
                       VK_BUFFER_USAGE_TRANSFER_DST_BIT |
                           VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                       VMA_MEMORY_USAGE_UNKNOWN, 0,
@@ -415,9 +416,19 @@ void RendererVk::render(u8 *out_pixels) {
 
   VK_CHECK(vkQueueSubmit(ctx.vkGraphicsQueue, 1, &submitInfo, VK_NULL_HANDLE));
 
-  vkQueueWaitIdle(ctx.vkGraphicsQueue);
+  VkResult res = vkQueueWaitIdle(ctx.vkGraphicsQueue);
   if (rdoc_api)
     rdoc_api->EndFrameCapture(nullptr, nullptr);
+
+  VkDeviceFaultCountsEXT fault_counts{
+      VK_STRUCTURE_TYPE_DEVICE_FAULT_COUNTS_EXT};
+  VkDeviceFaultInfoEXT fault_info{VK_STRUCTURE_TYPE_DEVICE_FAULT_INFO_EXT};
+  if (res == VK_ERROR_DEVICE_LOST) {
+    vkGetDeviceFaultInfoEXT(ctx.vkDevice, &fault_counts, nullptr);
+
+    vkGetDeviceFaultInfoEXT(ctx.vkDevice, &fault_counts, &fault_info);
+    HTRACE("VkDeviceFaultInfoEXT.description: {}", fault_info.description);
+  }
 
   // Copy mapped buffer to pixels array
   vmaMapMemory(ctx.vmaAllocator, imageBuffer.vmaAllocation,

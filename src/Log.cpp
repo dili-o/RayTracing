@@ -14,7 +14,7 @@ Logger::Logger() {
 
 Logger::~Logger() { HINFO("Logger destroyed"); }
 
-inline std::shared_ptr<spdlog::logger> &Logger::GetCoreLogger() {
+std::shared_ptr<spdlog::logger> &Logger::GetCoreLogger() {
   return s_CoreLogger;
 }
 
