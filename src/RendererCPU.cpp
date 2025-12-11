@@ -7,6 +7,11 @@ MaterialHandle RendererCPU::add_lambert_material(const Vec3 &albedo) {
   return {MATERIAL_LAMBERT, ((u32)lambert_mats.size() - 1)};
 }
 
+MaterialHandle RendererCPU::add_lambert_material(const std::string& filename) {
+  lambert_mats.push_back(std::make_shared<Lambertian>(Lambertian(filename)));
+  return {MATERIAL_LAMBERT, ((u32)lambert_mats.size() - 1)};
+}
+
 MaterialHandle RendererCPU::add_metal_material(const Vec3 &albedo,
                                                real fuzziness) {
   metal_mats.push_back(std::make_shared<Metal>(Metal(albedo, fuzziness)));
@@ -54,6 +59,7 @@ void RendererCPU::init(u32 image_width_, real aspect_ratio_,
 void RendererCPU::render(u8 *out_pixels) {
   Interval intensity(0.f, 0.999f);
   u32 index = 0;
+
   for (u32 j = 0; j < image_height; j++) {
     std::clog << "\rScanlines remaining: " << (image_height - j) << ' '
               << std::flush;

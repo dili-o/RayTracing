@@ -7,6 +7,7 @@ class Renderer {
 public:
   virtual void render(u8 *out_pixels) = 0;
   virtual MaterialHandle add_lambert_material(const Vec3 &albedo) = 0;
+  virtual MaterialHandle add_lambert_material(const std::string& filename) = 0;
   virtual MaterialHandle add_metal_material(const Vec3 &albedo,
                                             real fuzziness) = 0;
   virtual MaterialHandle add_dielectric_material(real refraction_index) = 0;
@@ -94,6 +95,7 @@ public:
 
   void render(u8 *out_pixels) override;
   MaterialHandle add_lambert_material(const Vec3 &albedo) override;
+  MaterialHandle add_lambert_material(const std::string &filename) override;
   MaterialHandle add_metal_material(const Vec3 &albedo,
                                     real fuzziness) override;
   MaterialHandle add_dielectric_material(real refraction_index) override;
@@ -121,6 +123,7 @@ public:
 
   void render(u8 *out_pixels) override;
   MaterialHandle add_lambert_material(const Vec3 &albedo) override;
+  MaterialHandle add_lambert_material(const std::string &filename) override;
   MaterialHandle add_metal_material(const Vec3 &albedo,
                                     real fuzziness) override;
   MaterialHandle add_dielectric_material(real refraction_index) override;

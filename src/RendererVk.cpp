@@ -64,6 +64,11 @@ MaterialHandle RendererVk::add_lambert_material(const Vec3 &albedo) {
   return {MATERIAL_LAMBERT, ((u32)lambert_mats.size() - 1)};
 }
 
+MaterialHandle RendererVk::add_lambert_material(const std::string &filename) {
+  // TODO:
+  return {MATERIAL_LAMBERT, ((u32)lambert_mats.size() - 1)};
+}
+
 MaterialHandle RendererVk::add_metal_material(const Vec3 &albedo,
                                               real fuzziness) {
   metal_mats.push_back({albedo.x(), albedo.y(), albedo.z(), fuzziness});
