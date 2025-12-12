@@ -51,7 +51,7 @@ std::vector<char> ReadFile(const std::string &filename) {
 
 bool CompileShader(const std::string &path, const std::string &shaderName,
                    const std::string &outputName, VkShaderStageFlagBits stage,
-                   bool generateDebugSymbols) {
+                   bool generateDebugSymbols, const std::string &defines) {
   std::filesystem::path originalPath = std::filesystem::current_path();
   std::filesystem::path shaderPath = path;
 
@@ -68,6 +68,7 @@ bool CompileShader(const std::string &path, const std::string &shaderName,
       " -target spirv -profile spirv_1_3+SPV_KHR_non_semantic_info "
       "-emit-spirv-directly "
       "-fvk-use-entrypoint-name -entry computeMain " +
+      defines +
       " -o Spirv/" + outputName;
   std::string command = compilerPath + args;
   if (generateDebugSymbols) {

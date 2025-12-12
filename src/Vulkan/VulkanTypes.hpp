@@ -168,5 +168,10 @@ public:
   VkQueue vkGraphicsQueue{VK_NULL_HANDLE};
   VkQueue vkTransferQueue{VK_NULL_HANDLE};
   VkQueue vkComputeQueue{VK_NULL_HANDLE};
+
+  VkPhysicalDeviceVulkan11Properties vk_11_properties
+  {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES};
+  VkPhysicalDeviceProperties2 vk_props2
+  { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2 };
 };
 } // namespace hlx

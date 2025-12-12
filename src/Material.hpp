@@ -96,8 +96,8 @@ private:
 
 enum MaterialType { MATERIAL_LAMBERT, MATERIAL_METAL, MATERIAL_DIELECTRIC };
 
-struct alignas(16) GpuLambert {
-  f32 albedo[4];
+struct GpuLambert {
+  u32 image_index;
 };
 
 struct alignas(16) GpuMetal {

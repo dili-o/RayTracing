@@ -30,8 +30,13 @@ static VulkanBuffer dielectric_buffer{};
 static VulkanBuffer uniformBuffer{};
 static VkDescriptorSetLayout vkSetLayout;
 static VkPipelineLayout vkPipelineLayout;
+static VkSampler vkSampler;
+// TODO: Try different pools for the different queue types
 static VkCommandPool vkCommandPool;
 static VkCommandBuffer vkCommandBuffer;
+
+static std::vector<VulkanImage>     vk_images;
+static std::vector<VulkanImageView> vk_image_views;
 
 struct UniformBuffer {
   VkDeviceAddress spheres;
@@ -60,12 +65,25 @@ struct alignas(16) ShaderPushConstant {
 };
 
 MaterialHandle RendererVk::add_lambert_material(const Vec3 &albedo) {
-  lambert_mats.push_back({albedo.x(), albedo.y(), albedo.z(), 1.f});
+  vk_images.emplace_back(VulkanImage());
+  vk_image_views.emplace_back(VulkanImageView());
+  u8* pixels = static_cast<u8 *>(malloc(sizeof(u8) * BYTES_PER_PIXEL));
+  HASSERT(pixels);
+  pixels[0] = static_cast<u8>(albedo.x() * 255.f);
+  pixels[1] = static_cast<u8>(albedo.y() * 255.f);
+  pixels[2] = static_cast<u8>(albedo.z() * 255.f);
+  pixels[3] = 255;
+
+  images.emplace_back(pixels, 1, 1);
+  lambert_mats.push_back({static_cast<u32>(images.size() - 1)});
   return {MATERIAL_LAMBERT, ((u32)lambert_mats.size() - 1)};
 }
 
 MaterialHandle RendererVk::add_lambert_material(const std::string &filename) {
-  // TODO:
+  vk_images.emplace_back(VulkanImage());
+  vk_image_views.emplace_back(VulkanImageView());
+  images.emplace_back(filename.c_str());
+  lambert_mats.push_back({static_cast<u32>(images.size() - 1)});
   return {MATERIAL_LAMBERT, ((u32)lambert_mats.size() - 1)};
 }
 
@@ -126,8 +144,14 @@ void RendererVk::init(u32 image_width_, real aspect_ratio_,
                         image_view_create_info, final_image_view);
 
   // Pipeline
+#ifdef _DEBUG
+  bool d_symbols = true;
+#else
+  bool d_symbols = false;
+#endif // _DEBUG
+  std::string defines = "-DALBEDO_TEXTURE_COUNT=" + std::to_string(vk_image_views.size());
   if (!CompileShader(SHADER_PATH, "RayTracing.slang", "RayTracing.spv",
-                     VK_SHADER_STAGE_COMPUTE_BIT, true)) {
+                     VK_SHADER_STAGE_COMPUTE_BIT, d_symbols, defines)) {
     HERROR("Failed to compile RayTracing.slang!");
   }
 
@@ -180,6 +204,21 @@ void RendererVk::init(u32 image_width_, real aspect_ratio_,
                           VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                       VMA_MEMORY_USAGE_UNKNOWN, 0,
                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, "UniformBuffer");
+  // Sampler
+  VkSamplerCreateInfo samplerInfo{ VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO };
+	samplerInfo.magFilter = VK_FILTER_NEAREST;
+	samplerInfo.minFilter = VK_FILTER_NEAREST;
+	samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+	samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	samplerInfo.anisotropyEnable = VK_FALSE;
+	samplerInfo.compareEnable = VK_FALSE;
+	samplerInfo.minLod = 0.f;
+	samplerInfo.maxLod = VK_LOD_CLAMP_NONE;
+	samplerInfo.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+	samplerInfo.unnormalizedCoordinates = VK_FALSE;
+	VK_CHECK(vkCreateSampler(ctx.vkDevice, &samplerInfo, nullptr, &vkSampler));
 
   // Descriptor Set layout
   VkDescriptorSetLayoutBinding outImageBinding{};
@@ -194,7 +233,13 @@ void RendererVk::init(u32 image_width_, real aspect_ratio_,
   uniformBinding.descriptorCount = 1;
   uniformBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
-  VkDescriptorSetLayoutBinding bindings[2] = {outImageBinding, uniformBinding};
+  VkDescriptorSetLayoutBinding textureArray{};
+  textureArray.binding = 2;
+  textureArray.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  textureArray.descriptorCount = images.size();
+  textureArray.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+  VkDescriptorSetLayoutBinding bindings[3] = {outImageBinding, uniformBinding, textureArray};
 
   VkDescriptorSetLayoutCreateInfo layoutInfo{
       VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
@@ -253,9 +298,117 @@ void RendererVk::init(u32 image_width_, real aspect_ratio_,
   // Transfer data to Uniform buffer
   ctx.CopyToBuffer(uniformBuffer.vkHandle, 0, uniformBuffer.size,
                    &uniform_buffer_data, vkCommandPool);
+  // Transfer data to images
+	VulkanBuffer stagingBuffer{};
+	ctx.CreateVmaBuffer(stagingBuffer, ctx.vk_11_properties.maxMemoryAllocationSize / 2, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+									VMA_MEMORY_USAGE_UNKNOWN, 0,
+									VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
+											VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+	vmaMapMemory(ctx.vmaAllocator, stagingBuffer.vmaAllocation,
+							 &stagingBuffer.pMappedData);
+
+
+  for (size_t i = 0; i < images.size(); ++i) {
+    VkImageCreateInfo imageInfo = init::ImageCreateInfo(
+      { static_cast<u32>(images[i].width()),
+      static_cast<u32>(images[i].height()),1 },
+      1, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+		VmaAllocationCreateInfo vmaInfo =
+      init::VmaAllocationInfo(VMA_MEMORY_USAGE_GPU_ONLY);
+    util::CreateVmaImage(ctx.vmaAllocator, imageInfo, vmaInfo, vk_images[i]);
+
+    VkImageViewCreateInfo viewInfo = init::ImageViewCreateInfo(vk_images[i].vkHandle,
+      VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT, 1);
+    util::CreateImageView(ctx.vkDevice, ctx.vkAllocationCallbacks, viewInfo, vk_image_views[i]);
+
+		VkCommandBufferBeginInfo beginInfo{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+		VK_CHECK(vkBeginCommandBuffer(vkCommandBuffer, &beginInfo));
+    // Transition image to transfer dst
+		VkImageMemoryBarrier2 image_barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+		image_barrier.srcStageMask = VK_PIPELINE_STAGE_2_NONE;
+		image_barrier.srcAccessMask = VK_ACCESS_2_NONE;
+		image_barrier.dstStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+		image_barrier.dstAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
+		image_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		image_barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    image_barrier.image = vk_images[i].vkHandle;
+		image_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		image_barrier.subresourceRange.baseMipLevel = 0;
+		image_barrier.subresourceRange.levelCount = 1;
+		image_barrier.subresourceRange.baseArrayLayer = 0;
+		image_barrier.subresourceRange.layerCount = 1;
+
+		VkDependencyInfo dependency_info{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+		dependency_info.dependencyFlags = 0;
+    dependency_info.imageMemoryBarrierCount = 1;
+    dependency_info.pImageMemoryBarriers = &image_barrier;
+
+		vkCmdPipelineBarrier2(vkCommandBuffer, &dependency_info);
+
+    size_t image_size = images[i].width() * images[i].height() * BYTES_PER_PIXEL;
+		memcpy(stagingBuffer.pMappedData, images[i].pixel_data(0, 0), image_size);
+
+		VkBufferImageCopy2 region{VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2};
+		region.bufferOffset = 0;
+		region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		region.imageSubresource.mipLevel = 0;
+		region.imageSubresource.baseArrayLayer = 0;
+		region.imageSubresource.layerCount = 1;
+		region.imageOffset = {0, 0, 0};
+    region.imageExtent = vk_images[i].vkExtents;
+
+		VkCopyBufferToImageInfo2 buffer_image_info{
+				VK_STRUCTURE_TYPE_COPY_BUFFER_TO_IMAGE_INFO_2};
+		buffer_image_info.srcBuffer = stagingBuffer.vkHandle;
+    buffer_image_info.dstImage = vk_images[i].vkHandle;
+    buffer_image_info.dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+		buffer_image_info.regionCount = 1;
+		buffer_image_info.pRegions = &region;
+		vkCmdCopyBufferToImage2(vkCommandBuffer, &buffer_image_info);
+
+    // Transition image to shader read only
+		image_barrier.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+		image_barrier.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
+		image_barrier.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+		image_barrier.dstAccessMask = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
+		image_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+		image_barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		vkCmdPipelineBarrier2(vkCommandBuffer, &dependency_info);
+
+    vkEndCommandBuffer(vkCommandBuffer);
+
+		// Submition
+		VkSubmitInfo submitInfo{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+		submitInfo.waitSemaphoreCount = 0;
+		submitInfo.pWaitSemaphores = nullptr;
+		submitInfo.pWaitDstStageMask = nullptr;
+		submitInfo.commandBufferCount = 1;
+		submitInfo.pCommandBuffers = &vkCommandBuffer;
+		submitInfo.signalSemaphoreCount = 0;
+		submitInfo.pSignalSemaphores = nullptr;
+
+		VK_CHECK(vkQueueSubmit(ctx.vkGraphicsQueue, 1, &submitInfo, VK_NULL_HANDLE));
+
+		VK_CHECK(vkQueueWaitIdle(ctx.vkGraphicsQueue));
+    // TODO: Maybe free Image data since it's already in the GPU
+  }
+
+	vmaUnmapMemory(ctx.vmaAllocator, stagingBuffer.vmaAllocation);
+	stagingBuffer.pMappedData = nullptr;
+
+  util::DestroyBuffer(ctx.vkDevice, nullptr, stagingBuffer);
 }
 
 RendererVk::~RendererVk() {
+  for (VulkanImage &image : vk_images) {
+    util::DestroyVmaImage(ctx.vmaAllocator, image);
+  }
+  for (VulkanImageView &view : vk_image_views) {
+    util::DestroyImageView(ctx.vkDevice, nullptr, view);
+  }
+
+  vkDestroySampler(ctx.vkDevice, vkSampler, nullptr);
+
   vkDestroyCommandPool(ctx.vkDevice, vkCommandPool, nullptr);
   vkDestroyPipelineLayout(ctx.vkDevice, vkPipelineLayout, nullptr);
   vkDestroyPipeline(ctx.vkDevice, vkPipeline, nullptr);
@@ -307,6 +460,9 @@ void RendererVk::render(u8 *out_pixels) {
 
   vkCmdBindPipeline(vkCommandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,
                     vkPipeline);
+
+  std::vector<VkWriteDescriptorSet> writeSets;
+
   VkDescriptorImageInfo descritorImageInfo{};
   descritorImageInfo.sampler = VK_NULL_HANDLE;
   descritorImageInfo.imageView = final_image_view.vkHandle;
@@ -326,6 +482,8 @@ void RendererVk::render(u8 *out_pixels) {
   imageDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
   imageDescriptorWrite.pImageInfo = &descritorImageInfo;
 
+  writeSets.push_back(imageDescriptorWrite);
+
   VkWriteDescriptorSet bufferDescriptorWrite{
       VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
   bufferDescriptorWrite.dstSet = VK_NULL_HANDLE;
@@ -335,11 +493,27 @@ void RendererVk::render(u8 *out_pixels) {
   bufferDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
   bufferDescriptorWrite.pBufferInfo = &descritorBufferInfo;
 
-  VkWriteDescriptorSet descriptorWrites[2] = {imageDescriptorWrite,
-                                              bufferDescriptorWrite};
+  writeSets.push_back(bufferDescriptorWrite);
+
+	imageDescriptorWrite.dstBinding = 2;
+	imageDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  std::vector<VkDescriptorImageInfo> descriptorImageInfos;
+  descriptorImageInfos.resize(vk_image_views.size());
+  for (size_t i = 0; i < vk_image_views.size(); ++i) {
+    VkDescriptorImageInfo& imageInfo = descriptorImageInfos[i];
+		imageInfo.sampler = vkSampler;
+		imageInfo.imageView = vk_image_views[i].vkHandle;
+		imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+		imageDescriptorWrite.dstArrayElement = i;
+		imageDescriptorWrite.pImageInfo = &descriptorImageInfos[i];
+
+		writeSets.push_back(imageDescriptorWrite);
+  }
+
   vkCmdPushDescriptorSetKHR(vkCommandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,
-                            vkPipelineLayout, 0, ArraySize(descriptorWrites),
-                            descriptorWrites);
+                            vkPipelineLayout, 0, writeSets.size(),
+                            writeSets.data());
 
   ShaderPushConstant pushConstant{};
   Vec3::set_float4(pushConstant.pixel00_loc, pixel00_loc);

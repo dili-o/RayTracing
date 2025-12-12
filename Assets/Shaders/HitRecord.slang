@@ -6,6 +6,8 @@ struct HitRecord {
   float3 p;       uint material_index;
   float3 normal;  uint material_type;
   float t;
+  float u;
+  float v;
   bool front_face;
 
   [mutating]

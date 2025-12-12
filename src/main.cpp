@@ -61,6 +61,7 @@ int main(int argc, cstring *argv) {
     return 1;
   }
 
+  // TODO: Don't show the image if any errors occurred in the renderer
   if (renderer->show_image)
     ShellExecuteA(nullptr,              // parent window (none)
                   "open",               // operation

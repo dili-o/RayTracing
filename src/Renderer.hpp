@@ -93,6 +93,8 @@ public:
   void init(u32 image_width_, real aspect_ratio_, u32 samples_per_pixel_,
             u32 max_depth_, real vfov_deg_) override;
 
+  ~RendererCPU();
+
   void render(u8 *out_pixels) override;
   MaterialHandle add_lambert_material(const Vec3 &albedo) override;
   MaterialHandle add_lambert_material(const std::string &filename) override;
@@ -130,6 +132,7 @@ public:
   void add_sphere(const Vec3 &origin, real radius, MaterialHandle mat) override;
 
 private:
+  std::vector<Image> images;
   std::vector<GpuLambert> lambert_mats;
   std::vector<GpuMetal> metal_mats;
   std::vector<GpuDielectric> dielectric_mats;

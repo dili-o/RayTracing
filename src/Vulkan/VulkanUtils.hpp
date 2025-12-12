@@ -42,7 +42,8 @@ bool HLX_API CompileShader(const std::string &path,
                            const std::string &shaderName,
                            const std::string &outputName,
                            VkShaderStageFlagBits stage,
-                           bool generateDebugSymbols = false);
+                           bool generateDebugSymbols,
+                           const std::string &defines);
 
 VkShaderModule HLX_API CreateShaderModule(VkDevice vkDevice,
                                           const std::vector<char> &code);

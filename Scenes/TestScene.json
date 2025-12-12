@@ -5,16 +5,16 @@
     "vup": [ 0.0, 1.0, 0.0 ],
     "defocus_angle": 0.0,
     "focus_dist": 1.0,
-    "screen_width": 400,
+    "screen_width": 1920,
     "aspect_ratio": 1.77777777778,
-    "samples_per_pixel": 100,
+    "samples_per_pixel": 400,
     "max_depth": 10,
     "vfov_deg": 20.0
   },
   "materials": [
     {
       "type_id": 0,
-      "albedo": [ 0.8, 0.8, 0.8 ]
+      "albedo": [ 0.8, 0.8, 0.9 ]
     },
     {
       "type_id": 0,
@@ -28,6 +28,10 @@
     {
       "type_id": 2,
       "ior": 1.5
+    },
+    {
+      "type_id": 0,
+      "albedo": "earthmap.jpg"
     }
   ],
   "spheres": [
@@ -39,7 +43,7 @@
     {
       "center": [0.0, 0.0, -1.0],
       "radius": 0.5,
-      "material_index": 1
+      "material_index": 4
     },
     {
       "center": [-1.0, 0.0, -1.0],
@@ -52,9 +56,9 @@
       "material_index": 3
     },
     {
-      "center": [1.0, 0.0, -1.0],
-      "radius": 0.25,
-      "material_index": 3
+      "center": [-0.5, -0.35, -0.5],
+      "radius": 0.15,
+      "material_index": 1
     }
   ]
 }

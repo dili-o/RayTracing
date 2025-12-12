@@ -1,8 +1,8 @@
 #include "VulkanTypes.hpp"
 #include "Log.hpp"
 #include "Vulkan/VulkanUtils.hpp"
-#include "vulkan/vulkan_core.h"
 // Vendor
+#include <iostream>
 
 #ifdef _DEBUG
 #define VULKAN_DEBUG_REPORT
@@ -312,13 +312,12 @@ bool VkContext::Init() {
   }
 
   VkInstanceCreateInfo createInfo{};
-  VkApplicationInfo appInfo{};
-  appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-  appInfo.pApplicationName = "HelloTriangle";
+  VkApplicationInfo appInfo{VK_STRUCTURE_TYPE_APPLICATION_INFO};
+  appInfo.pApplicationName = "RayTracer";
   appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
   appInfo.pEngineName = "No Engine";
   appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-  appInfo.apiVersion = VK_API_VERSION_1_3;
+  appInfo.apiVersion = VK_API_VERSION_1_4;
 
   std::vector<cstring> requiredExtensions;
   std::vector<cstring> validationLayerNames;
@@ -439,8 +438,9 @@ bool VkContext::Init() {
 
   std::vector<cstring> deviceExtensions{};
   deviceExtensions.push_back(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME);
+  deviceExtensions.push_back(VK_KHR_COMPUTE_SHADER_DERIVATIVES_EXTENSION_NAME);
 #ifdef VULKAN_EXTRA_VALIDATION
-  deviceExtensions.push_back(VK_EXT_DEVICE_FAULT_EXTENSION_NAME);
+  // deviceExtensions.push_back(VK_EXT_DEVICE_FAULT_EXTENSION_NAME);
 #endif
 
   // Create Physical Device
@@ -448,6 +448,23 @@ bool VkContext::Init() {
                             &vkPhysicalDeviceProperties, queueFamilyIndices)) {
     HERROR("Failed to create physical device!");
     return false;
+  }
+
+  // Verify the device supports the extensions
+  u32 extCount = 0;
+	vkEnumerateDeviceExtensionProperties(vkPhysicalDevice, nullptr, &extCount, nullptr);
+	std::vector<VkExtensionProperties> available(extCount);
+	vkEnumerateDeviceExtensionProperties(vkPhysicalDevice, nullptr, &extCount, available.data());
+
+  for (cstring extension : deviceExtensions) {
+    bool found = false;
+    for (const VkExtensionProperties& extensionProp : available) {
+      if (strcmp(extensionProp.extensionName, extension) == 0) {
+        found = true;
+      }
+    }
+
+		HASSERT_MSGS(found, "Extension: {} is not supported", extension);
   }
 
   // Create Logical Device
@@ -508,11 +525,13 @@ bool VkContext::Init() {
   VkPhysicalDeviceVulkan12Features features12 = {
       VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
   features12.shaderFloat16 = VK_TRUE;
+
   features12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
-  features12.runtimeDescriptorArray = VK_TRUE;
-  features12.descriptorBindingVariableDescriptorCount = VK_TRUE;
-  features12.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
-  features12.descriptorBindingPartiallyBound = VK_TRUE;
+  // features12.runtimeDescriptorArray = VK_TRUE;
+  // features12.descriptorBindingVariableDescriptorCount = VK_TRUE;
+  // features12.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
+  // features12.descriptorBindingPartiallyBound = VK_TRUE;
+
   features12.bufferDeviceAddress = VK_TRUE;
 
   // Enable Dynamic Rendering and Synchronization 2
@@ -542,11 +561,20 @@ bool VkContext::Init() {
 #endif
   features11.pNext = &features12;
 
-  deviceCreateInfo.pNext = &features13;
+  VkPhysicalDeviceComputeShaderDerivativesFeaturesKHR derivatives
+    { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COMPUTE_SHADER_DERIVATIVES_FEATURES_KHR };
+  derivatives.computeDerivativeGroupQuads = VK_TRUE;
+  derivatives.pNext = &features13;
 
-  VkResult ress = (vkCreateDevice(vkPhysicalDevice, &deviceCreateInfo,
+  deviceCreateInfo.pNext = &derivatives;
+
+  res = (vkCreateDevice(vkPhysicalDevice, &deviceCreateInfo,
                                   vkAllocationCallbacks, &vkDevice));
-  HINFO("Created Logical Device: [{}]", (u32)ress);
+  HINFO("Created Logical Device: [{}]", (u32)res);
+
+  vk_props2.pNext = &vk_11_properties;
+  vkGetPhysicalDeviceProperties2(vkPhysicalDevice, &vk_props2);
+
   volkLoadDevice(vkDevice);
   VmaVulkanFunctions vmaVulkanFunctions{};
   vmaVulkanFunctions.vkGetInstanceProcAddr = vkGetInstanceProcAddr;

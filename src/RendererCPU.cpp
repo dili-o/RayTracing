@@ -56,6 +56,9 @@ void RendererCPU::init(u32 image_width_, real aspect_ratio_,
                     vfov_deg_);
 }
 
+RendererCPU::~RendererCPU() {
+}
+
 void RendererCPU::render(u8 *out_pixels) {
   Interval intensity(0.f, 0.999f);
   u32 index = 0;

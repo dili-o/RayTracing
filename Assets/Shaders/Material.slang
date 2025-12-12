@@ -6,18 +6,25 @@ static const uint MATERIAL_LAMBERT  = 0;
 static const uint MATERIAL_METALLIC = 1;
 static const uint MATERIAL_DIELECTRIC = 2;
 
+#ifndef ALBEDO_TEXTURE_COUNT
+#define ALBEDO_TEXTURE_COUNT 1
+#error "ALBEDO_TEXTURE_COUNT must be defined"
+#endif
+
+[[vk::binding(2, 0)]]
+Sampler2D albedo_textures[ALBEDO_TEXTURE_COUNT];
+
 struct MaterialLambert {
-  float4 albedo; // rgb only
+  uint image_index; // rgb only
 };
 
 struct MaterialMetal {
-  float4 albedo_fuzz;
+  float4 albedo_fuzz; // rbg and fuzz
 };
 
 struct MaterialDielectric {
   float refraction_index;
 };
-
 
 void scatter_ray_lambert(inout uint seed, in MaterialLambert mat,
                             in HitRecord rec, out float3 attenuation,
@@ -28,7 +35,8 @@ void scatter_ray_lambert(inout uint seed, in MaterialLambert mat,
   }
 
   r_out = Ray(rec.p, scattered_direction);
-  attenuation = mat.albedo.xyz;
+  attenuation = albedo_textures[NonUniformResourceIndex(mat.image_index)]
+                  .Sample(float2(rec.u, rec.v)).xyz;
 }
 
 #define NORMALIZE_REFLECTION
