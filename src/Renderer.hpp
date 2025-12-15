@@ -2,6 +2,7 @@
 #include "HittableList.hpp"
 #include "Material.hpp"
 #include "Sphere.hpp"
+#include "Triangle.hpp"
 
 class Renderer {
 public:
@@ -13,6 +14,9 @@ public:
   virtual MaterialHandle add_dielectric_material(real refraction_index) = 0;
   virtual void add_sphere(const Vec3 &origin, real radius,
                           MaterialHandle mat) = 0;
+  virtual void add_triangle(const Vec3 &v0, const Vec3 &v1, const Vec3 &v2,
+														Vec2 uv_0, Vec2 uv_1, Vec2 uv_2,
+														MaterialHandle mat_handle) = 0;
 
   virtual void init(u32 image_width_, real aspect_ratio_,
                     u32 samples_per_pixel_, u32 max_depth_, real vfov_deg_) = 0;
@@ -102,12 +106,16 @@ public:
                                     real fuzziness) override;
   MaterialHandle add_dielectric_material(real refraction_index) override;
   void add_sphere(const Vec3 &origin, real radius, MaterialHandle mat) override;
+  void add_triangle(const Vec3 &v0, const Vec3 &v1, const Vec3 &v2,
+														Vec2 uv_0, Vec2 uv_1, Vec2 uv_2,
+														MaterialHandle mat_handle) override;
 
 private:
   Color ray_color(const Ray &r, u32 depth, const Hittable &world) const;
   Vec3 sample_square() const;
   Point3 defocus_disk_sample() const;
   Ray get_ray(i32 i, i32 j) const;
+  std::shared_ptr<Material> get_material(MaterialHandle handle);
 
 private:
   HittableList world;
@@ -130,6 +138,9 @@ public:
                                     real fuzziness) override;
   MaterialHandle add_dielectric_material(real refraction_index) override;
   void add_sphere(const Vec3 &origin, real radius, MaterialHandle mat) override;
+  void add_triangle(const Vec3 &v0, const Vec3 &v1, const Vec3 &v2,
+														Vec2 uv_0, Vec2 uv_1, Vec2 uv_2,
+														MaterialHandle mat_handle) override;
 
 private:
   std::vector<Image> images;

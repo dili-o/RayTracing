@@ -103,6 +103,13 @@ void RendererVk::add_sphere(const Vec3 &origin, real radius,
   spheres.push_back(SphereGPU(origin, radius, mat.index, mat.type));
 }
 
+// TODO: Implement
+void RendererVk::add_triangle(const Vec3 &v0, const Vec3 &v1, const Vec3 &v2,
+  Vec2 uv_0, Vec2 uv_1, Vec2 uv_2,
+  MaterialHandle mat_handle) {
+
+}
+
 void RendererVk::init(u32 image_width_, real aspect_ratio_,
                       u32 samples_per_pixel_, u32 max_depth_, real vfov_deg_) {
   initialize_camera(image_width_, aspect_ratio_, samples_per_pixel_, max_depth_,

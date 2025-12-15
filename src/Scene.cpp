@@ -157,6 +157,58 @@ bool load_scene(std::string scene_name, Renderer* renderer) {
 		renderer->add_sphere(Point3(val[0], val[1], val[2]), radius, material_handles[mat_index]);
 	}
 
+  // Load Triangles
+  ondemand::array triangles = scene["triangles"];
+  for (ondemand::object trig : triangles) {
+		int mat_index = int64_t(trig["material_index"]);
+
+    Vec3 v0;
+		ondemand::array v0_ = trig["v0"];
+    size_t i = 0;
+    for (auto p : v0_) {
+		  v0.e[i++] = p.get_double().value();
+    }
+    i = 0;
+
+    Vec3 v1;
+		ondemand::array v1_ = trig["v1"];
+    for (auto p : v1_) {
+		  v1.e[i++] = p.get_double().value();
+    }
+    i = 0;
+
+    Vec3 v2;
+		ondemand::array v2_ = trig["v2"];
+    for (auto p : v2_) {
+		  v2.e[i++] = p.get_double().value();
+    }
+    i = 0;
+
+    Vec2 uv_0;
+		ondemand::array uv_0_ = trig["uv_0"];
+    for (auto p : uv_0_) {
+		  uv_0.e[i++] = p.get_double().value();
+    }
+    i = 0;
+
+    Vec2 uv_1;
+		ondemand::array uv_1_ = trig["uv_1"];
+    for (auto p : uv_1_) {
+		  uv_1.e[i++] = p.get_double().value();
+    }
+    i = 0;
+
+    Vec2 uv_2;
+		ondemand::array uv_2_ = trig["uv_2"];
+    for (auto p : uv_2_) {
+		  uv_2.e[i++] = p.get_double().value();
+    }
+    i = 0;
+
+    renderer->add_triangle(v0, v1, v2, uv_0, uv_1, uv_2, material_handles[mat_index]);
+	}
+
+
   renderer->init(screen_width, aspect_ratio, samples_per_pixel, max_depth, vfov_deg);
 
   return true;

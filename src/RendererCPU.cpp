@@ -26,27 +26,15 @@ MaterialHandle RendererCPU::add_dielectric_material(real refraction_index) {
 
 void RendererCPU::add_sphere(const Vec3 &origin, real radius,
                              MaterialHandle mat_handle) {
-  std::shared_ptr<Material> mat;
-  switch (mat_handle.type) {
-  case MATERIAL_LAMBERT: {
-    mat = lambert_mats[mat_handle.index];
-    break;
-  }
-  case MATERIAL_METAL: {
-    mat = metal_mats[mat_handle.index];
-    break;
-  }
-  case MATERIAL_DIELECTRIC: {
-    mat = dielectric_mats[mat_handle.index];
-    break;
-  }
-  default: {
-    HASSERT_MSG(false, "Invalid material type given");
-    break;
-  }
-  }
-
+  std::shared_ptr<Material> mat = get_material(mat_handle);
   world.add(make_shared<Sphere>(origin, radius, mat));
+}
+
+void RendererCPU::add_triangle(const Vec3 &v0, const Vec3 &v1, const Vec3 &v2,
+  Vec2 uv_0, Vec2 uv_1, Vec2 uv_2,
+  MaterialHandle mat_handle) {
+  std::shared_ptr<Material> mat = get_material(mat_handle);
+  world.add(make_shared<Triangle>(v0, v1, v2, uv_0, uv_1, uv_2, mat));
 }
 
 void RendererCPU::init(u32 image_width_, real aspect_ratio_,
@@ -140,4 +128,21 @@ Ray RendererCPU::get_ray(i32 i, i32 j) const {
   Vec3 ray_direction = pixel_sample - ray_origin;
 
   return Ray(ray_origin, ray_direction);
+}
+
+std::shared_ptr<Material> RendererCPU::get_material(MaterialHandle mat_handle) {
+  switch (mat_handle.type) {
+  case MATERIAL_LAMBERT: {
+    return lambert_mats[mat_handle.index];
+  }
+  case MATERIAL_METAL: {
+    return metal_mats[mat_handle.index];
+  }
+  case MATERIAL_DIELECTRIC: {
+    return dielectric_mats[mat_handle.index];
+  }
+  default: {
+    HASSERT_MSG(false, "Invalid material type given");
+  }
+  }
 }
