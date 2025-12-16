@@ -6,6 +6,11 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <Vendor/stb_image.h>
 
+struct Vertex {
+  Vec3 position;
+  Vec2 texcoord;
+};
+
 void load_default_scene(Renderer* renderer) {
   HASSERT(renderer);
   // Create world
@@ -157,55 +162,44 @@ bool load_scene(std::string scene_name, Renderer* renderer) {
 		renderer->add_sphere(Point3(val[0], val[1], val[2]), radius, material_handles[mat_index]);
 	}
 
+  // Load Vertices
+  std::vector<Vertex> vertices;
+  ondemand::array vertices_ = scene["vertices"];
+  for (ondemand::object vertex : vertices_) {
+    Vertex v;
+		ondemand::array pos = vertex["position"];
+    size_t i = 0;
+    for (auto p : pos) {
+		  v.position.e[i++] = p.get_double().value();
+    }
+    i = 0;
+
+		ondemand::array texcoord = vertex["texcoord"];
+    for (auto p : texcoord) {
+		  v.texcoord.e[i++] = p.get_double().value();
+    }
+    i = 0;
+    vertices.push_back(v);
+	}
+
   // Load Triangles
+	size_t i = 0;
+  u32 indices[3] = {};
   ondemand::array triangles = scene["triangles"];
   for (ondemand::object trig : triangles) {
-		int mat_index = int64_t(trig["material_index"]);
-
-    Vec3 v0;
-		ondemand::array v0_ = trig["v0"];
-    size_t i = 0;
-    for (auto p : v0_) {
-		  v0.e[i++] = p.get_double().value();
-    }
     i = 0;
-
-    Vec3 v1;
-		ondemand::array v1_ = trig["v1"];
-    for (auto p : v1_) {
-		  v1.e[i++] = p.get_double().value();
+		i32 mat_index = int64_t(trig["material_index"]);
+		ondemand::array indices_ = trig["indices"];
+    for (auto index : indices_) {
+		  indices[i++] = index.get_int64().value();
     }
-    i = 0;
 
-    Vec3 v2;
-		ondemand::array v2_ = trig["v2"];
-    for (auto p : v2_) {
-		  v2.e[i++] = p.get_double().value();
-    }
-    i = 0;
-
-    Vec2 uv_0;
-		ondemand::array uv_0_ = trig["uv_0"];
-    for (auto p : uv_0_) {
-		  uv_0.e[i++] = p.get_double().value();
-    }
-    i = 0;
-
-    Vec2 uv_1;
-		ondemand::array uv_1_ = trig["uv_1"];
-    for (auto p : uv_1_) {
-		  uv_1.e[i++] = p.get_double().value();
-    }
-    i = 0;
-
-    Vec2 uv_2;
-		ondemand::array uv_2_ = trig["uv_2"];
-    for (auto p : uv_2_) {
-		  uv_2.e[i++] = p.get_double().value();
-    }
-    i = 0;
-
-    renderer->add_triangle(v0, v1, v2, uv_0, uv_1, uv_2, material_handles[mat_index]);
+    Vertex v0 = vertices[indices[0]];
+    Vertex v1 = vertices[indices[1]];
+    Vertex v2 = vertices[indices[2]];
+    renderer->add_triangle(v0.position, v1.position, v2.position,
+                           v0.texcoord, v1.texcoord, v2.texcoord,
+                           material_handles[mat_index]);
 	}
 
 
