@@ -2,8 +2,6 @@
 #include "HitRecord.slang"
 #include "Interval.slang"
 
-static const float PI = 3.1415926535897932385f;
-
 struct Sphere {
   float3 center;
   float  radius;

@@ -148,4 +148,5 @@ private:
   std::vector<GpuMetal> metal_mats;
   std::vector<GpuDielectric> dielectric_mats;
   std::vector<SphereGPU> spheres;
+  std::vector<TriangleGPU> triangles;
 };

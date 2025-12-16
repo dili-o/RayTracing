@@ -15,14 +15,16 @@ struct ShaderPushConstant {
 
   float pixel_samples_scale;
   uint max_depth;
-  float padding[2]; // 96
+  uint triangle_count;
+  float padding[1]; // 96
 
   float4 defocus_disk_u;
   float4 defocus_disk_v; // 128
 };
 
 struct Uniforms{
-  Sphere *spheres;
+	Sphere *spheres;
+	Triangle *triangles;
   MaterialLambert *lambert_mats;
   MaterialMetal *metal_mats;
   MaterialDielectric *dielectric_mats;
@@ -61,7 +63,9 @@ void computeMain(uint3 dispatch_thread_id : SV_DispatchThreadID,
         for (uint d = 0; d < pc.max_depth; ++d) {
           HitRecord rec;
           // Test ray against all spheres
-          if (hit_world(r, ray_t, rec, uniform_buffer[0].spheres, pc.sphere_count)) {
+          if (hit_world(r, ray_t, rec,
+                        uniform_buffer[0].spheres, pc.sphere_count,
+                        uniform_buffer[0].triangles, pc.triangle_count)) {
             Ray scattered;
             float3 material_attenuation = float3(0.f);
 

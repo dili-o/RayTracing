@@ -5,9 +5,9 @@
     "vup": [ 0.0, 1.0, 0.0 ],
     "defocus_angle": 0.0,
     "focus_dist": 1.0,
-    "screen_width": 400,
+    "screen_width": 1920,
     "aspect_ratio": 1.77777777778,
-    "samples_per_pixel": 150,
+    "samples_per_pixel": 450,
     "max_depth": 10,
     "vfov_deg": 20.0
   },
@@ -69,7 +69,7 @@
       "uv_0": [0.0, 0.0],
       "uv_1": [0.0, 1.0],
       "uv_2": [1.0, 1.0],
-      "material_index": 0
+      "material_index": 2
     },
     {
       "v0": [-1.0,  0.0, -2.0],
@@ -78,7 +78,7 @@
       "uv_0": [0.0, 0.0],
       "uv_1": [1.0, 1.0],
       "uv_2": [1.0, 0.0],
-      "material_index": 0
+      "material_index": 3
     }
   ]
 }

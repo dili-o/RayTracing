@@ -67,14 +67,20 @@ private:
 };
 
 struct alignas(16) TriangleGPU {
-  TriangleGPU(const Point3 &origin, f32 radius, u32 material_index,
-               u32 material_type)
-      : origin(origin), radius(radius), material_index(material_index),
-        material_type(material_type) {}
-  Point3 origin;
-  f32 radius;
+  TriangleGPU(const Vec3 &v0, const Vec3 &v1, const Vec3 &v2,
+           Vec2 uv_0, Vec2 uv_1, Vec2 uv_2,
+           MaterialHandle mat)
+      : v0(v0), v1(v1), v2(v2),
+        uv_0(uv_0), uv_1(uv_1), uv_2(uv_2),
+        material_index(mat.index),
+        material_type(mat.type) {}
+  Vec3 v0; f32 pad_0; // 16
+  Vec3 v1; f32 pad_1; // 16
+  Vec3 v2; f32 pad_2; // 16
+  Vec2 uv_0; //
+  Vec2 uv_1; // 16
 
-  u32 material_index;
-  u32 material_type;
-  u32 padding[2];
+  Vec2 uv_2;          //
+  u32 material_index; // 
+  u32 material_type;  // 16
 };
