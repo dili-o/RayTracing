@@ -98,6 +98,12 @@ inline Vec3 operator*(const Vec3 &v, real t) { return t * v; }
 
 inline Vec3 operator/(const Vec3 &v, real t) { return (1 / t) * v; }
 
+inline bool operator==(const Vec3& v, const Vec3& t) { 
+  return (v.x() == t.x()) &&
+				 (v.y() == t.y()) &&
+         (v.z() == t.z());
+}
+
 inline real dot(const Vec3 &u, const Vec3 &v) {
   return u.e[0] * v.e[0] + u.e[1] * v.e[1] + u.e[2] * v.e[2];
 }
@@ -146,4 +152,16 @@ inline Vec3 refract(const Vec3 &uv, const Vec3 &n, real etai_over_etat) {
       -std::sqrt(std::fabs(1.f - r_out_perp.length_squared())) * n;
   return r_out_perp + r_out_parallel;
 }
+
+namespace std {
+  template<> struct hash<Vec3> {
+    size_t operator()(Vec3 const& v) const noexcept {
+      size_t h1 = std::hash<float>{}(v.x());
+      size_t h2 = std::hash<float>{}(v.y());
+      size_t h3 = std::hash<float>{}(v.z());
+      return ((h1 ^ (h2 << 1)) >> 1) ^ (h3 << 1);
+    }
+  };
+}
+
 #endif

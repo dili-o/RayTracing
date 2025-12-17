@@ -43,7 +43,7 @@ bool triangle_hit(in Triangle triangle, in Ray r, Interval ray_t, inout HitRecor
 
 	const float t = f * dot(edge2, q);
 
-	if (!ray_t.contains(t))
+	if (t < EPSILON || !ray_t.contains(t))
 		return false;
 
 	rec.t = t;

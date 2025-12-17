@@ -5,11 +5,25 @@
 #include <Vendor/simdjson/simdjson.h>
 #define STB_IMAGE_IMPLEMENTATION
 #include <Vendor/stb_image.h>
+#define TINYOBJLOADER_IMPLEMENTATION
+#include <tiny_obj_loader.h>
 
 struct Vertex {
   Vec3 position;
   Vec2 texcoord;
+
+  bool operator==(const Vertex& other) const {
+		return position == other.position && texcoord == other.texcoord;
+	}
 };
+
+namespace std {
+	template<> struct hash<Vertex> {
+		size_t operator()(Vertex const& vertex) const {
+      return ((hash<Vec3>()(vertex.position) ^ (hash<Vec2>()(vertex.texcoord) << 1)) >> 1);
+		}
+	};
+}
 
 void load_default_scene(Renderer* renderer) {
   HASSERT(renderer);
@@ -194,14 +208,71 @@ bool load_scene(std::string scene_name, Renderer* renderer) {
 		  indices[i++] = index.get_int64().value();
     }
 
-    Vertex v0 = vertices[indices[0]];
-    Vertex v1 = vertices[indices[1]];
-    Vertex v2 = vertices[indices[2]];
+    const Vertex &v0 = vertices[indices[0]];
+    const Vertex &v1 = vertices[indices[1]];
+    const Vertex &v2 = vertices[indices[2]];
     renderer->add_triangle(v0.position, v1.position, v2.position,
                            v0.texcoord, v1.texcoord, v2.texcoord,
                            material_handles[mat_index]);
 	}
 
+  // Load model
+  auto model_field = scene["model"];
+  if (model_field.error() != NO_SUCH_FIELD) {
+		ondemand::object model = scene["model"];
+		std::string path = HOME_PATH "/Scenes/" + std::string(model["path"].get_string().value());
+		tinyobj::attrib_t attrib;
+		std::vector<tinyobj::shape_t> obj_shapes;
+		std::vector<tinyobj::material_t> obj_materials;
+		std::string warn;
+		std::string err;
+
+		if (!tinyobj::LoadObj(&attrib, &obj_shapes, &obj_materials, &warn, &err, path.c_str())) {
+			throw std::runtime_error(err);
+		}
+
+		u32 initial_vtx_size = vertices.size();
+		std::vector<u32> obj_indices;
+		std::unordered_map<Vertex, u32> uniqueVertices{};
+		for (const auto& shape : obj_shapes) {
+			for (const auto& index : shape.mesh.indices) {
+				Vertex vertex{};
+
+				vertex.position = {
+					attrib.vertices[3 * index.vertex_index + 0],
+					attrib.vertices[3 * index.vertex_index + 1],
+					attrib.vertices[3 * index.vertex_index + 2]
+				};
+
+				if (index.texcoord_index == -1) {
+					vertex.texcoord = { 0.f, 0.f };
+				}
+				else {
+					vertex.texcoord = {
+						attrib.texcoords[2 * index.texcoord_index + 0],
+						1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
+					};
+				}
+
+				if (uniqueVertices.count(vertex) == 0) {
+					uniqueVertices[vertex] = static_cast<uint32_t>(vertices.size());
+					vertices.push_back(vertex);
+				}
+
+				obj_indices.push_back(uniqueVertices[vertex] + initial_vtx_size);
+			}
+		}
+
+		for (size_t idx = 0; idx < obj_indices.size() / 3; idx += 3) {
+			const Vertex &v0 = vertices[obj_indices[idx]];
+			const Vertex &v1 = vertices[obj_indices[idx + 1]];
+			const Vertex &v2 = vertices[obj_indices[idx + 2]];
+			renderer->add_triangle(v0.position, v1.position, v2.position,
+														 v0.texcoord, v1.texcoord, v2.texcoord,
+														 material_handles[0]);
+
+		}
+  }
 
   renderer->init(screen_width, aspect_ratio, samples_per_pixel, max_depth, vfov_deg);
 
