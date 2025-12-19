@@ -236,7 +236,6 @@ bool load_scene(std::string scene_name, Renderer* renderer) {
 			throw std::runtime_error(err);
 		}
 
-		u32 initial_vtx_size = vertices.size();
 		std::vector<u32> obj_indices;
 		std::unordered_map<Vertex, u32> uniqueVertices{};
 		for (const auto& shape : obj_shapes) {
@@ -264,11 +263,11 @@ bool load_scene(std::string scene_name, Renderer* renderer) {
 					vertices.push_back(vertex);
 				}
 
-				obj_indices.push_back(uniqueVertices[vertex] + initial_vtx_size);
+				obj_indices.push_back(uniqueVertices[vertex]);
 			}
 		}
 
-		for (size_t idx = 0; idx < obj_indices.size() / 3; idx += 3) {
+		for (size_t idx = 0; idx < obj_indices.size(); idx += 3) {
 			const Vertex &v0 = vertices[obj_indices[idx]];
 			const Vertex &v1 = vertices[obj_indices[idx + 1]];
 			const Vertex &v2 = vertices[obj_indices[idx + 2]];
