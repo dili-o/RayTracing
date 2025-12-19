@@ -44,7 +44,7 @@ public:
     rec.t = t;
     rec.p = r.at(t);
 
-    Vec3 outward_normal = cross(edge1, edge2);
+    Vec3 outward_normal = unit_vector(cross(edge1, edge2));
     rec.set_face_normal(r, outward_normal);
 
     // Get UV

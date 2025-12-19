@@ -49,7 +49,7 @@ bool triangle_hit(in Triangle triangle, in Ray r, Interval ray_t, inout HitRecor
 	rec.t = t;
 	rec.p = r.at(t);
 
-	float3 outward_normal = cross(edge1, edge2);
+	float3 outward_normal = normalize(cross(edge1, edge2));
 	rec.set_face_normal(r, outward_normal);
 
     // Get UV
