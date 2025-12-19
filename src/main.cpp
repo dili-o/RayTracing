@@ -36,7 +36,7 @@ int main(int argc, cstring *argv) {
     renderer = new RendererVk();
   }
 
-  if (!load_scene(HOME_PATH "/Scenes/TestScene.json", renderer)) {
+  if (!load_scene(HOME_PATH "/Scenes/CubeWorld.json", renderer)) {
 		load_default_scene(renderer);
   }
 

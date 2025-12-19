@@ -35,33 +35,8 @@
     }
   ],
   "spheres": [
-    {
-      "center": [ 0.0, -100.5, -1.0 ],
-      "radius": 100.0,
-      "material_index": 0
-    },
-    {
-      "center": [ 0.0, 0.0, -4.0 ],
-      "radius": 0.5,
-      "material_index": 4
-    },
-    {
-      "center": [ -1.0, 0.0, -4.0 ],
-      "radius": 0.5,
-      "material_index": 2
-    },
-    {
-      "center": [ 1.0, 0.0, -4.0 ],
-      "radius": 0.5,
-      "material_index": 3
-    },
-    {
-      "center": [ -0.5, -0.35, -3.5 ],
-      "radius": 0.15,
-      "material_index": 1
-    }
   ],
-  "vertices": [
+  "vertices_": [
     {
       "position": [-3.0, -0.5, -9.0],
       "texcoord": [0.0, 0.0]
@@ -79,7 +54,7 @@
       "texcoord": [1.0, 0.0]
     }
   ],
-  "triangles": [
+  "triangles_": [
     {
       "indices": [ 0, 1, 2 ],
       "material_index": 2

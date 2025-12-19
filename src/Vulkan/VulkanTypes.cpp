@@ -149,7 +149,7 @@ void CreateVmaBuffer(VmaAllocator vmaAllocator, VkDevice device,
                      VmaAllocationCreateFlags vmaFlags,
                      VkMemoryPropertyFlags properties) {
   VkBufferCreateInfo bufferInfo{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
-  bufferInfo.size = size;
+  bufferInfo.size = size ? size : 4;
   bufferInfo.usage = usage;
   bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
@@ -167,6 +167,9 @@ void CreateVmaBuffer(VmaAllocator vmaAllocator, VkDevice device,
   VK_CHECK(vmaCreateBuffer(vmaAllocator, &bufferInfo, &memoryInfo,
                            &buffer.vkHandle, &buffer.vmaAllocation,
                            &allocInfo));
+  if (!size) {
+    HWARN("Attempting to create a buffer of size 0, a buffer of size 4 was created intead!");
+  }
 
   buffer.usage = usage;
   buffer.properties = properties;
@@ -251,6 +254,10 @@ void CopyToBuffer(VkCommandBuffer commandBuffer, VkDeviceSize size,
                   VkDeviceSize srcOffset, VkBuffer srcBuffer,
                   VkDeviceSize dstOffset, VkBuffer dstBuffer) {
 
+  if (!size) {
+    HWARN("Attempting to copy to a buffer of size 0!");
+    return;
+  }
   VkBufferCopy2 region{VK_STRUCTURE_TYPE_BUFFER_COPY_2};
   region.srcOffset = srcOffset;
   region.dstOffset = dstOffset;

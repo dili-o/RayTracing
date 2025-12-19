@@ -82,7 +82,7 @@ bool load_scene(std::string scene_name, Renderer* renderer) {
   if (!std::filesystem::exists(scene_name)) {
     HERROR("Error: JSON file not found at path: {}", scene_name.c_str());
     return false;
-	}
+  }
   using namespace simdjson;
   ondemand::parser parser;
   padded_string json = padded_string::load(scene_name);
@@ -92,21 +92,21 @@ bool load_scene(std::string scene_name, Renderer* renderer) {
   ondemand::object camera = scene["camera"];
   ondemand::array center = camera["center"];
   int index = 0;
-	for (auto value : center) {
+  for (auto value : center) {
     renderer->center.e[index++] = value.get_double().value();
-	}
+  }
   index = 0;
 
   ondemand::array lookat = camera["lookat"];
-	for (auto value : lookat) {
+  for (auto value : lookat) {
     renderer->lookat.e[index++] = value.get_double().value();
-	}
+  }
   index = 0;
 
   ondemand::array vup = camera["vup"];
-	for (auto value : vup) {
+  for (auto value : vup) {
     renderer->vup.e[index++] = value.get_double().value();
-	}
+  }
   index = 0;
 
   renderer->defocus_angle = camera["defocus_angle"].get_double().value();
@@ -122,7 +122,7 @@ bool load_scene(std::string scene_name, Renderer* renderer) {
   ondemand::array materials = scene["materials"];
   std::vector<MaterialHandle> material_handles(materials.count_elements());
   for (ondemand::object mat : materials) {
-		int type_id = int64_t(mat["type_id"]);
+    int type_id = int64_t(mat["type_id"]);
 
     switch (type_id)
     {
@@ -131,28 +131,28 @@ bool load_scene(std::string scene_name, Renderer* renderer) {
 
       if (albedo_element.type() == ondemand::json_type::string) {
         std::string_view image_name = albedo_element.get_string();
-        material_handles[index++] = 
+        material_handles[index++] =
           renderer->add_lambert_material(HOME_PATH "/Scenes/" + std::string(image_name));
       }
       else {
-				ondemand::array albedo = mat["albedo"];
-				std::vector<real> rgb;
-				for (auto v : albedo) rgb.push_back(v.get_double().value());
-				material_handles[index++] = renderer->add_lambert_material(Color(rgb[0], rgb[1], rgb[2]));
+        ondemand::array albedo = mat["albedo"];
+        std::vector<real> rgb;
+        for (auto v : albedo) rgb.push_back(v.get_double().value());
+        material_handles[index++] = renderer->add_lambert_material(Color(rgb[0], rgb[1], rgb[2]));
       }
 
       break;
     }
     case MATERIAL_METAL: {
-			ondemand::array albedo = mat["albedo"];
-			std::vector<real> rgb;
-			for (auto v : albedo) rgb.push_back(v.get_double().value());
-			real fuzz = mat["fuzz"].get_double().value();
-			material_handles[index++] = renderer->add_metal_material(Color(rgb[0], rgb[1], rgb[2]), fuzz);
+      ondemand::array albedo = mat["albedo"];
+      std::vector<real> rgb;
+      for (auto v : albedo) rgb.push_back(v.get_double().value());
+      real fuzz = mat["fuzz"].get_double().value();
+      material_handles[index++] = renderer->add_metal_material(Color(rgb[0], rgb[1], rgb[2]), fuzz);
       break;
     }
     case MATERIAL_DIELECTRIC: {
-			real ior = mat["ior"].get_double().value();
+      real ior = mat["ior"].get_double().value();
       material_handles[index++] = renderer->add_dielectric_material(ior);
       break;
     }
@@ -160,61 +160,66 @@ bool load_scene(std::string scene_name, Renderer* renderer) {
       HASSERT(false);
       break;
     }
-	}
+  }
   index = 0;
 
   // Load Spheres
   ondemand::array spheres = scene["spheres"];
   for (ondemand::object sphere : spheres) {
-		int mat_index = int64_t(sphere["material_index"]);
-		double radius = double(sphere["radius"]);
+    int mat_index = int64_t(sphere["material_index"]);
+    double radius = double(sphere["radius"]);
 
-		ondemand::array position = sphere["center"];
-		std::vector<real> val;
-		for (auto p : position) val.push_back(p.get_double().value());
+    ondemand::array position = sphere["center"];
+    std::vector<real> val;
+    for (auto p : position) val.push_back(p.get_double().value());
 
-		renderer->add_sphere(Point3(val[0], val[1], val[2]), radius, material_handles[mat_index]);
-	}
+    renderer->add_sphere(Point3(val[0], val[1], val[2]), radius, material_handles[mat_index]);
+  }
 
   // Load Vertices
-  std::vector<Vertex> vertices;
-  ondemand::array vertices_ = scene["vertices"];
-  for (ondemand::object vertex : vertices_) {
-    Vertex v;
-		ondemand::array pos = vertex["position"];
-    size_t i = 0;
-    for (auto p : pos) {
-		  v.position.e[i++] = p.get_double().value();
-    }
-    i = 0;
+	std::vector<Vertex> vertices;
+  bool has_vertices_field = scene["vertices"].error() != NO_SUCH_FIELD;
+  if (has_vertices_field) {
+		ondemand::array vertices_ = scene["vertices"];
+		for (ondemand::object vertex : vertices_) {
+			Vertex v;
+			ondemand::array pos = vertex["position"];
+			size_t i = 0;
+			for (auto p : pos) {
+				v.position.e[i++] = p.get_double().value();
+			}
+			i = 0;
 
-		ondemand::array texcoord = vertex["texcoord"];
-    for (auto p : texcoord) {
-		  v.texcoord.e[i++] = p.get_double().value();
-    }
-    i = 0;
-    vertices.push_back(v);
-	}
+			ondemand::array texcoord = vertex["texcoord"];
+			for (auto p : texcoord) {
+				v.texcoord.e[i++] = p.get_double().value();
+			}
+			i = 0;
+			vertices.push_back(v);
+		}
+  }
 
   // Load Triangles
-	size_t i = 0;
-  u32 indices[3] = {};
-  ondemand::array triangles = scene["triangles"];
-  for (ondemand::object trig : triangles) {
-    i = 0;
-		i32 mat_index = int64_t(trig["material_index"]);
-		ondemand::array indices_ = trig["indices"];
-    for (auto index : indices_) {
-		  indices[i++] = index.get_int64().value();
-    }
+  auto has_triangles_field = scene["triangles"].error() != NO_SUCH_FIELD;
+  if (has_triangles_field) {
+    ondemand::array triangles = scene["triangles"];
+    for (ondemand::object trig : triangles) {
+      u32 indices[3] = {};
+      size_t i = 0;
+      i32 mat_index = int64_t(trig["material_index"]);
+      ondemand::array indices_ = trig["indices"];
+      for (auto index : indices_) {
+        indices[i++] = index.get_int64().value();
+      }
 
-    const Vertex &v0 = vertices[indices[0]];
-    const Vertex &v1 = vertices[indices[1]];
-    const Vertex &v2 = vertices[indices[2]];
-    renderer->add_triangle(v0.position, v1.position, v2.position,
-                           v0.texcoord, v1.texcoord, v2.texcoord,
-                           material_handles[mat_index]);
-	}
+      const Vertex& v0 = vertices[indices[0]];
+      const Vertex& v1 = vertices[indices[1]];
+      const Vertex& v2 = vertices[indices[2]];
+      renderer->add_triangle(v0.position, v1.position, v2.position,
+        v0.texcoord, v1.texcoord, v2.texcoord,
+        material_handles[mat_index]);
+    }
+  }
 
   // Load model
   auto model_field = scene["model"];
