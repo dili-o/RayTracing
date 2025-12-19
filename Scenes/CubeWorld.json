@@ -7,7 +7,7 @@
     "focus_dist": 1.0,
     "screen_width": 400,
     "aspect_ratio": 1.77777777778,
-    "samples_per_pixel": 100,
+    "samples_per_pixel": 14,
     "max_depth": 10,
     "vfov_deg": 20.0
   },
@@ -52,6 +52,6 @@
     }
   ],
   "model": {
-    "path": "cube/cube.obj"
+    "path": "african_head/african_head.obj"
   }
 }

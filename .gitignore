@@ -11,7 +11,7 @@ Session.vim
 .cache/
 *.rad
 *.png
-.cap
+Capture.cap
 CMakeCache.txt
 CMakeFiles/
 Makefile

@@ -9,14 +9,17 @@
 
 class Vec3 {
 public:
-  real e[3];
+	union {
+		struct {
+			real x; 
+			real y;
+      real z;
+		};
 
+		real e[3];
+	};
   Vec3() : e{0, 0, 0} {}
   Vec3(real e0, real e1, real e2) : e{e0, e1, e2} {}
-
-  real x() const { return e[0]; }
-  real y() const { return e[1]; }
-  real z() const { return e[2]; }
 
   Vec3 operator-() const { return Vec3(-e[0], -e[1], -e[2]); }
   real operator[](int i) const { return e[i]; }
@@ -37,9 +40,9 @@ public:
   }
 
   static void set_float4(f32 float4[4], const Vec3 &vec) {
-    float4[0] = vec.x();
-    float4[1] = vec.y();
-    float4[2] = vec.z();
+    float4[0] = vec.x;
+    float4[1] = vec.y;
+    float4[2] = vec.z;
   }
 
   Vec3 &operator/=(real t) { return *this *= 1 / t; }
@@ -99,9 +102,9 @@ inline Vec3 operator*(const Vec3 &v, real t) { return t * v; }
 inline Vec3 operator/(const Vec3 &v, real t) { return (1 / t) * v; }
 
 inline bool operator==(const Vec3& v, const Vec3& t) { 
-  return (v.x() == t.x()) &&
-				 (v.y() == t.y()) &&
-         (v.z() == t.z());
+  return (v.x == t.x) &&
+				 (v.y == t.y) &&
+         (v.z == t.z);
 }
 
 inline real dot(const Vec3 &u, const Vec3 &v) {
@@ -156,9 +159,9 @@ inline Vec3 refract(const Vec3 &uv, const Vec3 &n, real etai_over_etat) {
 namespace std {
   template<> struct hash<Vec3> {
     size_t operator()(Vec3 const& v) const noexcept {
-      size_t h1 = std::hash<float>{}(v.x());
-      size_t h2 = std::hash<float>{}(v.y());
-      size_t h3 = std::hash<float>{}(v.z());
+      size_t h1 = std::hash<float>{}(v.x);
+      size_t h2 = std::hash<float>{}(v.y);
+      size_t h3 = std::hash<float>{}(v.z);
       return ((h1 ^ (h2 << 1)) >> 1) ^ (h3 << 1);
     }
   };

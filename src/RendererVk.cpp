@@ -73,9 +73,9 @@ MaterialHandle RendererVk::add_lambert_material(const Vec3 &albedo) {
   vk_image_views.emplace_back(VulkanImageView());
   u8* pixels = static_cast<u8 *>(malloc(sizeof(u8) * BYTES_PER_PIXEL));
   HASSERT(pixels);
-  pixels[0] = static_cast<u8>(albedo.x() * 255.f);
-  pixels[1] = static_cast<u8>(albedo.y() * 255.f);
-  pixels[2] = static_cast<u8>(albedo.z() * 255.f);
+  pixels[0] = static_cast<u8>(albedo.x * 255.f);
+  pixels[1] = static_cast<u8>(albedo.y * 255.f);
+  pixels[2] = static_cast<u8>(albedo.z * 255.f);
   pixels[3] = 255;
 
   images.emplace_back(pixels, 1, 1);
@@ -93,7 +93,7 @@ MaterialHandle RendererVk::add_lambert_material(const std::string &filename) {
 
 MaterialHandle RendererVk::add_metal_material(const Vec3 &albedo,
                                               real fuzziness) {
-  metal_mats.push_back({albedo.x(), albedo.y(), albedo.z(), fuzziness});
+  metal_mats.push_back({albedo.x, albedo.y, albedo.z, fuzziness});
   return {MATERIAL_METAL, ((u32)metal_mats.size() - 1)};
 }
 

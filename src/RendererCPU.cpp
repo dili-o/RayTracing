@@ -64,9 +64,9 @@ void RendererCPU::render(u8 *out_pixels) {
       pixel_color *= pixel_samples_scale;
 
       // Write the color
-      real r = pixel_color.x();
-      real g = pixel_color.y();
-      real b = pixel_color.z();
+      real r = pixel_color.x;
+      real g = pixel_color.y;
+      real b = pixel_color.z;
 
       r = linear_to_gamma(r);
       g = linear_to_gamma(g);
@@ -100,7 +100,7 @@ Color RendererCPU::ray_color(const Ray &r, u32 depth,
   }
 
   Vec3 unit_direction = unit_vector(r.direction());
-  real a = 0.5f * (unit_direction.y() + 1.f);
+  real a = 0.5f * (unit_direction.y + 1.f);
   return (1.f - a) * Color(1.f, 1.f, 1.f) + a * Color(0.5f, 0.7f, 1.f);
 }
 
@@ -121,8 +121,8 @@ Ray RendererCPU::get_ray(i32 i, i32 j) const {
   // a randomly sampled point around the pixel location i, j.
 
   Vec3 offset = sample_square();
-  Vec3 pixel_sample = pixel00_loc + ((i + offset.x()) * pixel_delta_u) +
-                      ((j + offset.y()) * pixel_delta_v);
+  Vec3 pixel_sample = pixel00_loc + ((i + offset.x) * pixel_delta_u) +
+                      ((j + offset.y) * pixel_delta_v);
 
   Vec3 ray_origin = (defocus_angle <= 0) ? center : defocus_disk_sample();
   Vec3 ray_direction = pixel_sample - ray_origin;

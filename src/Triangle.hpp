@@ -18,7 +18,7 @@ public:
     const Vec3 edge2 = v2 - v0;
     const Vec3 h = cross(r.direction(), edge2);
     const f32 a = dot( edge1, h );
-    constexpr f32 epsilon = 0.0001f;
+    constexpr f32 epsilon = std::numeric_limits<f32>::epsilon();
 
     if (a > -epsilon && a < epsilon)
       return false; // ray parallel to triangle
