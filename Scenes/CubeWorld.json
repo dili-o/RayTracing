@@ -18,50 +18,37 @@
     },
     {
       "type_id": 0,
-      "albedo": "moonmap.jpg"
-    },
-    {
-      "type_id": 1,
-      "albedo": [ 0.8, 0.8, 0.8 ],
-      "fuzz": 0.0005
-    },
-    {
-      "type_id": 2,
-      "ior": 1.5
-    },
-    {
-      "type_id": 0,
-      "albedo": "earthmap.jpg"
+      "albedo": [ 0.7, 0.7, 0.7 ]
     }
   ],
   "spheres": [
   ],
-  "vertices_": [
+  "vertices": [
     {
-      "position": [-3.0, -0.5, -9.0],
+      "position": [-3.0, -0.5,  3.0],
       "texcoord": [0.0, 0.0]
     },
     {
-      "position": [-3.0,  1.5, -9.0],
-      "texcoord": [0.0, 1.0]
-    },
-    {
-      "position": [ 3.0,  1.5, -9.0],
+      "position": [ 3.0, -0.5, -3.0],
       "texcoord": [1.0, 1.0]
     },
     {
-      "position": [ 3.0, -0.5, -9.0],
+      "position": [-3.0, -0.5, -3.0],
+      "texcoord": [0.0, 1.0]
+    },
+    {
+      "position": [ 3.0, -0.5,  3.0],
       "texcoord": [1.0, 0.0]
     }
   ],
-  "triangles_": [
+  "triangles": [
     {
       "indices": [ 0, 1, 2 ],
-      "material_index": 2
+      "material_index": 1
     },
     {
-      "indices": [ 0, 2, 3 ],
-      "material_index": 2
+      "indices": [ 0, 3, 1 ],
+      "material_index": 1
     }
   ],
   "model": {
