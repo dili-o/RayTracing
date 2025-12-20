@@ -44,11 +44,11 @@ public:
 
   bool scatter_ray(const Ray &r_in, const HitRecord &rec, Color &attenuation,
                    Ray &r_out) const override {
-    Vec3 reflected = reflect(r_in.direction(), rec.normal);
+    Vec3 reflected = reflect(r_in.direction, rec.normal);
     reflected = unit_vector(reflected) + (fuzz * random_unit_vector());
     r_out = Ray(rec.p, reflected);
     attenuation = albedo;
-    return (dot(r_out.direction(), rec.normal) > 0);
+    return (dot(r_out.direction, rec.normal) > 0);
   }
 
 private:
@@ -65,7 +65,7 @@ public:
     attenuation = Color(1.f, 1.f, 1.f);
     real ri = rec.front_face ? (1.f / refraction_index) : refraction_index;
 
-    Vec3 unit_direction = unit_vector(r_in.direction());
+    Vec3 unit_direction = unit_vector(r_in.direction);
     real cos_theta = std::fmin(dot(-unit_direction, rec.normal), 1.f);
     real sin_theta = std::sqrt(1.f - cos_theta * cos_theta);
 

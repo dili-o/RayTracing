@@ -1,7 +1,6 @@
 #include "Scene.hpp"
 #include "Renderer.hpp"
 // Vendor
-#include <filesystem>
 #include <Vendor/simdjson/simdjson.h>
 #define STB_IMAGE_IMPLEMENTATION
 #include <Vendor/stb_image.h>
@@ -78,14 +77,14 @@ void load_default_scene(Renderer* renderer) {
   renderer->init(384, 16.f / 9.f, 150, 10, 20.f);
 }
 
-bool load_scene(std::string scene_name, Renderer* renderer) {
+bool load_scene(const std::filesystem::path &scene_name, Renderer* renderer) {
   if (!std::filesystem::exists(scene_name)) {
-    HERROR("Error: JSON file not found at path: {}", scene_name.c_str());
+    HERROR("Error: JSON file not found at path: {}", scene_name.string().c_str());
     return false;
   }
   using namespace simdjson;
   ondemand::parser parser;
-  padded_string json = padded_string::load(scene_name);
+  padded_string json = padded_string::load(scene_name.string());
   ondemand::document scene = parser.iterate(json);
 
   // Load camera settings

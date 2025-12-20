@@ -7,7 +7,7 @@
     "focus_dist": 1.0,
     "screen_width": 400,
     "aspect_ratio": 1.77777777778,
-    "samples_per_pixel": 14,
+    "samples_per_pixel": 10,
     "max_depth": 10,
     "vfov_deg": 20.0
   },

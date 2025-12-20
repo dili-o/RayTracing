@@ -4,40 +4,69 @@
 // Vendor
 #include <Vendor/stb_image_write.h>
 #include <windows.h>
+#include <filesystem>
 
 #define CHANNEL_NUM 3
 
 int main(int argc, cstring *argv) {
   using namespace hlx;
   Logger logger;
-  Renderer *renderer;
+  Renderer *renderer = nullptr;
 
-  bool useCPU = false;
-  bool useGPU = false;
-  for (i32 i = 1; i < argc; ++i) {
-    if (!strcmp(argv[i], "-cpu")) {
-      useCPU = true;
-    } else if (!strcmp(argv[i], "-gpu")) {
-      useGPU = true;
+  i32 arg_idx = 1;
+  std::filesystem::path scene_path;
+  std::filesystem::path image_path;
+  if (argc > 1) {
+		// Check if the first argument is the scene
+    if (argv[arg_idx][0] != '-') {
+			std::filesystem::path input_path = argv[1];
+			scene_path = std::filesystem::absolute(input_path);
+      ++arg_idx;
+    }
+    // Check for other arguments
+    for (; arg_idx < argc; ++arg_idx) {
+      cstring arg = argv[arg_idx];
+      if (arg[0] == '-') {
+        if (!strcmp(arg + 1, "cpu")) {
+          if (renderer) {
+            HWARN("Renderer type specified more than once in argument! Only used -cpu or -gpu once");
+          } else {
+						renderer = new RendererCPU();
+          }
+        } else if (!strcmp(arg + 1, "gpu")) {
+          if (renderer) {
+            HWARN("Renderer type specified more than once in argument! Only used -cpu or -gpu once");
+          } else {
+						renderer = new RendererVk();
+          }
+        } else if (!strcmp(arg + 1, "o")) {
+          ++arg_idx;
+          if (arg_idx >= argc) {
+            HWARN("No output image file passed!");
+          }
+          else {
+						std::filesystem::path output_path = argv[arg_idx];
+						image_path = std::filesystem::absolute(output_path);
+          }
+        }
+      }
     }
   }
 
-  if (useCPU && useGPU) {
-    HERROR("Cannot enable both -cpu and -gpu, select only one!");
-    return 1;
-  } else if (!useCPU && !useGPU) {
-    HERROR("Must enable either -cpu or -gpu!");
-    return 1;
-  }
-
-  if (useCPU) {
+  if (!renderer) {
     renderer = new RendererCPU();
-  } else {
-    renderer = new RendererVk();
   }
 
-  if (!load_scene(HOME_PATH "/Scenes/CubeWorld.json", renderer)) {
+  if (!scene_path.empty()) {
+		if (!load_scene(scene_path, renderer)) {
+			load_default_scene(renderer);
+		}
+  } else {
 		load_default_scene(renderer);
+  }
+
+  if (image_path.empty()) {
+    image_path = std::string(std::filesystem::current_path().string() + "/image.png");
   }
 
   u8 *pixels =
@@ -47,27 +76,30 @@ int main(int argc, cstring *argv) {
   renderer->render(pixels);
   auto end = std::chrono::high_resolution_clock::now();
 
-  double seconds = std::chrono::duration<double>(end - start).count();
+  f64 seconds = std::chrono::duration<f64>(end - start).count();
   std::cout << "Total time: " << seconds << " seconds\n";
 
-  std::string image_string = HOME_PATH;
-  image_string += "/image_";
-  image_string += useCPU ? "cpu" : "gpu";
-  image_string += ".png";
-  if (!stbi_write_png(image_string.c_str(), renderer->image_width,
-                      renderer->image_height, CHANNEL_NUM, pixels,
-                      renderer->image_width * CHANNEL_NUM)) {
-    HERROR("Failed to write to file: {}", image_string.c_str());
-    return 1;
-  }
+  if (image_path.extension() != ".png") {
+    std::string old_ext = image_path.extension().string();
+    HWARN("Image extension type: [{}] not supported.", old_ext.c_str());
+    image_path = std::string(std::filesystem::current_path().string() + "/image.png");
+  } 
+
+	if (!stbi_write_png(image_path.string().c_str(), renderer->image_width,
+											renderer->image_height, CHANNEL_NUM, pixels,
+											renderer->image_width * CHANNEL_NUM)) {
+		HERROR("Failed to write to file: {}", image_path.string().c_str());
+		return 1;
+	} 
+  HTRACE("Image saved to: {}", image_path.string().c_str());
 
   // TODO: Don't show the image if any errors occurred in the renderer
   if (renderer->show_image)
-    ShellExecuteA(nullptr,              // parent window (none)
-                  "open",               // operation
-                  image_string.c_str(), // file to open
-                  nullptr,              // parameters (none)
-                  nullptr,              // default directory
-                  SW_SHOW               // show the window
+    ShellExecuteA(nullptr,                      // parent window (none)
+                  "open",                       // operation
+                  image_path.string().c_str(),  // file to open
+                  nullptr,                      // parameters (none)
+                  nullptr,                      // default directory
+                  SW_SHOW                       // show the window
     );
 }

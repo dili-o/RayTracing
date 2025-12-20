@@ -25,7 +25,6 @@ static VkShaderModule comp_shader_module;
 static VkPipeline vkPipeline;
 static VulkanBuffer spheres_buffer{};
 static VulkanBuffer triangles_buffer{};
-static VulkanBuffer Buffer{};
 static VulkanBuffer lambert_buffer{};
 static VulkanBuffer metal_buffer{};
 static VulkanBuffer dielectric_buffer{};

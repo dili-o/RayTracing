@@ -9,7 +9,7 @@ class Image {
 public:
     Image(const char* filename) {
         i32 comp;
-        stbi_set_flip_vertically_on_load(true);
+        stbi_set_flip_vertically_on_load(false);
         f32* raw_fdata = stbi_loadf(filename, &image_width, &image_height, &comp, BYTES_PER_PIXEL);
         HASSERT_MSGS(raw_fdata, "Failed to load image: {}", filename);
         fdata.reset(raw_fdata);  // Take ownership

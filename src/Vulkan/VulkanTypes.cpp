@@ -168,7 +168,7 @@ void CreateVmaBuffer(VmaAllocator vmaAllocator, VkDevice device,
                            &buffer.vkHandle, &buffer.vmaAllocation,
                            &allocInfo));
   if (!size) {
-    HWARN("Attempting to create a buffer of size 0, a buffer of size 4 was created intead!");
+    HWARN("Attempting to create a buffer of size 0, a buffer of size 4 was created instead!");
   }
 
   buffer.usage = usage;

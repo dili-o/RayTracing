@@ -6,8 +6,7 @@
 
 class Material;
 
-class HitRecord {
-public:
+struct HitRecord {
   Point3 p;
   Vec3 normal;
   std::shared_ptr<Material> mat;
@@ -17,7 +16,7 @@ public:
   bool front_face;
 
   void set_face_normal(const Ray &r, const Vec3 &outward_normal) {
-    front_face = dot(r.direction(), outward_normal) < 0.f;
+    front_face = dot(r.direction, outward_normal) < 0.f;
     normal = front_face ? outward_normal : -outward_normal;
   }
 };

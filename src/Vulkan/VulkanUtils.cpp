@@ -65,7 +65,10 @@ bool CompileShader(const std::string &path, const std::string &shaderName,
       std::string("\"") + vulkanSdk + "\\Bin\\slangc.exe\"";
   std::string args =
       " " + shaderName +
-      " -target spirv -profile spirv_1_3+SPV_KHR_non_semantic_info "
+      " -target spirv -profile spirv_1_3+SPV_KHR_non_semantic_info+"
+      "SPV_GOOGLE_user_type+spvDerivativeControl+"
+      "spvImageQuery+spvImageGatherExtended+spvSparseResidency+"
+      "spvMinLod+spvFragmentFullyCoveredEXT+spvShaderNonUniformEXT "
       "-emit-spirv-directly "
       "-fvk-use-entrypoint-name -entry computeMain " +
       defines +

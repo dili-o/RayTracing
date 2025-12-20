@@ -1,8 +1,8 @@
 #pragma once
 // Vendor
-#include <string>
+#include <filesystem>
 
 class Renderer;
 
 void load_default_scene(Renderer* renderer);
-bool load_scene(std::string scene_name, Renderer* renderer);
+bool load_scene(const std::filesystem::path &scene_name, Renderer* renderer);

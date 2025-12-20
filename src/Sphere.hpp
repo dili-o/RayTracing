@@ -10,9 +10,9 @@ public:
       : center(center), radius(std::fmax(0.f, radius)), mat(mat) {}
 
   bool hit(const Ray &r, Interval ray_t, HitRecord &rec) const override {
-    Vec3 oc = center - r.origin();
-    real a = r.direction().length_squared();
-    real h = dot(r.direction(), oc);
+    Vec3 oc = center - r.origin;
+    real a = r.direction.length_squared();
+    real h = dot(r.direction, oc);
     real c = oc.length_squared() - radius * radius;
 
     real discriminant = h * h - a * c;

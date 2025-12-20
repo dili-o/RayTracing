@@ -29,8 +29,8 @@ public:
 	}
 
 	bool intersect(const Ray &r, Interval ray_t) const {
-		const Point3& ray_orig = r.origin();
-		const Vec3&   ray_dir  = r.direction();
+		const Point3& ray_orig = r.origin;
+		const Vec3&   ray_dir  = r.direction;
 
 		for (int axis = 0; axis < 3; axis++) {
 			const Interval& ax = axis_interval(axis);

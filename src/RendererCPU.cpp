@@ -99,7 +99,7 @@ Color RendererCPU::ray_color(const Ray &r, u32 depth,
     return Color(0.f, 0.f, 0.f);
   }
 
-  Vec3 unit_direction = unit_vector(r.direction());
+  Vec3 unit_direction = unit_vector(r.direction);
   real a = 0.5f * (unit_direction.y + 1.f);
   return (1.f - a) * Color(1.f, 1.f, 1.f) + a * Color(0.5f, 0.7f, 1.f);
 }
