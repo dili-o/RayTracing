@@ -31,11 +31,11 @@ void RendererCPU::add_sphere(const Vec3 &origin, real radius,
 }
 
 void RendererCPU::add_triangle(const Vec3 &v0, const Vec3 &v1, const Vec3 &v2,
-  Vec2 uv_0, Vec2 uv_1, Vec2 uv_2,
-  MaterialHandle mat_handle) {
+														const Vec3 &n0, const Vec3 &n1, const Vec3 &n2,
+														Vec2 uv_0, Vec2 uv_1, Vec2 uv_2,
+														MaterialHandle mat_handle) {
   std::shared_ptr<Material> mat = get_material(mat_handle);
-  // world.add(make_shared<Triangle>(v0, v1, v2, uv_0, uv_1, uv_2, mat));
-  triangles.emplace_back(Triangle(v0, v1, v2, uv_0, uv_1, uv_2, mat));
+  triangles.emplace_back(Triangle(v0, v1, v2, n0, n1, n2, uv_0, uv_1, uv_2, mat));
 }
 
 void RendererCPU::init(u32 image_width_, real aspect_ratio_,

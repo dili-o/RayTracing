@@ -11,6 +11,19 @@ public:
            std::shared_ptr<Material> mat)
       : v0(v0), v1(v1), v2(v2),
         uv_0(uv_0), uv_1(uv_1), uv_2(uv_2),
+        mat(mat) {
+    const Vec3 edge1 = v1 - v0;
+    const Vec3 edge2 = v2 - v0;
+    Vec3 outward_normal = unit_vector(cross(edge1, edge2));
+    n0 = n1 = n2 = outward_normal;
+  }
+  Triangle(const Vec3 &v0, const Vec3 &v1, const Vec3 &v2,
+           const Vec3 &n0, const Vec3 &n1, const Vec3 &n2,
+           Vec2 uv_0, Vec2 uv_1, Vec2 uv_2,
+           std::shared_ptr<Material> mat)
+      : v0(v0), v1(v1), v2(v2),
+        n0(n0), n1(n1), n2(n2),
+        uv_0(uv_0), uv_1(uv_1), uv_2(uv_2),
         mat(mat) {}
 
   bool hit(const Ray &r, const Interval ray_t, HitRecord &rec) const override {
@@ -44,11 +57,12 @@ public:
     rec.t = t;
     rec.p = r.at(t);
 
-    Vec3 outward_normal = unit_vector(cross(edge1, edge2));
+    const f32 alpha = 1.f - u - v;
+    Vec3 interpolated_normal = alpha * n0 + u * n1 + v * n2;
+		Vec3 outward_normal = unit_vector(interpolated_normal);
     rec.set_face_normal(r, outward_normal);
 
     // Get UV
-    const f32 alpha = 1.f - u - v;
     rec.u = alpha * uv_0.x + u * uv_1.x + v * uv_2.x;
     rec.v = alpha * uv_0.y + u * uv_1.y + v * uv_2.y;
 
@@ -60,6 +74,9 @@ private:
   Vec3 v0;
   Vec3 v1;
   Vec3 v2;
+  Vec3 n0;
+  Vec3 n1;
+  Vec3 n2;
   Vec2 uv_0;
   Vec2 uv_1;
   Vec2 uv_2;
@@ -73,10 +90,28 @@ struct alignas(16) TriangleGPU {
       : v0(v0), v1(v1), v2(v2),
         uv_0(uv_0), uv_1(uv_1), uv_2(uv_2),
         material_index(mat.index),
-        material_type(mat.type) {}
+        material_type(mat.type) {
+    const Vec3 edge1 = v1 - v0;
+    const Vec3 edge2 = v2 - v0;
+    Vec3 outward_normal = unit_vector(cross(edge1, edge2));
+    n0 = n1 = n2 = outward_normal;
+  }
+  TriangleGPU(const Vec3& v0, const Vec3& v1, const Vec3& v2,
+						const Vec3& n0, const Vec3& n1, const Vec3& n2,
+						Vec2 uv_0, Vec2 uv_1, Vec2 uv_2,
+						MaterialHandle mat)
+    : v0(v0), v1(v1), v2(v2),
+    n0(n0), n1(n1), n2(n2),
+    uv_0(uv_0), uv_1(uv_1), uv_2(uv_2),
+    material_index(mat.index),
+    material_type(mat.type) {}
+
   Vec3 v0; f32 pad_0; // 16
   Vec3 v1; f32 pad_1; // 16
   Vec3 v2; f32 pad_2; // 16
+  Vec3 n0; f32 pad_3; // 16
+  Vec3 n1; f32 pad_4; // 16
+  Vec3 n2; f32 pad_5; // 16
   Vec2 uv_0; //
   Vec2 uv_1; // 16
 

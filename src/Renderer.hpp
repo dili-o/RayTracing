@@ -15,6 +15,7 @@ public:
   virtual void add_sphere(const Vec3 &origin, real radius,
                           MaterialHandle mat) = 0;
   virtual void add_triangle(const Vec3 &v0, const Vec3 &v1, const Vec3 &v2,
+														const Vec3 &n0, const Vec3 &n1, const Vec3 &n2,
 														Vec2 uv_0, Vec2 uv_1, Vec2 uv_2,
 														MaterialHandle mat_handle) = 0;
 
@@ -107,6 +108,7 @@ public:
   MaterialHandle add_dielectric_material(real refraction_index) override;
   void add_sphere(const Vec3 &origin, real radius, MaterialHandle mat) override;
   void add_triangle(const Vec3 &v0, const Vec3 &v1, const Vec3 &v2,
+														const Vec3 &n0, const Vec3 &n1, const Vec3 &n2,
 														Vec2 uv_0, Vec2 uv_1, Vec2 uv_2,
 														MaterialHandle mat_handle) override;
 
@@ -140,6 +142,7 @@ public:
   MaterialHandle add_dielectric_material(real refraction_index) override;
   void add_sphere(const Vec3 &origin, real radius, MaterialHandle mat) override;
   void add_triangle(const Vec3 &v0, const Vec3 &v1, const Vec3 &v2,
+														const Vec3 &n0, const Vec3 &n1, const Vec3 &n2,
 														Vec2 uv_0, Vec2 uv_1, Vec2 uv_2,
 														MaterialHandle mat_handle) override;
 

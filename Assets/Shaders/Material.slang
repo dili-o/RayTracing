@@ -36,7 +36,7 @@ void scatter_ray_lambert(inout uint seed, in MaterialLambert mat,
 
   r_out = Ray(rec.p, scattered_direction);
   attenuation = albedo_textures[NonUniformResourceIndex(mat.image_index)]
-                  .Sample(float2(rec.u, rec.v)).xyz;
+                 .Sample(float2(rec.u, rec.v)).xyz;
 }
 
 #define NORMALIZE_REFLECTION

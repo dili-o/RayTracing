@@ -108,9 +108,10 @@ void RendererVk::add_sphere(const Vec3 &origin, real radius,
 
 // TODO: Implement
 void RendererVk::add_triangle(const Vec3 &v0, const Vec3 &v1, const Vec3 &v2,
-  Vec2 uv_0, Vec2 uv_1, Vec2 uv_2,
-  MaterialHandle mat_handle) {
-  triangles.push_back(TriangleGPU(v0, v1, v2, uv_0, uv_1, uv_2, mat_handle));
+														const Vec3 &n0, const Vec3 &n1, const Vec3 &n2,
+														Vec2 uv_0, Vec2 uv_1, Vec2 uv_2,
+														MaterialHandle mat_handle) {
+  triangles.push_back(TriangleGPU(v0, v1, v2, n0, n1, n2, uv_0, uv_1, uv_2, mat_handle));
 }
 
 void RendererVk::init(u32 image_width_, real aspect_ratio_,

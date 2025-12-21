@@ -7,7 +7,7 @@
     "focus_dist": 1.0,
     "screen_width": 400,
     "aspect_ratio": 1.77777777778,
-    "samples_per_pixel": 140,
+    "samples_per_pixel": 10,
     "max_depth": 10,
     "vfov_deg": 20.0
   },
@@ -18,7 +18,7 @@
     },
     {
       "type_id": 0,
-      "albedo": [ 0.6, 0.7, 0.9 ]
+      "albedo": [ 1.0, 0.7, 0.9 ]
     }
   ],
   "spheres": [
@@ -26,18 +26,22 @@
   "vertices": [
     {
       "position": [-3.0, -0.5,  3.0],
+      "normal": [0.0, 1.0, 0.0],
       "texcoord": [0.0, 0.0]
     },
     {
       "position": [ 3.0, -0.5, -3.0],
+      "normal": [0.0, 1.0, 0.0],
       "texcoord": [1.0, 1.0]
     },
     {
       "position": [-3.0, -0.5, -3.0],
+      "normal": [0.0, 1.0, 0.0],
       "texcoord": [0.0, 1.0]
     },
     {
       "position": [ 3.0, -0.5,  3.0],
+      "normal": [0.0, 1.0, 0.0],
       "texcoord": [1.0, 0.0]
     }
   ],

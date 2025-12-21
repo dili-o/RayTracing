@@ -9,17 +9,20 @@
 
 struct Vertex {
   Vec3 position;
+  Vec3 normal;
   Vec2 texcoord;
 
   bool operator==(const Vertex& other) const {
-		return position == other.position && texcoord == other.texcoord;
+		return position == other.position && normal == other.normal && texcoord == other.texcoord;
 	}
 };
 
 namespace std {
 	template<> struct hash<Vertex> {
 		size_t operator()(Vertex const& vertex) const {
-      return ((hash<Vec3>()(vertex.position) ^ (hash<Vec2>()(vertex.texcoord) << 1)) >> 1);
+      return ((hash<Vec3>()(vertex.position) ^
+                   (hash<Vec3>()(vertex.normal) << 1)) >> 1) ^
+                   (hash<Vec2>()(vertex.texcoord) << 1);;
 		}
 	};
 }
@@ -181,11 +184,17 @@ bool load_scene(const std::filesystem::path &scene_name, Renderer* renderer) {
   if (has_vertices_field) {
 		ondemand::array vertices_ = scene["vertices"];
 		for (ondemand::object vertex : vertices_) {
+			size_t i = 0;
 			Vertex v;
 			ondemand::array pos = vertex["position"];
-			size_t i = 0;
 			for (auto p : pos) {
 				v.position.e[i++] = p.get_double().value();
+			}
+			i = 0;
+
+			ondemand::array normal = vertex["normal"];
+			for (auto n : normal) {
+				v.normal.e[i++] = n.get_double().value();
 			}
 			i = 0;
 
@@ -215,6 +224,7 @@ bool load_scene(const std::filesystem::path &scene_name, Renderer* renderer) {
       const Vertex& v1 = vertices[indices[1]];
       const Vertex& v2 = vertices[indices[2]];
       renderer->add_triangle(v0.position, v1.position, v2.position,
+				v0.normal, v1.normal, v2.normal,
         v0.texcoord, v1.texcoord, v2.texcoord,
         material_handles[mat_index]);
     }
@@ -247,6 +257,7 @@ bool load_scene(const std::filesystem::path &scene_name, Renderer* renderer) {
 					attrib.vertices[3 * index.vertex_index + 2]
 				};
 
+        // Tex Coords
 				if (index.texcoord_index == -1) {
 					vertex.texcoord = { 0.f, 0.f };
 				}
@@ -256,6 +267,15 @@ bool load_scene(const std::filesystem::path &scene_name, Renderer* renderer) {
 						1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
 					};
 				}
+        
+        // Normals
+        if (index.normal_index != -1) {
+          vertex.normal = {
+						attrib.normals[3 * index.normal_index + 0],
+						attrib.normals[3 * index.normal_index + 1],
+						attrib.normals[3 * index.normal_index + 2]
+          };
+        }
 
 				if (uniqueVertices.count(vertex) == 0) {
 					uniqueVertices[vertex] = static_cast<uint32_t>(vertices.size());
@@ -271,6 +291,7 @@ bool load_scene(const std::filesystem::path &scene_name, Renderer* renderer) {
 			const Vertex &v1 = vertices[obj_indices[idx + 1]];
 			const Vertex &v2 = vertices[obj_indices[idx + 2]];
 			renderer->add_triangle(v0.position, v1.position, v2.position,
+                             v0.normal, v1.normal, v2.normal,
 														 v0.texcoord, v1.texcoord, v2.texcoord,
 														 material_handles[0]);
 

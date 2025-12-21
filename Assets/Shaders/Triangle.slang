@@ -7,6 +7,10 @@ struct Triangle {
   float4 v1;
   float4 v2;
 
+  float4 n0;
+  float4 n1;
+  float4 n2;
+
   float2 uv_0;
   float2 uv_1;
 
@@ -19,6 +23,10 @@ bool triangle_hit(in Triangle triangle, in Ray r, Interval ray_t, inout HitRecor
 	const float3 v0 = triangle.v0.xyz;
 	const float3 v1 = triangle.v1.xyz;
 	const float3 v2 = triangle.v2.xyz;
+
+	const float3 n0 = triangle.n0.xyz;
+	const float3 n1 = triangle.n1.xyz;
+	const float3 n2 = triangle.n2.xyz;
 
 	const float3 edge1 = v1 - v0;
 	const float3 edge2 = v2 - v0;
@@ -49,14 +57,15 @@ bool triangle_hit(in Triangle triangle, in Ray r, Interval ray_t, inout HitRecor
 	rec.t = t;
 	rec.p = r.at(t);
 
-	float3 outward_normal = normalize(cross(edge1, edge2));
+	const float alpha = 1.f - u - v;
+	float3 interpolated_normal = alpha * n0 + u * n1 + v * n2;
+	float3 outward_normal = normalize(interpolated_normal);
 	rec.set_face_normal(r, outward_normal);
 
-    // Get UV
+	// Get UV
 	const float2 uv_0 = triangle.uv_0;
 	const float2 uv_1 = triangle.uv_1;
 	const float2 uv_2 = triangle.uv_2;
-	const float alpha = 1.0f - u - v;
 	rec.u = alpha * uv_0.x + u * uv_1.x + v * uv_2.x;
 	rec.v = alpha * uv_0.y + u * uv_1.y + v * uv_2.y;
 
