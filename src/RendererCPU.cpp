@@ -2,6 +2,16 @@
 #include "Assert.hpp"
 #include "Material.hpp"
 
+bool intersect_aabb(const Ray& ray, const Vec3 &bmin, const Vec3 &bmax, const f32 t) {
+	f32 tx1 = (bmin.x - ray.origin.x) / ray.direction.x, tx2 = (bmax.x - ray.origin.x) / ray.direction.x;
+	f32 tmin = std::min(tx1, tx2), tmax = std::max(tx1, tx2);
+	f32 ty1 = (bmin.y - ray.origin.y) / ray.direction.y, ty2 = (bmax.y - ray.origin.y) / ray.direction.y;
+	tmin = std::max(tmin, std::min(ty1, ty2)), tmax = std::min(tmax, std::max(ty1, ty2));
+	f32 tz1 = (bmin.z - ray.origin.z) / ray.direction.z, tz2 = (bmax.z - ray.origin.z) / ray.direction.z;
+	tmin = std::max(tmin, std::min(tz1, tz2)), tmax = std::min(tmax, std::max(tz1, tz2));
+	return tmax >= tmin && tmin < t && tmax > 0;
+}
+
 MaterialHandle RendererCPU::add_lambert_material(const Vec3 &albedo) {
   lambert_mats.push_back(std::make_shared<Lambertian>(Lambertian(albedo)));
   return {MATERIAL_LAMBERT, ((u32)lambert_mats.size() - 1)};
@@ -36,6 +46,8 @@ void RendererCPU::add_triangle(const Vec3 &v0, const Vec3 &v1, const Vec3 &v2,
 														MaterialHandle mat_handle) {
   std::shared_ptr<Material> mat = get_material(mat_handle);
   triangles.emplace_back(Triangle(v0, v1, v2, n0, n1, n2, uv_0, uv_1, uv_2, mat));
+  Vec3 centroid = (v0 + v1 + v2) * 0.3333f;
+  tri_centroids.push_back(centroid);
 }
 
 void RendererCPU::init(u32 image_width_, real aspect_ratio_,
@@ -43,6 +55,7 @@ void RendererCPU::init(u32 image_width_, real aspect_ratio_,
   show_image = true;
   initialize_camera(image_width_, aspect_ratio_, samples_per_pixel_, max_depth_,
                     vfov_deg_);
+  build_bvh();
 }
 
 RendererCPU::~RendererCPU() {
@@ -85,6 +98,37 @@ void RendererCPU::render(u8 *out_pixels) {
   std::clog << "\rDone.                 \n";
 }
 
+bool RendererCPU::intersect_bvh(const Ray& ray, const u32 node_idx,
+                                const Interval &ray_t, HitRecord &rec) const {
+	const BVHNode& node = bvh_nodes[node_idx];
+	if (!intersect_aabb(ray, node.aabb_min, node.aabb_max, ray_t.max)) return false;
+	bool hit_anything = false;
+	if (node.is_leaf()) {
+    f32 closest_so_far = ray_t.max;
+    for (u32 i = 0; i < node.prim_count; ++i) {
+      if (triangles[node.first_prim + i].hit(ray, Interval(ray_t.min, closest_so_far), rec)) {
+				hit_anything = true;
+				closest_so_far = rec.t;
+      }
+    }
+	}
+	else {
+		f32 closest_so_far = ray_t.max;
+		
+		if (intersect_bvh(ray, node.left_child, Interval(ray_t.min, closest_so_far), rec)) {
+			hit_anything = true;
+			closest_so_far = rec.t;
+		}
+		
+		if (intersect_bvh(ray, node.left_child + 1, Interval(ray_t.min, closest_so_far), rec)) {
+			hit_anything = true;
+			closest_so_far = rec.t;
+		}
+	}
+  
+  return hit_anything;
+}
+
 Color RendererCPU::ray_color(const Ray &r, u32 depth,
                              const Hittable &world) const {
   if (depth <= 0) {
@@ -92,14 +136,15 @@ Color RendererCPU::ray_color(const Ray &r, u32 depth,
   }
   HitRecord rec;
   bool hit_anything = false;
-  Interval ray_t = Interval(0.001f, infinity);
-	real closest_so_far = ray_t.max;
-  for (const Triangle& tri : triangles) {
-		if (tri.hit(r, Interval(ray_t.min, closest_so_far), rec)) {
-			hit_anything = true;
-			closest_so_far = rec.t;
-		}
-  }
+  const Interval ray_t = Interval(0.001f, infinity);
+	//real closest_so_far = ray_t.max;
+ // for (const Triangle& tri : triangles) {
+	//	if (tri.hit(r, Interval(ray_t.min, closest_so_far), rec)) {
+	//		hit_anything = true;
+	//		closest_so_far = rec.t;
+	//	}
+ // }
+  hit_anything = intersect_bvh(r, 0, ray_t, rec);
   if (hit_anything) {
     Ray scattered;
     Color attenuation;
@@ -155,4 +200,72 @@ std::shared_ptr<Material> RendererCPU::get_material(MaterialHandle mat_handle) {
     HASSERT_MSG(false, "Invalid material type given");
   }
   }
+}
+
+void RendererCPU::build_bvh() {
+  const size_t N = triangles.size();
+  bvh_nodes.resize(N * 2 - 1);
+  u32 nodes_used = 1;
+
+  BVHNode& root = bvh_nodes[0];
+	root.left_child = 0;
+	root.first_prim = 0, root.prim_count = N;
+	update_node_bounds(0);
+	// subdivide recursively
+	subdivide_node(0, nodes_used);
+}
+
+void RendererCPU::update_node_bounds(u32 node_idx) {
+  BVHNode& node = bvh_nodes[node_idx];
+	node.aabb_min = Vec3(infinity);
+	node.aabb_max = Vec3(-infinity);
+	for (u32 i = 0; i < node.prim_count; ++i) {
+		Triangle& leaf_tri = triangles[node.first_prim + i];
+		node.aabb_min = Vec3::min(node.aabb_min, leaf_tri.v0);
+		node.aabb_min = Vec3::min(node.aabb_min, leaf_tri.v1);
+		node.aabb_min = Vec3::min(node.aabb_min, leaf_tri.v2);
+		node.aabb_max = Vec3::max(node.aabb_max, leaf_tri.v0);
+		node.aabb_max = Vec3::max(node.aabb_max, leaf_tri.v1);
+		node.aabb_max = Vec3::max(node.aabb_max, leaf_tri.v2);
+	}
+}
+
+void RendererCPU::subdivide_node(u32 node_idx, u32 &nodes_used) {
+  BVHNode& node = bvh_nodes[node_idx];
+  if (node.prim_count <= 2) return;
+  Vec3 extents = node.aabb_max - node.aabb_min;
+  i32 axis = 0;
+  if (extents.y > extents.x) axis = 1;
+  if (extents.z > extents[axis]) axis = 2;
+  f32 split_pos = node.aabb_min[axis] + extents[axis] * 0.5f;
+
+  // Partition triangles
+  i32 i = node.first_prim;
+  i32 j = i + node.prim_count - 1;
+  while (i <= j) {
+    if (tri_centroids[i][axis] < split_pos) {
+			i++;
+    }
+    else {
+      std::swap(tri_centroids[i], tri_centroids[j]);
+			std::swap(triangles[i], triangles[j--]);
+    }
+  }
+  // Abort split if one of the sides is empty
+	i32 left_count = i - node.first_prim;
+	if (left_count == 0 || left_count == node.prim_count) return;
+	// Create child nodes
+	int left_child_idx = nodes_used++;
+	int rightChildIdx = nodes_used++;
+	bvh_nodes[left_child_idx].first_prim = node.first_prim;
+	bvh_nodes[left_child_idx].prim_count = left_count;
+	bvh_nodes[rightChildIdx].first_prim = i;
+	bvh_nodes[rightChildIdx].prim_count = node.prim_count - left_count;
+	node.left_child = left_child_idx;
+	node.prim_count = 0;
+	update_node_bounds(left_child_idx);
+	update_node_bounds(rightChildIdx);
+	// recurse
+	subdivide_node(left_child_idx, nodes_used);
+	subdivide_node(rightChildIdx, nodes_used);
 }

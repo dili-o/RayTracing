@@ -2,7 +2,7 @@
 #include "HittableList.hpp"
 #include "Material.hpp"
 #include "Sphere.hpp"
-#include "Triangle.hpp"
+#include "BVHNode.hpp"
 
 class Renderer {
 public:
@@ -118,10 +118,16 @@ private:
   Point3 defocus_disk_sample() const;
   Ray get_ray(i32 i, i32 j) const;
   std::shared_ptr<Material> get_material(MaterialHandle handle);
+	bool intersect_bvh(const Ray& ray, const u32 node_idx, const Interval &ray_t, HitRecord &rec) const;
+  void build_bvh();
+  void update_node_bounds(u32 node_idx);
+  void subdivide_node(u32 node_idx, u32 &nodes_used);
 
 private:
   HittableList world;
   std::vector<Triangle> triangles;
+  std::vector<Vec3> tri_centroids;
+  std::vector<BVHNode> bvh_nodes;
   std::vector<std::shared_ptr<Lambertian>> lambert_mats;
   std::vector<std::shared_ptr<Metal>> metal_mats;
   std::vector<std::shared_ptr<Dielectric>> dielectric_mats;

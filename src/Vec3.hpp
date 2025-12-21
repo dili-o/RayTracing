@@ -19,6 +19,7 @@ public:
 		real e[3];
 	};
   Vec3() : e{0, 0, 0} {}
+  Vec3(real v) : e{v, v, v} {}
   Vec3(real e0, real e1, real e2) : e{e0, e1, e2} {}
 
   Vec3 operator-() const { return Vec3(-e[0], -e[1], -e[2]); }
@@ -67,6 +68,14 @@ public:
   static Vec3 random(real min, real max) {
     return Vec3(random_real(min, max), random_real(min, max),
                 random_real(min, max));
+  }
+
+  static Vec3 min(const Vec3& a, const Vec3& b) {
+    return Vec3(std::fmin(a.x, b.x), std::fmin(a.y, b.y), std::fmin(a.z, b.z));
+  }
+
+  static Vec3 max(const Vec3& a, const Vec3& b) {
+    return Vec3(std::fmax(a.x, b.x), std::fmax(a.y, b.y), std::fmax(a.z, b.z));
   }
 };
 
