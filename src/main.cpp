@@ -3,7 +3,9 @@
 #include "Scene.hpp"
 // Vendor
 #include <Vendor/stb_image_write.h>
+#ifdef HLX_PLATFORM_WINDOWS
 #include <windows.h>
+#endif // HLX_PLATFORM_WINDOWS 
 #include <filesystem>
 
 #define CHANNEL_NUM 3
@@ -93,6 +95,7 @@ int main(int argc, cstring *argv) {
 	} 
   HTRACE("Image saved to: {}", image_path.string().c_str());
 
+#ifdef HLX_PLATFORM_WINDOWS
   // TODO: Don't show the image if any errors occurred in the renderer
   if (renderer->show_image)
     ShellExecuteA(nullptr,                      // parent window (none)
@@ -102,4 +105,5 @@ int main(int argc, cstring *argv) {
                   nullptr,                      // default directory
                   SW_SHOW                       // show the window
     );
+#endif // HLX_PLATFORM_WINDOWS 
 }

@@ -119,6 +119,7 @@ private:
 
 private:
   HittableList world;
+  std::vector<Triangle> triangles;
   std::vector<std::shared_ptr<Lambertian>> lambert_mats;
   std::vector<std::shared_ptr<Metal>> metal_mats;
   std::vector<std::shared_ptr<Dielectric>> dielectric_mats;

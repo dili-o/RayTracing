@@ -1,6 +1,6 @@
+#include "Renderer.hpp"
 #include "Assert.hpp"
 #include "Material.hpp"
-#include "Renderer.hpp"
 
 MaterialHandle RendererCPU::add_lambert_material(const Vec3 &albedo) {
   lambert_mats.push_back(std::make_shared<Lambertian>(Lambertian(albedo)));
@@ -34,7 +34,8 @@ void RendererCPU::add_triangle(const Vec3 &v0, const Vec3 &v1, const Vec3 &v2,
   Vec2 uv_0, Vec2 uv_1, Vec2 uv_2,
   MaterialHandle mat_handle) {
   std::shared_ptr<Material> mat = get_material(mat_handle);
-  world.add(make_shared<Triangle>(v0, v1, v2, uv_0, uv_1, uv_2, mat));
+  // world.add(make_shared<Triangle>(v0, v1, v2, uv_0, uv_1, uv_2, mat));
+  triangles.emplace_back(Triangle(v0, v1, v2, uv_0, uv_1, uv_2, mat));
 }
 
 void RendererCPU::init(u32 image_width_, real aspect_ratio_,
@@ -52,8 +53,8 @@ void RendererCPU::render(u8 *out_pixels) {
   u32 index = 0;
 
   for (u32 j = 0; j < image_height; j++) {
-    std::clog << "\rScanlines remaining: " << (image_height - j) << ' '
-              << std::flush;
+    std::clog << "\rScanlines remaining: " <<
+                 (image_height - j) << ' ' << std::flush;
     for (u32 i = 0; i < image_width; i++) {
       Color pixel_color = Color(0.f, 0.f, 0.f);
 
@@ -90,7 +91,16 @@ Color RendererCPU::ray_color(const Ray &r, u32 depth,
     return Color(0.f, 0.f, 0.f);
   }
   HitRecord rec;
-  if (world.hit(r, Interval(0.001f, infinity), rec)) {
+  bool hit_anything = false;
+  Interval ray_t = Interval(0.001f, infinity);
+	real closest_so_far = ray_t.max;
+  for (const Triangle& tri : triangles) {
+		if (tri.hit(r, Interval(ray_t.min, closest_so_far), rec)) {
+			hit_anything = true;
+			closest_so_far = rec.t;
+		}
+  }
+  if (hit_anything) {
     Ray scattered;
     Color attenuation;
     if (rec.mat->scatter_ray(r, rec, attenuation, scattered)) {

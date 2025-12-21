@@ -13,7 +13,7 @@ public:
         uv_0(uv_0), uv_1(uv_1), uv_2(uv_2),
         mat(mat) {}
 
-  bool hit(const Ray &r, Interval ray_t, HitRecord &rec) const override {
+  bool hit(const Ray &r, const Interval ray_t, HitRecord &rec) const override {
     const Vec3 edge1 = v1 - v0;
     const Vec3 edge2 = v2 - v0;
     const Vec3 h = cross(r.direction, edge2);
@@ -48,7 +48,7 @@ public:
     rec.set_face_normal(r, outward_normal);
 
     // Get UV
-    const f32 alpha = 1.0f - u - v;
+    const f32 alpha = 1.f - u - v;
     rec.u = alpha * uv_0.x + u * uv_1.x + v * uv_2.x;
     rec.v = alpha * uv_0.y + u * uv_1.y + v * uv_2.y;
 

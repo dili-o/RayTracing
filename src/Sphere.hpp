@@ -9,7 +9,7 @@ public:
   Sphere(const Point3 &center, real radius, std::shared_ptr<Material> mat)
       : center(center), radius(std::fmax(0.f, radius)), mat(mat) {}
 
-  bool hit(const Ray &r, Interval ray_t, HitRecord &rec) const override {
+  bool hit(const Ray &r, const Interval ray_t, HitRecord &rec) const override {
     Vec3 oc = center - r.origin;
     real a = r.direction.length_squared();
     real h = dot(r.direction, oc);

@@ -25,8 +25,8 @@ public:
 	ImageTexture(const std::string &filename) : image_data(filename.c_str()) {}
 
 	Color sample(real u, real v) const override {
-		i32 x = u * image_data.width();
-		i32 y = v * image_data.height();
+		i32 x = static_cast<i32>(u * image_data.width());
+		i32 y = static_cast<i32>(v * image_data.height());
 
 		const u8* pixel_data = image_data.pixel_data(x, y);
 		const u8* pixel_data1 = pixel_data + 1;

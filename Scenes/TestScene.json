@@ -7,7 +7,7 @@
     "focus_dist": 1.0,
     "screen_width": 400,
     "aspect_ratio": 1.77777777778,
-    "samples_per_pixel": 100,
+    "samples_per_pixel": 140,
     "max_depth": 10,
     "vfov_deg": 20.0
   },
@@ -18,78 +18,40 @@
     },
     {
       "type_id": 0,
-      "albedo": "moonmap.jpg"
-    },
-    {
-      "type_id": 1,
-      "albedo": [ 0.8, 0.8, 0.8 ],
-      "fuzz": 0.0005
-    },
-    {
-      "type_id": 2,
-      "ior": 1.5
-    },
-    {
-      "type_id": 0,
-      "albedo": "earthmap.jpg"
+      "albedo": [ 0.6, 0.7, 0.9 ]
     }
   ],
   "spheres": [
-    {
-      "center": [ 0.0, -100.5, -1.0 ],
-      "radius": 100.0,
-      "material_index": 0
-    },
-    {
-      "center": [ 0.0, 0.0, -4.0 ],
-      "radius": 0.5,
-      "material_index": 4
-    },
-    {
-      "center": [ -1.0, 0.0, -4.0 ],
-      "radius": 0.5,
-      "material_index": 2
-    },
-    {
-      "center": [ 1.0, 0.0, -4.0 ],
-      "radius": 0.5,
-      "material_index": 3
-    },
-    {
-      "center": [ -0.5, -0.35, -3.5 ],
-      "radius": 0.15,
-      "material_index": 1
-    }
   ],
   "vertices": [
     {
-      "position": [-3.0, -0.5, -9.0],
+      "position": [-3.0, -0.5,  3.0],
       "texcoord": [0.0, 0.0]
     },
     {
-      "position": [-3.0,  1.5, -9.0],
-      "texcoord": [0.0, 1.0]
-    },
-    {
-      "position": [ 3.0,  1.5, -9.0],
+      "position": [ 3.0, -0.5, -3.0],
       "texcoord": [1.0, 1.0]
     },
     {
-      "position": [ 3.0, -0.5, -9.0],
+      "position": [-3.0, -0.5, -3.0],
+      "texcoord": [0.0, 1.0]
+    },
+    {
+      "position": [ 3.0, -0.5,  3.0],
       "texcoord": [1.0, 0.0]
     }
   ],
   "triangles": [
     {
       "indices": [ 0, 1, 2 ],
-      "material_index": 2
+      "material_index": 1
     },
     {
-      "indices": [ 0, 2, 3 ],
-      "material_index": 2
+      "indices": [ 0, 3, 1 ],
+      "material_index": 1
     }
   ],
   "model": {
-    "path": "cube/cube.obj"
+    "path": "teapot.obj"
   }
 }

@@ -7,7 +7,7 @@
     "focus_dist": 1.0,
     "screen_width": 400,
     "aspect_ratio": 1.77777777778,
-    "samples_per_pixel": 10,
+    "samples_per_pixel": 140,
     "max_depth": 10,
     "vfov_deg": 20.0
   },
@@ -18,7 +18,7 @@
     },
     {
       "type_id": 0,
-      "albedo": [ 0.7, 0.7, 0.7 ]
+      "albedo": [ 0.6, 0.7, 0.9 ]
     }
   ],
   "spheres": [
@@ -52,6 +52,6 @@
     }
   ],
   "model": {
-    "path": "african_head/african_head.obj"
+    "path": "teapot.obj"
   }
 }
