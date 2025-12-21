@@ -57,10 +57,14 @@ bool triangle_hit(in Triangle triangle, in Ray r, Interval ray_t, inout HitRecor
 	rec.t = t;
 	rec.p = r.at(t);
 
+	// Use the geometric normal to set the face
+	float3 geom_normal = normalize(cross(edge1, edge2));
+	rec.set_face_normal(r, geom_normal);
+
+	// Use the interpolated normal to set the outward normal
 	const float alpha = 1.f - u - v;
-	float3 interpolated_normal = alpha * n0 + u * n1 + v * n2;
-	float3 outward_normal = normalize(interpolated_normal);
-	rec.set_face_normal(r, outward_normal);
+	float3 interpolated_normal = normalize(alpha * n0 + u * n1 + v * n2);
+	rec.normal = interpolated_normal;
 
 	// Get UV
 	const float2 uv_0 = triangle.uv_0;

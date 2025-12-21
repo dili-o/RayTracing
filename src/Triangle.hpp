@@ -57,10 +57,14 @@ public:
     rec.t = t;
     rec.p = r.at(t);
 
-    const f32 alpha = 1.f - u - v;
-    Vec3 interpolated_normal = alpha * n0 + u * n1 + v * n2;
-		Vec3 outward_normal = unit_vector(interpolated_normal);
-    rec.set_face_normal(r, outward_normal);
+		// Use the geometric normal to set the face
+		Vec3 geom_normal = unit_vector(cross(edge1, edge2));
+		rec.set_face_normal(r, geom_normal);
+
+		// Use the interpolated normal to set the outward normal
+		const f32 alpha = 1.f - u - v;
+		Vec3 interpolated_normal = unit_vector(alpha * n0 + u * n1 + v * n2);
+		rec.normal = interpolated_normal;
 
     // Get UV
     rec.u = alpha * uv_0.x + u * uv_1.x + v * uv_2.x;
@@ -70,7 +74,7 @@ public:
     return true;
   }
 
-private:
+public:
   Vec3 v0;
   Vec3 v1;
   Vec3 v2;
