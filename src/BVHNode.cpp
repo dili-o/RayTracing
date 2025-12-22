@@ -1,0 +1,258 @@
+#include "BVHNode.hpp"
+#include "AABB.hpp"
+
+f32 evaluate_sah_gpu(BVHNode& node, const TriangleGPU *triangles, const u32 *tri_ids,
+	                   const Vec3 *tri_centroids, i32 axis, f32 pos ) {
+	// determine triangle counts and bounds for this split candidate
+	AABB left_box, right_box;
+	int left_count = 0, right_count = 0;
+	for(u32 i = 0; i < node.prim_count; ++i) {
+		const TriangleGPU& triangle = triangles[tri_ids[node.left_first + i]];
+		const Vec3 &centroid = tri_centroids[tri_ids[node.left_first + i]];
+		if (centroid[axis] < pos) {
+			left_count++;
+			left_box.grow(triangle.v0);
+			left_box.grow(triangle.v1);
+			left_box.grow(triangle.v2);
+		} else {
+			right_count++;
+			right_box.grow( triangle.v0);
+			right_box.grow( triangle.v1);
+			right_box.grow( triangle.v2);
+		}
+	}
+	f32 cost = left_count * left_box.half_area() + right_count * right_box.half_area();
+	return cost > 0.f ? cost : infinity;
+}
+
+f32 eval_sah_gpu(BVHNode& node, const TriangleGPU* triangles, const u32* tri_ids,
+	const Vec3* tri_centroids, i32 axis, f32 b) {
+	AABB left_box, right_box;
+	u32 left_count = 0;
+	// Find the Surface area of the left and right AABBs
+	for (u32 i = 0; i < node.prim_count; ++i) {
+		const TriangleGPU& triangle = triangles[tri_ids[node.left_first + i]];
+		const Vec3 &centroid = tri_centroids[tri_ids[node.left_first + i]];
+		if (centroid[axis] < b) {
+			++left_count;
+			left_box.grow(triangle.v0);
+			left_box.grow(triangle.v1);
+			left_box.grow(triangle.v2);
+		} else {
+			right_box.grow(triangle.v0);
+			right_box.grow(triangle.v1);
+			right_box.grow(triangle.v2);
+		}
+	}
+
+	if (left_count == 0 || left_count == node.prim_count)
+    return infinity;
+	f32 cost = left_box.half_area() * left_count + (right_box.half_area() * (node.prim_count - left_count));
+	return cost;
+}
+
+// TODO: Maybe custom triangle data
+static void update_node_bounds_gpu(BVHNode *bvh_nodes, const TriangleGPU *triangles,
+	u32 *tri_ids, u32 node_idx) {
+  BVHNode& node = bvh_nodes[node_idx];
+	node.aabb_min = Vec3(infinity);
+	node.aabb_max = Vec3(-infinity);
+	for (u32 i = 0; i < node.prim_count; ++i) {
+    u32 leaf_tri_id = tri_ids[node.left_first + i];
+		const TriangleGPU &leaf_tri = triangles[leaf_tri_id];
+		node.aabb_min = Vec3::fmin(node.aabb_min, leaf_tri.v0);
+		node.aabb_min = Vec3::fmin(node.aabb_min, leaf_tri.v1);
+		node.aabb_min = Vec3::fmin(node.aabb_min, leaf_tri.v2);
+		node.aabb_max = Vec3::fmax(node.aabb_max, leaf_tri.v0);
+		node.aabb_max = Vec3::fmax(node.aabb_max, leaf_tri.v1);
+		node.aabb_max = Vec3::fmax(node.aabb_max, leaf_tri.v2);
+	}
+}
+
+static void subdivide_node_gpu(BVHNode *bvh_nodes, const TriangleGPU *triangles,
+															 u32 *tri_ids, const Vec3 *tri_centroids, u32 node_idx,
+															 u32 &nodes_used, u32 current_depth, u32 &max_depth) {
+	max_depth = std::max(max_depth, current_depth);
+  BVHNode& node = bvh_nodes[node_idx];
+#define SAH
+
+#ifdef SAH
+	// determine split axis using SAH
+	i32 best_axis = -1;
+	f32 best_pos = 0, best_cost = infinity;
+	for (i32 axis = 0; axis < 3; axis++) {
+		for(u32 i = 0; i < node.prim_count - 1; i++) {
+			f32 candidate_pos = tri_centroids[tri_ids[node.left_first + i]][axis];
+			f32 cost = evaluate_sah_gpu(node, triangles, tri_ids, tri_centroids, axis, candidate_pos);
+			if (cost < best_cost) 
+				best_pos = candidate_pos, best_axis = axis, best_cost = cost;
+		}
+	}
+	i32 axis = best_axis;
+	f32 split_pos = best_pos;
+  Vec3 e = node.aabb_max - node.aabb_min;
+	f32 parent_area = e.x * e.y + e.y * e.z + e.z * e.x;
+	f32 parent_cost = node.prim_count * parent_area;
+	if (best_cost >= parent_cost) return;
+#else
+  if (node.prim_count <= 2) return;
+  Vec3 e = node.aabb_max - node.aabb_min;
+  i32 axis = 0;
+  if (e.y > e.x) axis = 1;
+  if (e.z > e[axis]) axis = 2;
+  f32 split_pos = node.aabb_min[axis] + e[axis] * 0.5f;
+#endif
+
+  // Partition triangles
+  i32 i = node.left_first;
+  i32 j = i + node.prim_count - 1;
+  while (i <= j) {
+    if (tri_centroids[tri_ids[i]][axis] < split_pos) {
+			i++;
+    }
+    else {
+			std::swap(tri_ids[i], tri_ids[j--]);
+    }
+  }
+  // Abort split if one of the sides is empty
+	i32 left_count = i - node.left_first;
+	if (left_count == 0 || left_count == node.prim_count) return;
+	// Create child nodes
+	int left_child_idx = nodes_used++;
+	int right_child_idx = nodes_used++;
+	bvh_nodes[left_child_idx].left_first = node.left_first;
+	bvh_nodes[left_child_idx].prim_count = left_count;
+	bvh_nodes[right_child_idx].left_first = i;
+	bvh_nodes[right_child_idx].prim_count = node.prim_count - left_count;
+	node.left_first = left_child_idx;
+	node.prim_count = 0;
+	update_node_bounds_gpu(bvh_nodes, triangles, tri_ids, left_child_idx);
+	update_node_bounds_gpu(bvh_nodes, triangles, tri_ids, right_child_idx);
+	// recurse
+	subdivide_node_gpu(bvh_nodes, triangles, tri_ids, tri_centroids,
+										 left_child_idx, nodes_used, current_depth + 1, max_depth);
+	subdivide_node_gpu(bvh_nodes, triangles, tri_ids, tri_centroids,
+										 right_child_idx, nodes_used, current_depth + 1, max_depth);
+}
+
+
+void build_bvh_gpu(std::vector<BVHNode> &bvh_nodes, const std::vector<TriangleGPU> &triangles,
+									 std::vector<u32> &tri_ids, std::vector<Vec3> tri_centroids, u32 &bvh_depth) {
+	std::chrono::steady_clock::time_point start;
+  start = std::chrono::high_resolution_clock::now();
+
+  const size_t N = triangles.size();
+  if (bvh_nodes.size() < N * 2 - 1)
+		bvh_nodes.resize(N * 2 - 1);
+  u32 nodes_used = 1;
+	HASSERT(triangles.size());
+	HASSERT(tri_ids.size());
+	HASSERT(tri_centroids.size());
+
+  BVHNode& root = bvh_nodes[0];
+	root.left_first = 0;
+	root.prim_count = N;
+	update_node_bounds_gpu(bvh_nodes.data(), triangles.data(), tri_ids.data(), 0);
+	// subdivide recursively
+  bvh_depth = 1;
+	subdivide_node_gpu(bvh_nodes.data(), triangles.data(), tri_ids.data(),
+		                 tri_centroids.data(), 0, nodes_used, 1, bvh_depth);
+
+  auto end = std::chrono::high_resolution_clock::now();
+  f64 seconds = std::chrono::duration<f64>(end - start).count();
+  std::cout << "BVH build time: " << seconds << " seconds\n";
+
+  HASSERT(bvh_depth <= 20);
+}
+
+static void update_node_bounds_cpu(BVHNode *bvh_nodes, const Triangle *triangles,
+																	 u32 *tri_ids, u32 node_idx) {
+  BVHNode& node = bvh_nodes[node_idx];
+	node.aabb_min = Vec3(infinity);
+	node.aabb_max = Vec3(-infinity);
+	for (u32 i = 0; i < node.prim_count; ++i) {
+    u32 leaf_tri_id = tri_ids[node.left_first + i];
+		const Triangle &leaf_tri = triangles[leaf_tri_id];
+		node.aabb_min = Vec3::fmin(node.aabb_min, leaf_tri.v0);
+		node.aabb_min = Vec3::fmin(node.aabb_min, leaf_tri.v1);
+		node.aabb_min = Vec3::fmin(node.aabb_min, leaf_tri.v2);
+		node.aabb_max = Vec3::fmax(node.aabb_max, leaf_tri.v0);
+		node.aabb_max = Vec3::fmax(node.aabb_max, leaf_tri.v1);
+		node.aabb_max = Vec3::fmax(node.aabb_max, leaf_tri.v2);
+	}
+}
+
+static void subdivide_node_cpu(BVHNode *bvh_nodes, const Triangle *triangles,
+															 u32 *tri_ids, const Vec3 *tri_centroids, u32 node_idx,
+															 u32 &nodes_used, u32 current_depth, u32 &max_depth) {
+	max_depth = std::max(max_depth, current_depth);
+  BVHNode& node = bvh_nodes[node_idx];
+  if (node.prim_count <= 2) return;
+  Vec3 extents = node.aabb_max - node.aabb_min;
+  i32 axis = 0;
+  if (extents.y > extents.x) axis = 1;
+  if (extents.z > extents[axis]) axis = 2;
+  f32 split_pos = node.aabb_min[axis] + extents[axis] * 0.5f;
+
+  // Partition triangles
+  i32 i = node.left_first;
+  i32 j = i + node.prim_count - 1;
+  while (i <= j) {
+    if (tri_centroids[tri_ids[i]][axis] < split_pos) {
+			i++;
+    }
+    else {
+			std::swap(tri_ids[i], tri_ids[j--]);
+    }
+  }
+  // Abort split if one of the sides is empty
+	i32 left_count = i - node.left_first;
+	if (left_count == 0 || left_count == node.prim_count) return;
+	// Create child nodes
+	int left_child_idx = nodes_used++;
+	int right_child_idx = nodes_used++;
+	bvh_nodes[left_child_idx].left_first = node.left_first;
+	bvh_nodes[left_child_idx].prim_count = left_count;
+	bvh_nodes[right_child_idx].left_first = i;
+	bvh_nodes[right_child_idx].prim_count = node.prim_count - left_count;
+	node.left_first = left_child_idx;
+	node.prim_count = 0;
+	update_node_bounds_cpu(bvh_nodes, triangles, tri_ids, left_child_idx);
+	update_node_bounds_cpu(bvh_nodes, triangles, tri_ids, right_child_idx);
+	// recurse
+	subdivide_node_cpu(bvh_nodes, triangles, tri_ids, tri_centroids,
+										 left_child_idx, nodes_used, current_depth + 1, max_depth);
+	subdivide_node_cpu(bvh_nodes, triangles, tri_ids, tri_centroids,
+										 right_child_idx, nodes_used, current_depth + 1, max_depth);
+}
+
+
+void build_bvh_cpu(std::vector<BVHNode> &bvh_nodes, const std::vector<Triangle> &triangles,
+									 std::vector<u32> &tri_ids, std::vector<Vec3> tri_centroids, u32 &bvh_depth) {
+	std::chrono::steady_clock::time_point start;
+  start = std::chrono::high_resolution_clock::now();
+
+  const size_t N = triangles.size();
+  if (bvh_nodes.size() < N * 2 - 1)
+		bvh_nodes.resize(N * 2 - 1);
+  u32 nodes_used = 1;
+	HASSERT(triangles.size());
+	HASSERT(tri_ids.size());
+	HASSERT(tri_centroids.size());
+
+  BVHNode& root = bvh_nodes[0];
+	root.left_first = 0;
+	root.prim_count = N;
+	update_node_bounds_cpu(bvh_nodes.data(), triangles.data(), tri_ids.data(), 0);
+	// subdivide recursively
+  bvh_depth = 1;
+	subdivide_node_cpu(bvh_nodes.data(), triangles.data(), tri_ids.data(),
+		                 tri_centroids.data(), 0, nodes_used, 1, bvh_depth);
+
+  auto end = std::chrono::high_resolution_clock::now();
+  f64 seconds = std::chrono::duration<f64>(end - start).count();
+  std::cout << "BVH build time: " << seconds << " seconds\n";
+
+  HASSERT(bvh_depth <= 15);
+}
+

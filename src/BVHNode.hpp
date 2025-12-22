@@ -11,4 +11,7 @@ struct alignas(16) BVHNode {
   bool is_leaf() const { return prim_count > 0; }
 };
 
-
+void build_bvh_gpu(std::vector<BVHNode> &bvh_nodes, const std::vector<TriangleGPU> &triangles,
+									 std::vector<u32> &tri_ids, std::vector<Vec3> tri_centroids, u32 &bvh_depth);
+void build_bvh_cpu(std::vector<BVHNode> &bvh_nodes, const std::vector<Triangle> &triangles,
+									 std::vector<u32> &tri_ids, std::vector<Vec3> tri_centroids, u32 &bvh_depth);

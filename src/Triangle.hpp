@@ -3,6 +3,7 @@
 #include "Hittable.hpp"
 #include "Vec3.hpp"
 #include "Vec2.hpp"
+#include "Material.hpp"
 
 class Triangle : public Hittable {
 public:

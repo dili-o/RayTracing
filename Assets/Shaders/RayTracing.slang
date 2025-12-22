@@ -26,6 +26,7 @@ struct ShaderPushConstant {
 struct Uniforms{
 	Sphere *spheres;
 	Triangle *triangles;
+	uint *tri_ids;
 	BVHNode *bvh_nodes;
   MaterialLambert *lambert_mats;
   MaterialMetal *metal_mats;
@@ -66,7 +67,8 @@ void computeMain(uint3 dispatch_thread_id : SV_DispatchThreadID,
           HitRecord rec;
           if (intersect_bvh(r, 0, ray_t, rec,
                         uniform_buffer[0].bvh_nodes, 
-                        uniform_buffer[0].triangles)) {
+                        uniform_buffer[0].triangles,
+                        uniform_buffer[0].tri_ids)) {
             Ray scattered;
             float3 material_attenuation = float3(0.f);
 

@@ -48,6 +48,7 @@ void RendererCPU::add_triangle(const Vec3 &v0, const Vec3 &v1, const Vec3 &v2,
   triangles.emplace_back(Triangle(v0, v1, v2, n0, n1, n2, uv_0, uv_1, uv_2, mat));
   Vec3 centroid = (v0 + v1 + v2) * 0.3333f;
   tri_centroids.push_back(centroid);
+  tri_ids.push_back(static_cast<u32>(tri_ids.size()));
 }
 
 void RendererCPU::init(u32 image_width_, real aspect_ratio_,
@@ -55,7 +56,8 @@ void RendererCPU::init(u32 image_width_, real aspect_ratio_,
   show_image = true;
   initialize_camera(image_width_, aspect_ratio_, samples_per_pixel_, max_depth_,
                     vfov_deg_);
-  build_bvh();
+  u32 bvh_depth = 0;
+  build_bvh_cpu(bvh_nodes, triangles, tri_ids, tri_centroids, bvh_depth);
 }
 
 RendererCPU::~RendererCPU() {
@@ -106,7 +108,7 @@ bool RendererCPU::intersect_bvh(const Ray& ray, const u32 node_idx,
 	if (node.is_leaf()) {
     f32 closest_so_far = ray_t.max;
     for (u32 i = 0; i < node.prim_count; ++i) {
-      if (triangles[node.left_first + i].hit(ray, Interval(ray_t.min, closest_so_far), rec)) {
+      if (triangles[tri_ids[node.left_first + i]].hit(ray, Interval(ray_t.min, closest_so_far), rec)) {
 				hit_anything = true;
 				closest_so_far = rec.t;
       }
@@ -202,77 +204,5 @@ std::shared_ptr<Material> RendererCPU::get_material(MaterialHandle mat_handle) {
   }
 }
 
-void RendererCPU::build_bvh() {
-	std::chrono::steady_clock::time_point start;
-  start = std::chrono::high_resolution_clock::now();
 
-  const size_t N = triangles.size();
-  bvh_nodes.resize(N * 2 - 1);
-  u32 nodes_used = 1;
 
-  BVHNode& root = bvh_nodes[0];
-	root.left_first = 0;
-	root.prim_count = N;
-	update_node_bounds(0);
-	// subdivide recursively
-	subdivide_node(0, nodes_used);
-
-  auto end = std::chrono::high_resolution_clock::now();
-  f64 seconds = std::chrono::duration<f64>(end - start).count();
-  std::cout << "BVH build time: " << seconds << " seconds\n";
-}
-
-void RendererCPU::update_node_bounds(u32 node_idx) {
-  BVHNode& node = bvh_nodes[node_idx];
-	node.aabb_min = Vec3(infinity);
-	node.aabb_max = Vec3(-infinity);
-	for (u32 i = 0; i < node.prim_count; ++i) {
-		Triangle& leaf_tri = triangles[node.left_first + i];
-		node.aabb_min = Vec3::fmin(node.aabb_min, leaf_tri.v0);
-		node.aabb_min = Vec3::fmin(node.aabb_min, leaf_tri.v1);
-		node.aabb_min = Vec3::fmin(node.aabb_min, leaf_tri.v2);
-		node.aabb_max = Vec3::fmax(node.aabb_max, leaf_tri.v0);
-		node.aabb_max = Vec3::fmax(node.aabb_max, leaf_tri.v1);
-		node.aabb_max = Vec3::fmax(node.aabb_max, leaf_tri.v2);
-	}
-}
-
-void RendererCPU::subdivide_node(u32 node_idx, u32 &nodes_used) {
-  BVHNode& node = bvh_nodes[node_idx];
-  if (node.prim_count <= 2) return;
-  Vec3 extents = node.aabb_max - node.aabb_min;
-  i32 axis = 0;
-  if (extents.y > extents.x) axis = 1;
-  if (extents.z > extents[axis]) axis = 2;
-  f32 split_pos = node.aabb_min[axis] + extents[axis] * 0.5f;
-
-  // Partition triangles
-  i32 i = node.left_first;
-  i32 j = i + node.prim_count - 1;
-  while (i <= j) {
-    if (tri_centroids[i][axis] < split_pos) {
-			i++;
-    }
-    else {
-      std::swap(tri_centroids[i], tri_centroids[j]);
-			std::swap(triangles[i], triangles[j--]);
-    }
-  }
-  // Abort split if one of the sides is empty
-	i32 left_count = i - node.left_first;
-	if (left_count == 0 || left_count == node.prim_count) return;
-	// Create child nodes
-	int left_child_idx = nodes_used++;
-	int rightChildIdx = nodes_used++;
-	bvh_nodes[left_child_idx].left_first = node.left_first;
-	bvh_nodes[left_child_idx].prim_count = left_count;
-	bvh_nodes[rightChildIdx].left_first = i;
-	bvh_nodes[rightChildIdx].prim_count = node.prim_count - left_count;
-	node.left_first = left_child_idx;
-	node.prim_count = 0;
-	update_node_bounds(left_child_idx);
-	update_node_bounds(rightChildIdx);
-	// recurse
-	subdivide_node(left_child_idx, nodes_used);
-	subdivide_node(rightChildIdx, nodes_used);
-}

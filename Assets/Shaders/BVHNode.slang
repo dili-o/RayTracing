@@ -29,8 +29,8 @@ bool intersect_aabb(const Ray ray, const float3 bmin, const float3 bmax, const f
 }
 
 bool intersect_bvh(Ray ray, uint node_idx, Interval ray_t, inout HitRecord rec,
-									 BVHNode *nodes, Triangle *triangles){
-	BVHNode node_stack[15];
+									 BVHNode *nodes, Triangle *triangles, uint *tri_ids){
+	BVHNode node_stack[20];
 	int stack_index = 0;
 	node_stack[stack_index++] = nodes[0];
 	
@@ -43,7 +43,7 @@ bool intersect_bvh(Ray ray, uint node_idx, Interval ray_t, inout HitRecord rec,
 			// Leaf node
 			if (node.prim_count > 0) {
 				for (uint i = 0; i < node.prim_count; ++i) {
-					if (triangle_hit(triangles[node.left_first + i], ray, Interval(ray_t.min, closest_so_far), rec)) {
+					if (triangle_hit(triangles[tri_ids[node.left_first + i]], ray, Interval(ray_t.min, closest_so_far), rec)) {
 						hit = true;
 						closest_so_far = rec.t;
 					}

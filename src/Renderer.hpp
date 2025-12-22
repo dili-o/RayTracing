@@ -44,6 +44,8 @@ public:
   Vec3 defocus_disk_u; // Defocus disk horizontal radius
   Vec3 defocus_disk_v; // Defocus disk vertical radius
   bool show_image;     // Open the image after rendering
+
+  std::vector<u32> tri_ids;
 protected:
   void initialize_camera(u32 image_width_, real aspect_ratio_,
                          u32 samples_per_pixel_, u32 max_depth_,
@@ -119,9 +121,6 @@ private:
   Ray get_ray(i32 i, i32 j) const;
   std::shared_ptr<Material> get_material(MaterialHandle handle);
 	bool intersect_bvh(const Ray& ray, const u32 node_idx, const Interval &ray_t, HitRecord &rec) const;
-  void build_bvh();
-  void update_node_bounds(u32 node_idx);
-  void subdivide_node(u32 node_idx, u32 &nodes_used);
 
 private:
   HittableList world;
@@ -151,10 +150,6 @@ public:
 														const Vec3 &n0, const Vec3 &n1, const Vec3 &n2,
 														Vec2 uv_0, Vec2 uv_1, Vec2 uv_2,
 														MaterialHandle mat_handle) override;
-private:
-  void build_bvh();
-  void update_node_bounds(u32 node_idx);
-  void subdivide_node(u32 node_idx, u32 &nodes_used);
 
 private:
   std::vector<Image> images;

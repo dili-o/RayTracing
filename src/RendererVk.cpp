@@ -25,6 +25,7 @@ static VkShaderModule comp_shader_module;
 static VkPipeline vkPipeline;
 static VulkanBuffer spheres_buffer{};
 static VulkanBuffer triangles_buffer{};
+static VulkanBuffer tri_ids_buffer{};
 static VulkanBuffer bvh_nodes_buffer{};
 static VulkanBuffer lambert_buffer{};
 static VulkanBuffer metal_buffer{};
@@ -44,6 +45,7 @@ static u32 bvh_depth = 0;
 struct UniformBuffer {
   VkDeviceAddress spheres;
   VkDeviceAddress triangles;
+  VkDeviceAddress tri_ids;
   VkDeviceAddress bvh_nodes;
   VkDeviceAddress lambert_materials;
   VkDeviceAddress metal_materials;
@@ -116,6 +118,7 @@ void RendererVk::add_triangle(const Vec3 &v0, const Vec3 &v1, const Vec3 &v2,
 														MaterialHandle mat_handle) {
   Vec3 centroid = (v0 + v1 + v2) * 0.3333f;
   tri_centroids.push_back(centroid);
+  tri_ids.push_back(static_cast<u32>(tri_ids.size()));
   triangles.push_back(TriangleGPU(v0, v1, v2, n0, n1, n2, uv_0, uv_1, uv_2, mat_handle));
 }
 
@@ -193,6 +196,12 @@ void RendererVk::init(u32 image_width_, real aspect_ratio_,
                           VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                       VMA_MEMORY_USAGE_UNKNOWN, 0,
                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, "TrianglesBuffer");
+  // Triangle IDs buffer
+  ctx.CreateVmaBuffer(tri_ids_buffer, sizeof(u32) * tri_ids.size(),
+                      VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                          VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                      VMA_MEMORY_USAGE_UNKNOWN, 0,
+                      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, "TrianglesIDsBuffer");
 
   // Lambert materials buffer
   ctx.CreateVmaBuffer(lambert_buffer, sizeof(GpuLambert) * lambert_mats.size(),
@@ -213,7 +222,9 @@ void RendererVk::init(u32 image_width_, real aspect_ratio_,
                           VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                       VMA_MEMORY_USAGE_UNKNOWN, 0,
                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, "DielectricBuffer");
-  build_bvh();
+  u32 max_depth = 0;
+  build_bvh_gpu(bvh_nodes, triangles, tri_ids, tri_centroids, max_depth);
+
   ctx.CreateVmaBuffer(bvh_nodes_buffer, sizeof(BVHNode) * bvh_nodes.size(),
                       VK_BUFFER_USAGE_TRANSFER_DST_BIT |
                           VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
@@ -223,6 +234,7 @@ void RendererVk::init(u32 image_width_, real aspect_ratio_,
   UniformBuffer uniform_buffer_data{};
   uniform_buffer_data.spheres = spheres_buffer.deviceAddress;
   uniform_buffer_data.triangles = triangles_buffer.deviceAddress;
+  uniform_buffer_data.tri_ids = tri_ids_buffer.deviceAddress;
   uniform_buffer_data.bvh_nodes = bvh_nodes_buffer.deviceAddress;
   uniform_buffer_data.lambert_materials = lambert_buffer.deviceAddress;
   uniform_buffer_data.metal_materials = metal_buffer.deviceAddress;
@@ -321,6 +333,8 @@ void RendererVk::init(u32 image_width_, real aspect_ratio_,
                    spheres.data(), vkCommandPool);
   ctx.CopyToBuffer(triangles_buffer.vkHandle, 0, triangles_buffer.size,
                    triangles.data(), vkCommandPool);
+  ctx.CopyToBuffer(tri_ids_buffer.vkHandle, 0, tri_ids_buffer.size,
+                   tri_ids.data(), vkCommandPool);
   ctx.CopyToBuffer(lambert_buffer.vkHandle, 0, lambert_buffer.size,
                    lambert_mats.data(), vkCommandPool);
   ctx.CopyToBuffer(metal_buffer.vkHandle, 0, metal_buffer.size,
@@ -451,6 +465,7 @@ RendererVk::~RendererVk() {
   vkDestroyShaderModule(ctx.vkDevice, comp_shader_module, nullptr);
   util::DestroyVmaBuffer(ctx.vmaAllocator, spheres_buffer);
   util::DestroyVmaBuffer(ctx.vmaAllocator, triangles_buffer);
+  util::DestroyVmaBuffer(ctx.vmaAllocator, tri_ids_buffer);
   util::DestroyVmaBuffer(ctx.vmaAllocator, bvh_nodes_buffer);
   util::DestroyVmaBuffer(ctx.vmaAllocator, lambert_buffer);
   util::DestroyVmaBuffer(ctx.vmaAllocator, metal_buffer);
@@ -676,81 +691,3 @@ void RendererVk::render(u8 *out_pixels) {
   imageBuffer.pMappedData = nullptr;
 }
 
-void RendererVk::build_bvh() {
-	std::chrono::steady_clock::time_point start;
-  start = std::chrono::high_resolution_clock::now();
-
-  const size_t N = triangles.size();
-  bvh_nodes.resize(N * 2 - 1);
-  u32 nodes_used = 1;
-
-  BVHNode& root = bvh_nodes[0];
-	root.left_first = 0;
-	root.prim_count = N;
-	update_node_bounds(0);
-	// subdivide recursively
-  ++bvh_depth;
-	subdivide_node(0, nodes_used);
-
-  auto end = std::chrono::high_resolution_clock::now();
-  f64 seconds = std::chrono::duration<f64>(end - start).count();
-  std::cout << "BVH build time: " << seconds << " seconds\n";
-
-  HASSERT(bvh_depth <= 15);
-}
-
-void RendererVk::update_node_bounds(u32 node_idx) {
-  BVHNode& node = bvh_nodes[node_idx];
-	node.aabb_min = Vec3(infinity);
-	node.aabb_max = Vec3(-infinity);
-	for (u32 i = 0; i < node.prim_count; ++i) {
-		TriangleGPU& leaf_tri = triangles[node.left_first + i];
-		node.aabb_min = Vec3::fmin(node.aabb_min, leaf_tri.v0);
-		node.aabb_min = Vec3::fmin(node.aabb_min, leaf_tri.v1);
-		node.aabb_min = Vec3::fmin(node.aabb_min, leaf_tri.v2);
-		node.aabb_max = Vec3::fmax(node.aabb_max, leaf_tri.v0);
-		node.aabb_max = Vec3::fmax(node.aabb_max, leaf_tri.v1);
-		node.aabb_max = Vec3::fmax(node.aabb_max, leaf_tri.v2);
-	}
-}
-
-void RendererVk::subdivide_node(u32 node_idx, u32 &nodes_used) {
-  BVHNode& node = bvh_nodes[node_idx];
-  if (node.prim_count <= 2) return;
-  ++bvh_depth;
-  Vec3 extents = node.aabb_max - node.aabb_min;
-  i32 axis = 0;
-  if (extents.y > extents.x) axis = 1;
-  if (extents.z > extents[axis]) axis = 2;
-  f32 split_pos = node.aabb_min[axis] + extents[axis] * 0.5f;
-
-  // Partition triangles
-  i32 i = node.left_first;
-  i32 j = i + node.prim_count - 1;
-  while (i <= j) {
-    if (tri_centroids[i][axis] < split_pos) {
-			i++;
-    }
-    else {
-      std::swap(tri_centroids[i], tri_centroids[j]);
-			std::swap(triangles[i], triangles[j--]);
-    }
-  }
-  // Abort split if one of the sides is empty
-	i32 left_count = i - node.left_first;
-	if (left_count == 0 || left_count == node.prim_count) return;
-	// Create child nodes
-	int left_child_idx = nodes_used++;
-	int rightChildIdx = nodes_used++;
-	bvh_nodes[left_child_idx].left_first = node.left_first;
-	bvh_nodes[left_child_idx].prim_count = left_count;
-	bvh_nodes[rightChildIdx].left_first = i;
-	bvh_nodes[rightChildIdx].prim_count = node.prim_count - left_count;
-	node.left_first = left_child_idx;
-	node.prim_count = 0;
-	update_node_bounds(left_child_idx);
-	update_node_bounds(rightChildIdx);
-	// recurse
-	subdivide_node(left_child_idx, nodes_used);
-	subdivide_node(rightChildIdx, nodes_used);
-}
