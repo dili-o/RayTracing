@@ -106,7 +106,7 @@ bool RendererCPU::intersect_bvh(const Ray& ray, const u32 node_idx,
 	if (node.is_leaf()) {
     f32 closest_so_far = ray_t.max;
     for (u32 i = 0; i < node.prim_count; ++i) {
-      if (triangles[node.first_prim + i].hit(ray, Interval(ray_t.min, closest_so_far), rec)) {
+      if (triangles[node.left_first + i].hit(ray, Interval(ray_t.min, closest_so_far), rec)) {
 				hit_anything = true;
 				closest_so_far = rec.t;
       }
@@ -115,12 +115,12 @@ bool RendererCPU::intersect_bvh(const Ray& ray, const u32 node_idx,
 	else {
 		f32 closest_so_far = ray_t.max;
 		
-		if (intersect_bvh(ray, node.left_child, Interval(ray_t.min, closest_so_far), rec)) {
+		if (intersect_bvh(ray, node.left_first, Interval(ray_t.min, closest_so_far), rec)) {
 			hit_anything = true;
 			closest_so_far = rec.t;
 		}
 		
-		if (intersect_bvh(ray, node.left_child + 1, Interval(ray_t.min, closest_so_far), rec)) {
+		if (intersect_bvh(ray, node.left_first + 1, Interval(ray_t.min, closest_so_far), rec)) {
 			hit_anything = true;
 			closest_so_far = rec.t;
 		}
@@ -203,16 +203,23 @@ std::shared_ptr<Material> RendererCPU::get_material(MaterialHandle mat_handle) {
 }
 
 void RendererCPU::build_bvh() {
+	std::chrono::steady_clock::time_point start;
+  start = std::chrono::high_resolution_clock::now();
+
   const size_t N = triangles.size();
   bvh_nodes.resize(N * 2 - 1);
   u32 nodes_used = 1;
 
   BVHNode& root = bvh_nodes[0];
-	root.left_child = 0;
-	root.first_prim = 0, root.prim_count = N;
+	root.left_first = 0;
+	root.prim_count = N;
 	update_node_bounds(0);
 	// subdivide recursively
 	subdivide_node(0, nodes_used);
+
+  auto end = std::chrono::high_resolution_clock::now();
+  f64 seconds = std::chrono::duration<f64>(end - start).count();
+  std::cout << "BVH build time: " << seconds << " seconds\n";
 }
 
 void RendererCPU::update_node_bounds(u32 node_idx) {
@@ -220,13 +227,13 @@ void RendererCPU::update_node_bounds(u32 node_idx) {
 	node.aabb_min = Vec3(infinity);
 	node.aabb_max = Vec3(-infinity);
 	for (u32 i = 0; i < node.prim_count; ++i) {
-		Triangle& leaf_tri = triangles[node.first_prim + i];
-		node.aabb_min = Vec3::min(node.aabb_min, leaf_tri.v0);
-		node.aabb_min = Vec3::min(node.aabb_min, leaf_tri.v1);
-		node.aabb_min = Vec3::min(node.aabb_min, leaf_tri.v2);
-		node.aabb_max = Vec3::max(node.aabb_max, leaf_tri.v0);
-		node.aabb_max = Vec3::max(node.aabb_max, leaf_tri.v1);
-		node.aabb_max = Vec3::max(node.aabb_max, leaf_tri.v2);
+		Triangle& leaf_tri = triangles[node.left_first + i];
+		node.aabb_min = Vec3::fmin(node.aabb_min, leaf_tri.v0);
+		node.aabb_min = Vec3::fmin(node.aabb_min, leaf_tri.v1);
+		node.aabb_min = Vec3::fmin(node.aabb_min, leaf_tri.v2);
+		node.aabb_max = Vec3::fmax(node.aabb_max, leaf_tri.v0);
+		node.aabb_max = Vec3::fmax(node.aabb_max, leaf_tri.v1);
+		node.aabb_max = Vec3::fmax(node.aabb_max, leaf_tri.v2);
 	}
 }
 
@@ -240,7 +247,7 @@ void RendererCPU::subdivide_node(u32 node_idx, u32 &nodes_used) {
   f32 split_pos = node.aabb_min[axis] + extents[axis] * 0.5f;
 
   // Partition triangles
-  i32 i = node.first_prim;
+  i32 i = node.left_first;
   i32 j = i + node.prim_count - 1;
   while (i <= j) {
     if (tri_centroids[i][axis] < split_pos) {
@@ -252,16 +259,16 @@ void RendererCPU::subdivide_node(u32 node_idx, u32 &nodes_used) {
     }
   }
   // Abort split if one of the sides is empty
-	i32 left_count = i - node.first_prim;
+	i32 left_count = i - node.left_first;
 	if (left_count == 0 || left_count == node.prim_count) return;
 	// Create child nodes
 	int left_child_idx = nodes_used++;
 	int rightChildIdx = nodes_used++;
-	bvh_nodes[left_child_idx].first_prim = node.first_prim;
+	bvh_nodes[left_child_idx].left_first = node.left_first;
 	bvh_nodes[left_child_idx].prim_count = left_count;
-	bvh_nodes[rightChildIdx].first_prim = i;
+	bvh_nodes[rightChildIdx].left_first = i;
 	bvh_nodes[rightChildIdx].prim_count = node.prim_count - left_count;
-	node.left_child = left_child_idx;
+	node.left_first = left_child_idx;
 	node.prim_count = 0;
 	update_node_bounds(left_child_idx);
 	update_node_bounds(rightChildIdx);

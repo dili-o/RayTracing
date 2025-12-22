@@ -70,11 +70,11 @@ public:
                 random_real(min, max));
   }
 
-  static Vec3 min(const Vec3& a, const Vec3& b) {
+  static Vec3 fmin(const Vec3& a, const Vec3& b) {
     return Vec3(std::fmin(a.x, b.x), std::fmin(a.y, b.y), std::fmin(a.z, b.z));
   }
 
-  static Vec3 max(const Vec3& a, const Vec3& b) {
+  static Vec3 fmax(const Vec3& a, const Vec3& b) {
     return Vec3(std::fmax(a.x, b.x), std::fmax(a.y, b.y), std::fmax(a.z, b.z));
   }
 };

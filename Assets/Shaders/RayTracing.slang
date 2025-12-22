@@ -1,6 +1,7 @@
 #include "Random.slang"
 #include "World.slang"
 #include "Material.slang"
+#include "BVHNode.slang"
 
 struct ShaderPushConstant {
   float4 pixel00_loc;   
@@ -25,6 +26,7 @@ struct ShaderPushConstant {
 struct Uniforms{
 	Sphere *spheres;
 	Triangle *triangles;
+	BVHNode *bvh_nodes;
   MaterialLambert *lambert_mats;
   MaterialMetal *metal_mats;
   MaterialDielectric *dielectric_mats;
@@ -62,10 +64,9 @@ void computeMain(uint3 dispatch_thread_id : SV_DispatchThreadID,
         float3 attenuation = float3(1.f);
         for (uint d = 0; d < pc.max_depth; ++d) {
           HitRecord rec;
-          // Test ray against all spheres
-          if (hit_world(r, ray_t, rec,
-                        uniform_buffer[0].spheres, pc.sphere_count,
-                        uniform_buffer[0].triangles, pc.triangle_count)) {
+          if (intersect_bvh(r, 0, ray_t, rec,
+                        uniform_buffer[0].bvh_nodes, 
+                        uniform_buffer[0].triangles)) {
             Ray scattered;
             float3 material_attenuation = float3(0.f);
 

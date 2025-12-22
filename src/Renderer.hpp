@@ -151,6 +151,10 @@ public:
 														const Vec3 &n0, const Vec3 &n1, const Vec3 &n2,
 														Vec2 uv_0, Vec2 uv_1, Vec2 uv_2,
 														MaterialHandle mat_handle) override;
+private:
+  void build_bvh();
+  void update_node_bounds(u32 node_idx);
+  void subdivide_node(u32 node_idx, u32 &nodes_used);
 
 private:
   std::vector<Image> images;
@@ -159,4 +163,6 @@ private:
   std::vector<GpuDielectric> dielectric_mats;
   std::vector<SphereGPU> spheres;
   std::vector<TriangleGPU> triangles;
+  std::vector<Vec3> tri_centroids;
+  std::vector<BVHNode> bvh_nodes;
 };
