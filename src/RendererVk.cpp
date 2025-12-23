@@ -66,7 +66,7 @@ struct alignas(16) ShaderPushConstant {
   f32 pixel_samples_scale;
   u32 max_depth;
   u32 triangle_count;
-  f32 padding[1];
+  f32 defocus_angle;
 
   f32 defocus_disk_u[4];
   f32 defocus_disk_v[4]; // 128
@@ -567,24 +567,25 @@ void RendererVk::render(u8 *out_pixels) {
                             vkPipelineLayout, 0, writeSets.size(),
                             writeSets.data());
 
-  ShaderPushConstant pushConstant{};
-  Vec3::set_float4(pushConstant.pixel00_loc, pixel00_loc);
-  Vec3::set_float4(pushConstant.pixel_delta_u, pixel_delta_u);
-  Vec3::set_float4(pushConstant.pixel_delta_v, pixel_delta_v);
-  Vec3::set_float4(pushConstant.camera_center, center);
-  pushConstant.image_width = image_width;
-  pushConstant.image_height = image_height;
-  pushConstant.sphere_count = (u32)spheres.size();
-  pushConstant.triangle_count = (u32)triangles.size();
-  pushConstant.samples_per_pixel = samples_per_pixel;
-  pushConstant.pixel_samples_scale = pixel_samples_scale;
-  pushConstant.max_depth = max_depth;
-  Vec3::set_float4(pushConstant.defocus_disk_u, defocus_disk_u);
-  Vec3::set_float4(pushConstant.defocus_disk_v, defocus_disk_v);
+  ShaderPushConstant push_constant{};
+  Vec3::set_float4(push_constant.pixel00_loc, pixel00_loc);
+  Vec3::set_float4(push_constant.pixel_delta_u, pixel_delta_u);
+  Vec3::set_float4(push_constant.pixel_delta_v, pixel_delta_v);
+  Vec3::set_float4(push_constant.camera_center, center);
+  push_constant.image_width = image_width;
+  push_constant.image_height = image_height;
+  push_constant.sphere_count = (u32)spheres.size();
+  push_constant.triangle_count = (u32)triangles.size();
+  push_constant.samples_per_pixel = samples_per_pixel;
+  push_constant.pixel_samples_scale = pixel_samples_scale;
+  push_constant.max_depth = max_depth;
+  push_constant.defocus_angle = defocus_angle;
+  Vec3::set_float4(push_constant.defocus_disk_u, defocus_disk_u);
+  Vec3::set_float4(push_constant.defocus_disk_v, defocus_disk_v);
 
   vkCmdPushConstants(vkCommandBuffer, vkPipelineLayout,
                      VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(ShaderPushConstant),
-                     &pushConstant);
+                     &push_constant);
 
   vkCmdDispatch(vkCommandBuffer, image_width / 8, image_height / 8, 1);
 

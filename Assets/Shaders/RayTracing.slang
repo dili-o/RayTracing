@@ -17,7 +17,7 @@ struct ShaderPushConstant {
   float pixel_samples_scale;
   uint max_depth;
   uint triangle_count;
-  float padding[1]; // 96
+  float defocus_angle; // 96
 
   float4 defocus_disk_u;
   float4 defocus_disk_v; // 128
@@ -46,7 +46,7 @@ void computeMain(uint3 dispatch_thread_id : SV_DispatchThreadID,
     int2 pixel_coord  = int2(dispatch_thread_id.xy);
 
     if (pixel_coord.x < pc.image_width && pixel_coord.y < pc.image_height) {
-      Interval ray_t = Interval(0.001f, 1000.f);
+      Interval ray_t = Interval(0.001f, 1e30f);
       float3 ray_color = float3(0.f);
       uint seed = pixel_coord.x + pixel_coord.y * 1973u;
 
@@ -56,7 +56,7 @@ void computeMain(uint3 dispatch_thread_id : SV_DispatchThreadID,
         float3 pixel_sample = pc.pixel00_loc.xyz +
                             ((pixel_coord.x + jitter.x) * pc.pixel_delta_u.xyz) +
                             ((pixel_coord.y + jitter.y) * pc.pixel_delta_v.xyz);
-        float3 ray_origin = (10.f <= 0.f) ? pc.camera_center.xyz : 
+        float3 ray_origin = (pc.defocus_angle <= 0.f) ? pc.camera_center.xyz : 
                             defocus_disk_sample(seed, pc.camera_center.xyz,
                             pc.defocus_disk_u.xyz, pc.defocus_disk_v.xyz);
         float3 ray_direction = pixel_sample - ray_origin;
