@@ -2,14 +2,14 @@
 #include "Assert.hpp"
 #include "Material.hpp"
 
-bool intersect_aabb(const Ray& ray, const Vec3 &bmin, const Vec3 &bmax, const f32 t) {
-	f32 tx1 = (bmin.x - ray.origin.x) / ray.direction.x, tx2 = (bmax.x - ray.origin.x) / ray.direction.x;
+f32 intersect_aabb(const Ray& ray, const Vec3 &bmin, const Vec3 &bmax, const f32 t) {
+	f32 tx1 = (bmin.x - ray.origin.x) * ray.inv_direction.x, tx2 = (bmax.x - ray.origin.x) * ray.inv_direction.x;
 	f32 tmin = std::min(tx1, tx2), tmax = std::max(tx1, tx2);
-	f32 ty1 = (bmin.y - ray.origin.y) / ray.direction.y, ty2 = (bmax.y - ray.origin.y) / ray.direction.y;
+	f32 ty1 = (bmin.y - ray.origin.y) * ray.inv_direction.y, ty2 = (bmax.y - ray.origin.y) * ray.inv_direction.y;
 	tmin = std::max(tmin, std::min(ty1, ty2)), tmax = std::min(tmax, std::max(ty1, ty2));
-	f32 tz1 = (bmin.z - ray.origin.z) / ray.direction.z, tz2 = (bmax.z - ray.origin.z) / ray.direction.z;
+	f32 tz1 = (bmin.z - ray.origin.z) * ray.inv_direction.z, tz2 = (bmax.z - ray.origin.z) * ray.inv_direction.z;
 	tmin = std::max(tmin, std::min(tz1, tz2)), tmax = std::min(tmax, std::max(tz1, tz2));
-	return tmax >= tmin && tmin < t && tmax > 0;
+	if (tmax >= tmin && tmin < t && tmax > 0) return tmin; else return infinity;
 }
 
 MaterialHandle RendererCPU::add_lambert_material(const Vec3 &albedo) {
@@ -101,51 +101,50 @@ void RendererCPU::render(u8 *out_pixels) {
 }
 
 bool RendererCPU::intersect_bvh(const Ray& ray, const u32 node_idx,
-                                const Interval &ray_t, HitRecord &rec) const {
-	const BVHNode& node = bvh_nodes[node_idx];
-	if (!intersect_aabb(ray, node.aabb_min, node.aabb_max, ray_t.max)) return false;
-	bool hit_anything = false;
-	if (node.is_leaf()) {
-    f32 closest_so_far = ray_t.max;
-    for (u32 i = 0; i < node.prim_count; ++i) {
-      if (triangles[tri_ids[node.left_first + i]].hit(ray, Interval(ray_t.min, closest_so_far), rec)) {
-				hit_anything = true;
-				closest_so_far = rec.t;
+  const Interval& ray_t, HitRecord& rec) {
+  const BVHNode* node = &bvh_nodes[0], *stack[64];
+	u32 stackPtr = 0;
+	float closest_so_far = ray_t.max;
+	bool hit = false;
+	while (1) {
+		if (node->is_leaf()) {
+      for (u32 i = 0; i < node->prim_count; ++i)
+        if (triangles[tri_ids[node->left_first + i]]
+            .hit(ray, Interval(ray_t.min, closest_so_far), rec)) {
+					hit = true;
+					closest_so_far = rec.t;
+        }
+				if (stackPtr == 0) break; else node = stack[--stackPtr];
+
+				continue;
+    } else {
+			BVHNode* child1 = &bvh_nodes[node->left_first];
+			BVHNode* child2 = &bvh_nodes[node->left_first + 1];
+			float dist1 = intersect_aabb(ray, child1->aabb_min, child1->aabb_max, closest_so_far);
+			float dist2 = intersect_aabb(ray, child2->aabb_min, child2->aabb_max, closest_so_far);
+			if (dist1 > dist2) {
+        std::swap(dist1, dist2);
+        std::swap(child1, child2); 
       }
+			if (dist1 == infinity) {
+				if (stackPtr == 0) break; else node = stack[--stackPtr];
+			} else {
+				node = child1;
+				if (dist2 != infinity) stack[stackPtr++] = child2;
+			}
     }
 	}
-	else {
-		f32 closest_so_far = ray_t.max;
-		
-		if (intersect_bvh(ray, node.left_first, Interval(ray_t.min, closest_so_far), rec)) {
-			hit_anything = true;
-			closest_so_far = rec.t;
-		}
-		
-		if (intersect_bvh(ray, node.left_first + 1, Interval(ray_t.min, closest_so_far), rec)) {
-			hit_anything = true;
-			closest_so_far = rec.t;
-		}
-	}
-  
-  return hit_anything;
+  return hit;
 }
 
 Color RendererCPU::ray_color(const Ray &r, u32 depth,
-                             const Hittable &world) const {
+                             const Hittable &world) {
   if (depth <= 0) {
     return Color(0.f, 0.f, 0.f);
   }
   HitRecord rec;
   bool hit_anything = false;
   const Interval ray_t = Interval(0.001f, infinity);
-	//real closest_so_far = ray_t.max;
- // for (const Triangle& tri : triangles) {
-	//	if (tri.hit(r, Interval(ray_t.min, closest_so_far), rec)) {
-	//		hit_anything = true;
-	//		closest_so_far = rec.t;
-	//	}
- // }
   hit_anything = intersect_bvh(r, 0, ray_t, rec);
   if (hit_anything) {
     Ray scattered;

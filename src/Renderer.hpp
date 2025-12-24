@@ -115,12 +115,12 @@ public:
 														MaterialHandle mat_handle) override;
 
 private:
-  Color ray_color(const Ray &r, u32 depth, const Hittable &world) const;
+  Color ray_color(const Ray &r, u32 depth, const Hittable &world) ;
   Vec3 sample_square() const;
   Point3 defocus_disk_sample() const;
   Ray get_ray(i32 i, i32 j) const;
   std::shared_ptr<Material> get_material(MaterialHandle handle);
-	bool intersect_bvh(const Ray& ray, const u32 node_idx, const Interval &ray_t, HitRecord &rec) const;
+	bool intersect_bvh(const Ray& ray, const u32 node_idx, const Interval &ray_t, HitRecord &rec);
 
 private:
   HittableList world;

@@ -1,6 +1,9 @@
 #include "BVHNode.hpp"
 #include "AABB.hpp"
 
+#define SAH
+
+// TODO: Maybe custom triangle data
 f32 evaluate_sah_gpu(BVHNode& node, const TriangleGPU *triangles, const u32 *tri_ids,
 	                   const Vec3 *tri_centroids, i32 axis, f32 pos ) {
 	// determine triangle counts and bounds for this split candidate
@@ -25,33 +28,30 @@ f32 evaluate_sah_gpu(BVHNode& node, const TriangleGPU *triangles, const u32 *tri
 	return cost > 0.f ? cost : infinity;
 }
 
-f32 eval_sah_gpu(BVHNode& node, const TriangleGPU* triangles, const u32* tri_ids,
-	const Vec3* tri_centroids, i32 axis, f32 b) {
+f32 evaluate_sah_cpu(BVHNode& node, const Triangle *triangles, const u32 *tri_ids,
+	                   const Vec3 *tri_centroids, i32 axis, f32 pos ) {
+	// determine triangle counts and bounds for this split candidate
 	AABB left_box, right_box;
-	u32 left_count = 0;
-	// Find the Surface area of the left and right AABBs
-	for (u32 i = 0; i < node.prim_count; ++i) {
-		const TriangleGPU& triangle = triangles[tri_ids[node.left_first + i]];
+	int left_count = 0, right_count = 0;
+	for(u32 i = 0; i < node.prim_count; ++i) {
+		const Triangle& triangle = triangles[tri_ids[node.left_first + i]];
 		const Vec3 &centroid = tri_centroids[tri_ids[node.left_first + i]];
-		if (centroid[axis] < b) {
-			++left_count;
+		if (centroid[axis] < pos) {
+			left_count++;
 			left_box.grow(triangle.v0);
 			left_box.grow(triangle.v1);
 			left_box.grow(triangle.v2);
 		} else {
-			right_box.grow(triangle.v0);
-			right_box.grow(triangle.v1);
-			right_box.grow(triangle.v2);
+			right_count++;
+			right_box.grow( triangle.v0);
+			right_box.grow( triangle.v1);
+			right_box.grow( triangle.v2);
 		}
 	}
-
-	if (left_count == 0 || left_count == node.prim_count)
-    return infinity;
-	f32 cost = left_box.half_area() * left_count + (right_box.half_area() * (node.prim_count - left_count));
-	return cost;
+	f32 cost = left_count * left_box.half_area() + right_count * right_box.half_area();
+	return cost > 0.f ? cost : infinity;
 }
 
-// TODO: Maybe custom triangle data
 static void update_node_bounds_gpu(BVHNode *bvh_nodes, const TriangleGPU *triangles,
 	u32 *tri_ids, u32 node_idx) {
   BVHNode& node = bvh_nodes[node_idx];
@@ -74,9 +74,6 @@ static void subdivide_node_gpu(BVHNode *bvh_nodes, const TriangleGPU *triangles,
 															 u32 &nodes_used, u32 current_depth, u32 &max_depth) {
 	max_depth = std::max(max_depth, current_depth);
   BVHNode& node = bvh_nodes[node_idx];
-#define SAH
-
-#ifdef SAH
 	// determine split axis using SAH
 	i32 best_axis = -1;
 	f32 best_pos = 0, best_cost = infinity;
@@ -94,14 +91,6 @@ static void subdivide_node_gpu(BVHNode *bvh_nodes, const TriangleGPU *triangles,
 	f32 parent_area = e.x * e.y + e.y * e.z + e.z * e.x;
 	f32 parent_cost = node.prim_count * parent_area;
 	if (best_cost >= parent_cost) return;
-#else
-  if (node.prim_count <= 2) return;
-  Vec3 e = node.aabb_max - node.aabb_min;
-  i32 axis = 0;
-  if (e.y > e.x) axis = 1;
-  if (e.z > e[axis]) axis = 2;
-  f32 split_pos = node.aabb_min[axis] + e[axis] * 0.5f;
-#endif
 
   // Partition triangles
   i32 i = node.left_first;
@@ -162,7 +151,7 @@ void build_bvh_gpu(std::vector<BVHNode> &bvh_nodes, const std::vector<TriangleGP
   f64 seconds = std::chrono::duration<f64>(end - start).count();
   std::cout << "BVH build time: " << seconds << " seconds\n";
 
-  HASSERT(bvh_depth <= 20);
+  HASSERT(bvh_depth <= 64);
 }
 
 static void update_node_bounds_cpu(BVHNode *bvh_nodes, const Triangle *triangles,
@@ -187,12 +176,23 @@ static void subdivide_node_cpu(BVHNode *bvh_nodes, const Triangle *triangles,
 															 u32 &nodes_used, u32 current_depth, u32 &max_depth) {
 	max_depth = std::max(max_depth, current_depth);
   BVHNode& node = bvh_nodes[node_idx];
-  if (node.prim_count <= 2) return;
-  Vec3 extents = node.aabb_max - node.aabb_min;
-  i32 axis = 0;
-  if (extents.y > extents.x) axis = 1;
-  if (extents.z > extents[axis]) axis = 2;
-  f32 split_pos = node.aabb_min[axis] + extents[axis] * 0.5f;
+	// determine split axis using SAH
+	i32 best_axis = -1;
+	f32 best_pos = 0, best_cost = infinity;
+	for (i32 axis = 0; axis < 3; axis++) {
+		for(u32 i = 0; i < node.prim_count - 1; i++) {
+			f32 candidate_pos = tri_centroids[tri_ids[node.left_first + i]][axis];
+			f32 cost = evaluate_sah_cpu(node, triangles, tri_ids, tri_centroids, axis, candidate_pos);
+			if (cost < best_cost) 
+				best_pos = candidate_pos, best_axis = axis, best_cost = cost;
+		}
+	}
+	i32 axis = best_axis;
+	f32 split_pos = best_pos;
+  Vec3 e = node.aabb_max - node.aabb_min;
+	f32 parent_area = e.x * e.y + e.y * e.z + e.z * e.x;
+	f32 parent_cost = node.prim_count * parent_area;
+	if (best_cost >= parent_cost) return;
 
   // Partition triangles
   i32 i = node.left_first;
@@ -252,7 +252,5 @@ void build_bvh_cpu(std::vector<BVHNode> &bvh_nodes, const std::vector<Triangle> 
   auto end = std::chrono::high_resolution_clock::now();
   f64 seconds = std::chrono::duration<f64>(end - start).count();
   std::cout << "BVH build time: " << seconds << " seconds\n";
-
-  HASSERT(bvh_depth <= 15);
 }
 
