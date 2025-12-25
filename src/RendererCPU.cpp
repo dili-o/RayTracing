@@ -65,8 +65,9 @@ RendererCPU::~RendererCPU() {
 
 void RendererCPU::render(u8 *out_pixels) {
   Interval intensity(0.f, 0.999f);
-  u32 index = 0;
 
+#ifdef OLD
+  u32 index = 0;
   for (u32 j = 0; j < image_height; j++) {
     std::clog << "\rScanlines remaining: " <<
                  (image_height - j) << ' ' << std::flush;
@@ -97,6 +98,43 @@ void RendererCPU::render(u8 *out_pixels) {
       out_pixels[index++] = ib;
     }
   }
+#else
+  for (u32 j = 0; j < image_height; j += 4) {
+    std::clog << "\rTiles remaining: " <<
+                 ((image_height - j) / 4) << ' ' << std::flush;
+    u32 tile_h = std::min(4u, image_height - j);
+    for (u32 i = 0; i < image_width; i += 4) {
+			u32 tile_w = std::min(4u, image_width  - i);
+      for (u32 v = 0; v < tile_h; ++v) for (u32 u = 0; u < tile_w; ++u) {
+				Color pixel_color = Color(0.f, 0.f, 0.f);
+
+				for (u32 sample = 0; sample < samples_per_pixel; ++sample) {
+					Ray ray = get_ray(i + u, j + v);
+					pixel_color += ray_color(ray, max_depth, world);
+				}
+				pixel_color *= pixel_samples_scale;
+
+				// Write the color
+				real r = pixel_color.x;
+				real g = pixel_color.y;
+				real b = pixel_color.z;
+
+				r = linear_to_gamma(r);
+				g = linear_to_gamma(g);
+				b = linear_to_gamma(b);
+
+				i32 ir = i32(256 * intensity.clamp(r));
+				i32 ig = i32(256 * intensity.clamp(g));
+				i32 ib = i32(256 * intensity.clamp(b));
+
+        u32 index = ((i + u) + ((j + v) * image_width)) * 3;
+				out_pixels[index++] = ir;
+				out_pixels[index++] = ig;
+				out_pixels[index] = ib;
+      }
+    }
+  }
+#endif // OLD
   std::clog << "\rDone.                 \n";
 }
 
@@ -120,8 +158,8 @@ bool RendererCPU::intersect_bvh(const Ray& ray, const u32 node_idx,
     } else {
 			BVHNode* child1 = &bvh_nodes[node->left_first];
 			BVHNode* child2 = &bvh_nodes[node->left_first + 1];
-			float dist1 = intersect_aabb(ray, child1->aabb_min, child1->aabb_max, closest_so_far);
-			float dist2 = intersect_aabb(ray, child2->aabb_min, child2->aabb_max, closest_so_far);
+			f32 dist1 = intersect_aabb(ray, child1->aabb_min, child1->aabb_max, closest_so_far);
+			f32 dist2 = intersect_aabb(ray, child2->aabb_min, child2->aabb_max, closest_so_far);
 			if (dist1 > dist2) {
         std::swap(dist1, dist2);
         std::swap(child1, child2); 
