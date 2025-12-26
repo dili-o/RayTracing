@@ -1,6 +1,13 @@
 #include "BVHNode.hpp"
 #include "AABB.hpp"
 
+#define BINS 100
+
+struct Bin {
+	AABB bounds; 
+	i32 prim_count = 0;
+};
+
 template <typename Tri>
 struct TrigTraits;
 
@@ -19,8 +26,8 @@ struct TrigTraits<TriangleGPU> {
 };
 
 template <typename TrigType>
-f32 evaluate_sah(BVHNode& node, const TrigType *triangles,
-	const u32 *tri_ids,const Vec3 *tri_centroids, i32 axis, f32 pos ) {
+f32 evaluate_sah(const BVHNode &node, const TrigType *triangles,
+	const u32 *tri_ids, const Vec3 *tri_centroids, i32 axis, f32 pos) {
 	// determine triangle counts and bounds for this split candidate
 	AABB left_box, right_box;
 	int left_count = 0, right_count = 0;
@@ -62,24 +69,70 @@ static void update_node_bounds(BVHNode *bvh_nodes, const TrigType *triangles,
 }
 
 template <typename TrigType>
+static void find_best_plane(const BVHNode &node, const TrigType* triangles,
+	const u32* tri_ids, const Vec3* tri_centroids,
+	f32 &out_cost, i32 &out_axis, f32 &out_spilt_pos) {
+	for (i32 axis = 0; axis < 3; axis++) {
+		if (node.aabb_max[axis] == node.aabb_min[axis]) continue;
+		f32 bounds_min = infinity, bounds_max = -infinity;
+		for (int i = 0; i < node.prim_count; ++i) {
+			bounds_min = std::min(bounds_min, tri_centroids[tri_ids[node.left_first + i]][axis]);
+			bounds_max = std::max(bounds_max, tri_centroids[tri_ids[node.left_first + i]][axis]);
+		}
+		// Populate bins
+		Bin bins[BINS];
+		f32 scale = BINS / (bounds_max - bounds_min);
+		for (u32 i = 0; i < node.prim_count; ++i) {
+			const TrigType& trig = triangles[tri_ids[node.left_first + i]];
+			f32 centroid_a = tri_centroids[tri_ids[node.left_first + i]][axis];
+			i32 bin_idx = (i32)std::min(BINS - 1.f, (centroid_a - bounds_min) * scale);
+			bins[bin_idx].prim_count++;
+			bins[bin_idx].bounds.grow(TrigTraits<TrigType>::v0(trig));
+			bins[bin_idx].bounds.grow(TrigTraits<TrigType>::v1(trig));
+			bins[bin_idx].bounds.grow(TrigTraits<TrigType>::v2(trig));
+		}
+
+		f32 left_area[BINS - 1], right_area[BINS - 1];
+		i32 left_count[BINS - 1], right_count[BINS - 1];
+		AABB left_box, right_box;
+		i32 left_sum = 0, right_sum = 0;
+		for (i32 i = 0; i < BINS - 1; ++i) {
+			left_sum += bins[i].prim_count;
+			left_count[i] = left_sum;
+			left_box.grow(bins[i].bounds);
+			left_area[i] = left_box.half_area();
+
+			right_sum += bins[BINS - 1 - i].prim_count;
+			right_count[BINS - 2 - i] = right_sum;
+			right_box.grow(bins[BINS - 1 - i].bounds);
+			right_area[BINS - 2 - i] = right_box.half_area();
+		}
+		scale = (bounds_max - bounds_min) / BINS;
+		for (i32 i = 0; i < BINS - 1; ++i) {
+			f32 plane_cost = left_count[i] * left_area[i] + right_count[i] * right_area[i];
+			if (plane_cost < out_cost)
+			out_axis = axis, out_spilt_pos = bounds_min + scale * (i + 1), out_cost = plane_cost;
+		}
+		//for (u32 i = 0; i < 100; ++i) {
+		//	f32 candidate_pos = node.aabb_min[axis] + (i * scale);
+		//	f32 cost = evaluate_sah<TrigType>(node, triangles, tri_ids, tri_centroids, axis, candidate_pos);
+		//	if (cost < out_cost) 
+		//		out_spilt_pos = candidate_pos, out_axis = axis, out_cost = cost;
+		//}
+	}
+}
+
+template <typename TrigType>
 static void subdivide_node(BVHNode *bvh_nodes, const TrigType *triangles,
 															 u32 *tri_ids, const Vec3 *tri_centroids, u32 node_idx,
 															 u32 &nodes_used, u32 current_depth, u32 &max_depth) {
 	max_depth = std::max(max_depth, current_depth);
   BVHNode& node = bvh_nodes[node_idx];
-	// determine split axis using SAH
-	i32 best_axis = -1;
-	f32 best_pos = 0, best_cost = infinity;
-	for (i32 axis = 0; axis < 3; axis++) {
-		for(u32 i = 0; i < node.prim_count - 1; i++) {
-			f32 candidate_pos = tri_centroids[tri_ids[node.left_first + i]][axis];
-			f32 cost = evaluate_sah<TrigType>(node, triangles, tri_ids, tri_centroids, axis, candidate_pos);
-			if (cost < best_cost) 
-				best_pos = candidate_pos, best_axis = axis, best_cost = cost;
-		}
-	}
-	i32 axis = best_axis;
-	f32 split_pos = best_pos;
+	i32 axis;
+	f32 split_pos;
+	f32 best_cost = infinity;
+	find_best_plane<TrigType>(node, triangles, tri_ids, tri_centroids,
+														best_cost, axis, split_pos);
   Vec3 e = node.aabb_max - node.aabb_min;
 	f32 parent_area = e.x * e.y + e.y * e.z + e.z * e.x;
 	f32 parent_cost = node.prim_count * parent_area;
