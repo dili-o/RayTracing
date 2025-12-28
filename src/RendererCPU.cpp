@@ -63,48 +63,18 @@ void RendererCPU::init(u32 image_width_, real aspect_ratio_,
 RendererCPU::~RendererCPU() {
 }
 
+#define TILE_W 4u
+#define TILE_H 4u
+
 void RendererCPU::render(u8 *out_pixels) {
   Interval intensity(0.f, 0.999f);
 
-#ifdef OLD
-  u32 index = 0;
-  for (u32 j = 0; j < image_height; j++) {
-    std::clog << "\rScanlines remaining: " <<
-                 (image_height - j) << ' ' << std::flush;
-    for (u32 i = 0; i < image_width; i++) {
-      Color pixel_color = Color(0.f, 0.f, 0.f);
-
-      for (u32 sample = 0; sample < samples_per_pixel; ++sample) {
-        Ray ray = get_ray(i, j);
-        pixel_color += ray_color(ray, max_depth, world);
-      }
-      pixel_color *= pixel_samples_scale;
-
-      // Write the color
-      real r = pixel_color.x;
-      real g = pixel_color.y;
-      real b = pixel_color.z;
-
-      r = linear_to_gamma(r);
-      g = linear_to_gamma(g);
-      b = linear_to_gamma(b);
-
-      i32 ir = i32(256 * intensity.clamp(r));
-      i32 ig = i32(256 * intensity.clamp(g));
-      i32 ib = i32(256 * intensity.clamp(b));
-
-      out_pixels[index++] = ir;
-      out_pixels[index++] = ig;
-      out_pixels[index++] = ib;
-    }
-  }
-#else
-  for (u32 j = 0; j < image_height; j += 4) {
+  for (u32 j = 0; j < image_height; j += TILE_H) {
     std::clog << "\rTiles remaining: " <<
-                 ((image_height - j) / 4) << ' ' << std::flush;
-    u32 tile_h = std::min(4u, image_height - j);
-    for (u32 i = 0; i < image_width; i += 4) {
-			u32 tile_w = std::min(4u, image_width  - i);
+                 ((image_height - j) / TILE_H) << ' ' << std::flush;
+    u32 tile_h = std::min(TILE_H, image_height - j);
+    for (u32 i = 0; i < image_width; i += TILE_W) {
+			u32 tile_w = std::min(TILE_W, image_width  - i);
       for (u32 v = 0; v < tile_h; ++v) for (u32 u = 0; u < tile_w; ++u) {
 				Color pixel_color = Color(0.f, 0.f, 0.f);
 
@@ -134,7 +104,6 @@ void RendererCPU::render(u8 *out_pixels) {
       }
     }
   }
-#endif // OLD
   std::clog << "\rDone.                 \n";
 }
 

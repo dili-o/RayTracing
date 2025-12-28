@@ -90,7 +90,7 @@ MaterialHandle RendererVk::add_lambert_material(const Vec3 &albedo) {
 MaterialHandle RendererVk::add_lambert_material(const std::string &filename) {
   vk_images.emplace_back(VulkanImage());
   vk_image_views.emplace_back(VulkanImageView());
-  images.emplace_back(filename.c_str());
+  images.emplace_back(filename.c_str(), true);
   lambert_mats.push_back({static_cast<u32>(images.size() - 1)});
   return {MATERIAL_LAMBERT, ((u32)lambert_mats.size() - 1)};
 }
@@ -111,7 +111,6 @@ void RendererVk::add_sphere(const Vec3 &origin, real radius,
   spheres.push_back(SphereGPU(origin, radius, mat.index, mat.type));
 }
 
-// TODO: Implement
 void RendererVk::add_triangle(const Vec3 &v0, const Vec3 &v1, const Vec3 &v2,
 														const Vec3 &n0, const Vec3 &n1, const Vec3 &n2,
 														Vec2 uv_0, Vec2 uv_1, Vec2 uv_2,
@@ -119,6 +118,24 @@ void RendererVk::add_triangle(const Vec3 &v0, const Vec3 &v1, const Vec3 &v2,
   Vec3 centroid = (v0 + v1 + v2) * 0.3333f;
   tri_centroids.push_back(centroid);
   tri_ids.push_back(static_cast<u32>(tri_ids.size()));
+	switch (mat_handle.type) {
+		case MATERIAL_LAMBERT: {
+      HASSERT(mat_handle.index < lambert_mats.size());
+      break;
+		}
+		case MATERIAL_METAL: {
+      HASSERT(mat_handle.index < metal_mats.size());
+      break;
+		}
+		case MATERIAL_DIELECTRIC: {
+      HASSERT(mat_handle.index < dielectric_mats.size());
+      break;
+		}
+		default: {
+			HASSERT_MSG(false, "Invalid material type given");
+		}
+  }
+
   triangles.push_back(TriangleGPU(v0, v1, v2, n0, n1, n2, uv_0, uv_1, uv_2, mat_handle));
 }
 
@@ -251,9 +268,9 @@ void RendererVk::init(u32 image_width_, real aspect_ratio_,
 	samplerInfo.magFilter = VK_FILTER_NEAREST;
 	samplerInfo.minFilter = VK_FILTER_NEAREST;
 	samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
-	samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-	samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-	samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+	samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+	samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 	samplerInfo.anisotropyEnable = VK_FALSE;
 	samplerInfo.compareEnable = VK_FALSE;
 	samplerInfo.minLod = 0.f;
@@ -361,13 +378,13 @@ void RendererVk::init(u32 image_width_, real aspect_ratio_,
     VkImageCreateInfo imageInfo = init::ImageCreateInfo(
       { static_cast<u32>(images[i].width()),
       static_cast<u32>(images[i].height()),1 },
-      1, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+      1, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
 		VmaAllocationCreateInfo vmaInfo =
       init::VmaAllocationInfo(VMA_MEMORY_USAGE_GPU_ONLY);
     util::CreateVmaImage(ctx.vmaAllocator, imageInfo, vmaInfo, vk_images[i]);
 
     VkImageViewCreateInfo viewInfo = init::ImageViewCreateInfo(vk_images[i].vkHandle,
-      VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT, 1);
+      VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT, 1);
     util::CreateImageView(ctx.vkDevice, ctx.vkAllocationCallbacks, viewInfo, vk_image_views[i]);
 
 		VkCommandBufferBeginInfo beginInfo{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };

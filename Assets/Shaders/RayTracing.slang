@@ -93,6 +93,7 @@ void computeMain(uint3 dispatch_thread_id : SV_DispatchThreadID,
 
             r = scattered;
             attenuation *= material_attenuation;
+            // attenuation *= float3(rec.u, rec.v, 0.f);
           } else {
             float3 unit_direction = normalize(r.direction);
             float a = 0.5f * (unit_direction.y + 1.f);

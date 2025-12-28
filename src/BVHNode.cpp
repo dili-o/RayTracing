@@ -113,12 +113,6 @@ static void find_best_plane(const BVHNode &node, const TrigType* triangles,
 			if (plane_cost < out_cost)
 			out_axis = axis, out_spilt_pos = bounds_min + scale * (i + 1), out_cost = plane_cost;
 		}
-		//for (u32 i = 0; i < 100; ++i) {
-		//	f32 candidate_pos = node.aabb_min[axis] + (i * scale);
-		//	f32 cost = evaluate_sah<TrigType>(node, triangles, tri_ids, tri_centroids, axis, candidate_pos);
-		//	if (cost < out_cost) 
-		//		out_spilt_pos = candidate_pos, out_axis = axis, out_cost = cost;
-		//}
 	}
 }
 

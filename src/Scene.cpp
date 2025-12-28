@@ -7,6 +7,8 @@
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
 
+namespace fs = std::filesystem;
+
 struct Vertex {
   Vec3 position;
   Vec3 normal;
@@ -80,14 +82,15 @@ void load_default_scene(Renderer* renderer) {
   renderer->init(384, 16.f / 9.f, 150, 10, 20.f);
 }
 
-bool load_scene(const std::filesystem::path &scene_name, Renderer* renderer) {
-  if (!std::filesystem::exists(scene_name)) {
-    HERROR("Error: JSON file not found at path: {}", scene_name.string().c_str());
+bool load_scene(const fs::path &scene_path, Renderer* renderer) {
+  if (!fs::exists(scene_path)) {
+    HERROR("Error: JSON file not found at path: {}", scene_path.string().c_str());
     return false;
   }
+	fs::path scene_parent_path = fs::path(scene_path).parent_path();
   using namespace simdjson;
   ondemand::parser parser;
-  padded_string json = padded_string::load(scene_name.string());
+  padded_string json = padded_string::load(scene_path.string());
   ondemand::document scene = parser.iterate(json);
 
   // Load camera settings
@@ -120,6 +123,9 @@ bool load_scene(const std::filesystem::path &scene_name, Renderer* renderer) {
   int max_depth = camera["max_depth"].get_int64().value();
   real vfov_deg = camera["vfov_deg"].get_double().value();
 
+  // Load default Material
+  MaterialHandle default_material = renderer->add_lambert_material(Color(0.8f, 0.0f, 0.8f));
+
   // Load Materials
   ondemand::array materials = scene["materials"];
   std::vector<MaterialHandle> material_handles(materials.count_elements());
@@ -134,7 +140,7 @@ bool load_scene(const std::filesystem::path &scene_name, Renderer* renderer) {
       if (albedo_element.type() == ondemand::json_type::string) {
         std::string_view image_name = albedo_element.get_string();
         material_handles[index++] =
-          renderer->add_lambert_material(HOME_PATH "/Scenes/" + std::string(image_name));
+          renderer->add_lambert_material(scene_parent_path.string() + "/" + std::string(image_name));
       }
       else {
         ondemand::array albedo = mat["albedo"];
@@ -234,20 +240,45 @@ bool load_scene(const std::filesystem::path &scene_name, Renderer* renderer) {
   auto model_field = scene["model"];
   if (model_field.error() != NO_SUCH_FIELD) {
 		ondemand::object model = scene["model"];
-		std::string path = HOME_PATH "/Scenes/" + std::string(model["path"].get_string().value());
+		std::string model_path = scene_parent_path.string() + "/" + std::string(model["path"].get_string().value());
 		tinyobj::attrib_t attrib;
 		std::vector<tinyobj::shape_t> obj_shapes;
 		std::vector<tinyobj::material_t> obj_materials;
 		std::string warn;
 		std::string err;
 
-		if (!tinyobj::LoadObj(&attrib, &obj_shapes, &obj_materials, &warn, &err, path.c_str())) {
+    fs::path old_dir = fs::current_path();
+    fs::path model_parent_path = fs::path(model_path).parent_path();
+		fs::current_path(model_parent_path);
+
+		if (!tinyobj::LoadObj(&attrib, &obj_shapes, &obj_materials, &warn, &err, model_path.c_str())) {
 			throw std::runtime_error(err);
 		}
+    if (!warn.empty()) {
+      HWARN("tinyobj: {}", warn.c_str());
+    }
+    
+    // Load model materials
+    std::vector<MaterialHandle> model_mats;
+    model_mats.resize(obj_materials.size());
+    for (size_t i = 0; i < obj_materials.size(); ++i) {
+      const auto &mat = obj_materials[i];
+      if (!mat.diffuse_texname.empty()) {
+				std::string img_path = model_parent_path.string() + "/" +
+           mat.diffuse_texname;
+				model_mats[i] = renderer->add_lambert_material(img_path);
+      } else {
+        model_mats[i] = renderer->add_lambert_material(Color(mat.diffuse[0], mat.diffuse[1], mat.diffuse[2]));
+      }
+    }
+		fs::current_path(old_dir);
 
 		std::vector<u32> obj_indices;
 		std::unordered_map<Vertex, u32> uniqueVertices{};
+
 		for (const auto& shape : obj_shapes) {
+      const auto &mat_ids = shape.mesh.material_ids;
+      size_t old_indices_size = obj_indices.size();
 			for (const auto& index : shape.mesh.indices) {
 				Vertex vertex{};
 
@@ -275,6 +306,8 @@ bool load_scene(const std::filesystem::path &scene_name, Renderer* renderer) {
 						attrib.normals[3 * index.normal_index + 1],
 						attrib.normals[3 * index.normal_index + 2]
           };
+        } else {
+          HASSERT(false);
         }
 
 				if (uniqueVertices.count(vertex) == 0) {
@@ -284,17 +317,23 @@ bool load_scene(const std::filesystem::path &scene_name, Renderer* renderer) {
 
 				obj_indices.push_back(uniqueVertices[vertex]);
 			}
-		}
 
-		for (size_t idx = 0; idx < obj_indices.size(); idx += 3) {
-			const Vertex &v0 = vertices[obj_indices[idx]];
-			const Vertex &v1 = vertices[obj_indices[idx + 1]];
-			const Vertex &v2 = vertices[obj_indices[idx + 2]];
-			renderer->add_triangle(v0.position, v1.position, v2.position,
-                             v0.normal, v1.normal, v2.normal,
-														 v0.texcoord, v1.texcoord, v2.texcoord,
-														 material_handles[0]);
-
+			for (size_t idx = old_indices_size, mat_id = 0; idx < obj_indices.size(); idx += 3, ++mat_id) {
+				const Vertex &v0 = vertices[obj_indices[idx]];
+				const Vertex &v1 = vertices[obj_indices[idx + 1]];
+				const Vertex &v2 = vertices[obj_indices[idx + 2]];
+        MaterialHandle material; 
+        if (model_mats.size()) {
+          material = mat_ids[mat_id] == -1 ? default_material
+                                           : model_mats[mat_ids[mat_id]];
+        } else {
+          material = default_material;
+        }
+				renderer->add_triangle(v0.position, v1.position, v2.position,
+														 v0.normal, v1.normal, v2.normal,
+															 v0.texcoord, v1.texcoord, v2.texcoord,
+															 material);
+			}
 		}
   }
 
