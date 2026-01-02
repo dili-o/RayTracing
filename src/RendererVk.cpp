@@ -378,13 +378,13 @@ void RendererVk::init(u32 image_width_, real aspect_ratio_,
     VkImageCreateInfo imageInfo = init::ImageCreateInfo(
       { static_cast<u32>(images[i].width()),
       static_cast<u32>(images[i].height()),1 },
-      1, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+      1, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
 		VmaAllocationCreateInfo vmaInfo =
       init::VmaAllocationInfo(VMA_MEMORY_USAGE_GPU_ONLY);
     util::CreateVmaImage(ctx.vmaAllocator, imageInfo, vmaInfo, vk_images[i]);
 
     VkImageViewCreateInfo viewInfo = init::ImageViewCreateInfo(vk_images[i].vkHandle,
-      VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT, 1);
+      VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT, 1);
     util::CreateImageView(ctx.vkDevice, ctx.vkAllocationCallbacks, viewInfo, vk_image_views[i]);
 
 		VkCommandBufferBeginInfo beginInfo{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
