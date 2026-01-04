@@ -44,6 +44,7 @@ public:
     float4[0] = vec.x;
     float4[1] = vec.y;
     float4[2] = vec.z;
+    float4[3] = 1.f;
   }
 
   Vec3 &operator/=(real t) { return *this *= 1 / t; }

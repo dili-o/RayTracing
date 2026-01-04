@@ -31,7 +31,7 @@ public:
     const Vec3 edge1 = v1 - v0;
     const Vec3 edge2 = v2 - v0;
     const Vec3 h = cross(r.direction, edge2);
-    const f32 a = dot( edge1, h );
+    const f32 a = dot(edge1, h);
     constexpr f32 epsilon = std::numeric_limits<f32>::epsilon();
 
     if (a > -epsilon && a < epsilon)

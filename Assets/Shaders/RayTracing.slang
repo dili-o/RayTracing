@@ -65,10 +65,12 @@ void computeMain(uint3 dispatch_thread_id : SV_DispatchThreadID,
         float3 attenuation = float3(1.f);
         for (uint d = 0; d < pc.max_depth; ++d) {
           HitRecord rec;
-          if (intersect_bvh(r, 0, ray_t, rec,
+
+          bool hit = intersect_bvh(r, 0, ray_t, rec,
                         uniform_buffer[0].bvh_nodes, 
                         uniform_buffer[0].triangles,
-                        uniform_buffer[0].tri_ids)) {
+											  uniform_buffer[0].tri_ids);
+          if (hit) {
             Ray scattered;
             float3 material_attenuation = float3(0.f);
 
@@ -93,7 +95,6 @@ void computeMain(uint3 dispatch_thread_id : SV_DispatchThreadID,
 
             r = scattered;
             attenuation *= material_attenuation;
-            // attenuation *= float3(rec.u, rec.v, 0.f);
           } else {
             float3 unit_direction = normalize(r.direction);
             float a = 0.5f * (unit_direction.y + 1.f);

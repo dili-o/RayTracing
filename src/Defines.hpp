@@ -114,3 +114,4 @@ inline real linear_to_gamma(real linear_component) {
 #else
 #define HLX_API
 #endif
+

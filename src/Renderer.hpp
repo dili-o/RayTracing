@@ -93,6 +93,7 @@ protected:
     defocus_disk_u = u * defocus_radius;
     defocus_disk_v = v * defocus_radius;
   }
+  BVH bvh[2];
 };
 
 class RendererCPU final : public Renderer {
@@ -120,13 +121,11 @@ private:
   Point3 defocus_disk_sample() const;
   Ray get_ray(i32 i, i32 j) const;
   std::shared_ptr<Material> get_material(MaterialHandle handle);
-	bool intersect_bvh(const Ray& ray, const u32 node_idx, const Interval &ray_t, HitRecord &rec);
 
 private:
   HittableList world;
   std::vector<Triangle> triangles;
   std::vector<Vec3> tri_centroids;
-  std::vector<BVHNode> bvh_nodes;
   std::vector<std::shared_ptr<Lambertian>> lambert_mats;
   std::vector<std::shared_ptr<Metal>> metal_mats;
   std::vector<std::shared_ptr<Dielectric>> dielectric_mats;
@@ -159,5 +158,4 @@ private:
   std::vector<SphereGPU> spheres;
   std::vector<TriangleGPU> triangles;
   std::vector<Vec3> tri_centroids;
-  std::vector<BVHNode> bvh_nodes;
 };

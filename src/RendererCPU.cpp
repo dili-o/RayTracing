@@ -1,16 +1,8 @@
+#include "Defines.hpp"
 #include "Renderer.hpp"
 #include "Assert.hpp"
 #include "Material.hpp"
 
-f32 intersect_aabb(const Ray& ray, const Vec3 &bmin, const Vec3 &bmax, const f32 t) {
-	f32 tx1 = (bmin.x - ray.origin.x) * ray.inv_direction.x, tx2 = (bmax.x - ray.origin.x) * ray.inv_direction.x;
-	f32 tmin = std::min(tx1, tx2), tmax = std::max(tx1, tx2);
-	f32 ty1 = (bmin.y - ray.origin.y) * ray.inv_direction.y, ty2 = (bmax.y - ray.origin.y) * ray.inv_direction.y;
-	tmin = std::max(tmin, std::min(ty1, ty2)), tmax = std::min(tmax, std::max(ty1, ty2));
-	f32 tz1 = (bmin.z - ray.origin.z) * ray.inv_direction.z, tz2 = (bmax.z - ray.origin.z) * ray.inv_direction.z;
-	tmin = std::max(tmin, std::min(tz1, tz2)), tmax = std::min(tmax, std::max(tz1, tz2));
-	if (tmax >= tmin && tmin < t && tmax > 0) return tmin; else return infinity;
-}
 
 MaterialHandle RendererCPU::add_lambert_material(const Vec3 &albedo) {
   lambert_mats.push_back(std::make_shared<Lambertian>(Lambertian(albedo)));
@@ -57,7 +49,12 @@ void RendererCPU::init(u32 image_width_, real aspect_ratio_,
   initialize_camera(image_width_, aspect_ratio_, samples_per_pixel_, max_depth_,
                     vfov_deg_);
   u32 bvh_depth = 0;
-  build_bvh_cpu(bvh_nodes, triangles, tri_ids, tri_centroids, bvh_depth);
+  bvh[0] = BVH(triangles.data(), triangles.size(), false, tri_ids, tri_centroids, bvh_depth);
+  bvh[1] = BVH(triangles.data(), triangles.size(), false, tri_ids, tri_centroids, bvh_depth);
+
+  bvh[1].set_transform(Mat4::translate(Vec3(2.f, 0.f, 0.f)) *
+                       Mat4::rotate_y(degrees_to_radians(90.f)) *
+                       Mat4::scale(2.f));
 }
 
 RendererCPU::~RendererCPU() {
@@ -107,52 +104,21 @@ void RendererCPU::render(u8 *out_pixels) {
   std::clog << "\rDone.                 \n";
 }
 
-bool RendererCPU::intersect_bvh(const Ray& ray, const u32 node_idx,
-  const Interval& ray_t, HitRecord& rec) {
-  const BVHNode* node = &bvh_nodes[0], *stack[64];
-	u32 stackPtr = 0;
-	float closest_so_far = ray_t.max;
-	bool hit = false;
-	while (1) {
-		if (node->is_leaf()) {
-      for (u32 i = 0; i < node->prim_count; ++i)
-        if (triangles[tri_ids[node->left_first + i]]
-            .hit(ray, Interval(ray_t.min, closest_so_far), rec)) {
-					hit = true;
-					closest_so_far = rec.t;
-        }
-				if (stackPtr == 0) break; else node = stack[--stackPtr];
-
-				continue;
-    } else {
-			BVHNode* child1 = &bvh_nodes[node->left_first];
-			BVHNode* child2 = &bvh_nodes[node->left_first + 1];
-			f32 dist1 = intersect_aabb(ray, child1->aabb_min, child1->aabb_max, closest_so_far);
-			f32 dist2 = intersect_aabb(ray, child2->aabb_min, child2->aabb_max, closest_so_far);
-			if (dist1 > dist2) {
-        std::swap(dist1, dist2);
-        std::swap(child1, child2); 
-      }
-			if (dist1 == infinity) {
-				if (stackPtr == 0) break; else node = stack[--stackPtr];
-			} else {
-				node = child1;
-				if (dist2 != infinity) stack[stackPtr++] = child2;
-			}
-    }
-	}
-  return hit;
-}
-
 Color RendererCPU::ray_color(const Ray &r, u32 depth,
                              const Hittable &world) {
   if (depth <= 0) {
     return Color(0.f, 0.f, 0.f);
   }
   HitRecord rec;
+  rec.t = infinity;
   bool hit_anything = false;
-  const Interval ray_t = Interval(0.001f, infinity);
-  hit_anything = intersect_bvh(r, 0, ray_t, rec);
+  Interval ray_t = Interval(0.001f, infinity);
+
+  for (u32 i = 0; i < 2; ++i) {
+    hit_anything |= bvh[i].intersect(r, 0, ray_t, rec);
+    ray_t.max = rec.t;
+  }
+
   if (hit_anything) {
     Ray scattered;
     Color attenuation;

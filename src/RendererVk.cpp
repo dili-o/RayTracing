@@ -40,8 +40,6 @@ static VkCommandBuffer vkCommandBuffer;
 static std::vector<VulkanImage>     vk_images;
 static std::vector<VulkanImageView> vk_image_views;
 
-static u32 bvh_depth = 0;
-
 struct UniformBuffer {
   VkDeviceAddress spheres;
   VkDeviceAddress triangles;
@@ -240,9 +238,9 @@ void RendererVk::init(u32 image_width_, real aspect_ratio_,
                       VMA_MEMORY_USAGE_UNKNOWN, 0,
                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, "DielectricBuffer");
   u32 max_depth = 0;
-  build_bvh_gpu(bvh_nodes, triangles, tri_ids, tri_centroids, max_depth);
+  bvh[0] = BVH(triangles.data(), triangles.size(), true, tri_ids, tri_centroids, max_depth);
 
-  ctx.CreateVmaBuffer(bvh_nodes_buffer, sizeof(BVHNode) * bvh_nodes.size(),
+  ctx.CreateVmaBuffer(bvh_nodes_buffer, sizeof(BVHNode) * bvh[0].bvh_nodes.size(),
                       VK_BUFFER_USAGE_TRANSFER_DST_BIT |
                           VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                       VMA_MEMORY_USAGE_UNKNOWN, 0,
@@ -359,7 +357,7 @@ void RendererVk::init(u32 image_width_, real aspect_ratio_,
   ctx.CopyToBuffer(dielectric_buffer.vkHandle, 0, dielectric_buffer.size,
                    dielectric_mats.data(), vkCommandPool);
   ctx.CopyToBuffer(bvh_nodes_buffer.vkHandle, 0, bvh_nodes_buffer.size,
-                   bvh_nodes.data(), vkCommandPool);
+                   bvh[0].bvh_nodes.data(), vkCommandPool);
 
   // Transfer data to Uniform buffer
   ctx.CopyToBuffer(uniformBuffer.vkHandle, 0, uniformBuffer.size,
