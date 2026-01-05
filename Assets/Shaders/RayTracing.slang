@@ -27,6 +27,7 @@ struct Uniforms{
 	Sphere *spheres;
 	Triangle *triangles;
 	uint *tri_ids;
+	BVH *bvhs;
 	BVHNode *bvh_nodes;
   MaterialLambert *lambert_mats;
   MaterialMetal *metal_mats;
@@ -46,7 +47,6 @@ void computeMain(uint3 dispatch_thread_id : SV_DispatchThreadID,
     int2 pixel_coord  = int2(dispatch_thread_id.xy);
 
     if (pixel_coord.x < pc.image_width && pixel_coord.y < pc.image_height) {
-      Interval ray_t = Interval(0.001f, 1e30f);
       float3 ray_color = float3(0.f);
       uint seed = pixel_coord.x + pixel_coord.y * 1973u;
 
@@ -64,12 +64,19 @@ void computeMain(uint3 dispatch_thread_id : SV_DispatchThreadID,
         Ray r = Ray(ray_origin, ray_direction);
         float3 attenuation = float3(1.f);
         for (uint d = 0; d < pc.max_depth; ++d) {
-          HitRecord rec;
+					Interval ray_t = Interval(0.001f, 1e30f);
+					HitRecord rec;
+					rec.t = 1e30f;
 
-          bool hit = intersect_bvh(r, 0, ray_t, rec,
-                        uniform_buffer[0].bvh_nodes, 
-                        uniform_buffer[0].triangles,
-											  uniform_buffer[0].tri_ids);
+					bool hit = false;
+					for (uint i = 0; i < 2; ++i) {
+						hit |= intersect_bvh_2(r, ray_t, rec,
+							uniform_buffer[0].bvhs[i], 
+							uniform_buffer[0].bvh_nodes, 
+							uniform_buffer[0].triangles,
+						  uniform_buffer[0].tri_ids);
+						ray_t.max = rec.t;
+					}
           if (hit) {
             Ray scattered;
             float3 material_attenuation = float3(0.f);

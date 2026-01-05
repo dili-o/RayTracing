@@ -337,6 +337,6 @@ void BVH::set_transform(const Mat4 &transform) {
     Vec4 v = Vec4(i & 1 ? bmax.x : bmin.x, i & 2 ? bmax.y : bmin.y,
                   i & 4 ? bmax.z : bmin.z, 1.f);
     v = transform * v;
-    bounds.grow(make_vec3(v));
+    // bounds.grow(make_vec3(v));
   }
 }

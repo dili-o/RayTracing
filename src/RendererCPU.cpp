@@ -45,15 +45,16 @@ void RendererCPU::add_triangle(const Vec3 &v0, const Vec3 &v1, const Vec3 &v2,
 
 void RendererCPU::init(u32 image_width_, real aspect_ratio_,
                        u32 samples_per_pixel_, u32 max_depth_, real vfov_deg_) {
-  show_image = true;
   initialize_camera(image_width_, aspect_ratio_, samples_per_pixel_, max_depth_,
                     vfov_deg_);
   u32 bvh_depth = 0;
   bvh[0] = BVH(triangles.data(), triangles.size(), false, tri_ids, tri_centroids, bvh_depth);
+  bvh_depth = 0;
   bvh[1] = BVH(triangles.data(), triangles.size(), false, tri_ids, tri_centroids, bvh_depth);
 
   bvh[1].set_transform(Mat4::translate(Vec3(2.f, 1.f, 0.f)) *
                        Mat4::rotate_z(degrees_to_radians(90.f)));
+  show_image = true;
 }
 
 RendererCPU::~RendererCPU() {
