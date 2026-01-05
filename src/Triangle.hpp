@@ -5,7 +5,7 @@
 #include "Vec2.hpp"
 #include "Material.hpp"
 
-class Triangle : public Hittable {
+class Triangle {
 public:
   Triangle(const Vec3 &v0, const Vec3 &v1, const Vec3 &v2,
            Vec2 uv_0, Vec2 uv_1, Vec2 uv_2,
@@ -27,7 +27,7 @@ public:
         uv_0(uv_0), uv_1(uv_1), uv_2(uv_2),
         mat(mat) {}
 
-  bool hit(const Ray &r, const Interval ray_t, HitRecord &rec) const override {
+  bool hit(const Ray &r, const Interval ray_t, HitRecord &rec) const {
     const Vec3 edge1 = v1 - v0;
     const Vec3 edge2 = v2 - v0;
     const Vec3 h = cross(r.direction, edge2);

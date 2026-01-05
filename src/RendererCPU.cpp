@@ -52,9 +52,8 @@ void RendererCPU::init(u32 image_width_, real aspect_ratio_,
   bvh[0] = BVH(triangles.data(), triangles.size(), false, tri_ids, tri_centroids, bvh_depth);
   bvh[1] = BVH(triangles.data(), triangles.size(), false, tri_ids, tri_centroids, bvh_depth);
 
-  bvh[1].set_transform(Mat4::translate(Vec3(2.f, 0.f, 0.f)) *
-                       Mat4::rotate_y(degrees_to_radians(90.f)) *
-                       Mat4::scale(2.f));
+  bvh[1].set_transform(Mat4::translate(Vec3(2.f, 1.f, 0.f)) *
+                       Mat4::rotate_z(degrees_to_radians(90.f)));
 }
 
 RendererCPU::~RendererCPU() {

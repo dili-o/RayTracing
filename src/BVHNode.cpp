@@ -316,6 +316,14 @@ bool BVH::intersect(const Ray &ray, const u32 node_idx, const Interval &ray_t,
       }
     }
   }
+
+  // Transform hit results back to original space
+  if (hit) {
+    Mat4 transform = inv_transform.inverse();
+    Mat4 inv_transform_t = inv_transform.transpose();
+    rec.p = make_vec3(transform * Vec4(rec.p, 1.f));
+    rec.normal = unit_vector(make_vec3(inv_transform_t * Vec4(rec.normal, 0.f)));
+  }
   return hit;
 }
 

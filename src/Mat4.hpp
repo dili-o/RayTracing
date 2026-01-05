@@ -111,6 +111,15 @@ public:
     return ret_val;
   }
 
+  [[nodiscard]]
+  Mat4 transpose() const {
+    Mat4 m;
+    m[0] = e[0], m[1] = e[4], m[2] = e[8];
+    m[4] = e[1], m[5] = e[5], m[6] = e[9];
+    m[8] = e[2], m[9] = e[6], m[10] = e[10];
+    return m;
+  }
+
   static Mat4 identity() { return Mat4{}; }
 
   static Mat4 translate(const Vec3 &v) {
