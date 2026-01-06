@@ -9,6 +9,7 @@ struct HitRecord {
   float u;
   float v;
   bool front_face;
+  uint tri_id;
 
   [mutating]
   void set_face_normal(in Ray r,

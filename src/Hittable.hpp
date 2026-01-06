@@ -14,6 +14,7 @@ struct HitRecord {
   real u;
   real v;
   bool front_face;
+  u32 tri_id;
 
   void set_face_normal(const Ray &r, const Vec3 &outward_normal) {
     front_face = dot(r.direction, outward_normal) < 0.f;

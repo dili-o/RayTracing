@@ -114,12 +114,33 @@ Color RendererCPU::ray_color(const Ray &r, u32 depth,
   bool hit_anything = false;
   Interval ray_t = Interval(0.001f, infinity);
 
-  for (u32 i = 0; i < 2; ++i) {
+  for (u32 i = 0; i < 1; ++i) {
     hit_anything |= bvh[i].intersect(r, 0, ray_t, rec);
     ray_t.max = rec.t;
   }
 
   if (hit_anything) {
+		// Use the interpolated normal to set the outward normal
+
+		const Triangle &trig = triangles[rec.tri_id];
+		f32 trig_u = rec.u;
+		f32 trig_v = rec.v;
+    const Vec3 &n0 = trig.n0;
+    const Vec3 &n1 = trig.n1;
+    const Vec3 &n2 = trig.n2;
+		const f32 alpha = 1.f - trig_u - trig_v;
+		Vec3 interpolated_normal = unit_vector(alpha * n0 + trig_u * n1 + trig_v * n2);
+		rec.normal = interpolated_normal;
+
+    // Get UV
+		const Vec2 &uv_0 = trig.uv_0;
+		const Vec2 &uv_1 = trig.uv_1;
+		const Vec2 &uv_2 = trig.uv_2;
+    rec.u = alpha * uv_0.x + trig_u * uv_1.x + trig_v * uv_2.x;
+    rec.v = alpha * uv_0.y + trig_u * uv_1.y + trig_v * uv_2.y;
+
+    rec.mat = trig.mat;
+
     Ray scattered;
     Color attenuation;
     if (rec.mat->scatter_ray(r, rec, attenuation, scattered)) {

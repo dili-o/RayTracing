@@ -69,8 +69,8 @@ void computeMain(uint3 dispatch_thread_id : SV_DispatchThreadID,
 					rec.t = 1e30f;
 
 					bool hit = false;
-					for (uint i = 0; i < 2; ++i) {
-						hit |= intersect_bvh_2(r, ray_t, rec,
+					for (uint i = 0; i < 1; ++i) {
+						hit |= intersect_bvh(r, ray_t, rec,
 							uniform_buffer[0].bvhs[i], 
 							uniform_buffer[0].bvh_nodes, 
 							uniform_buffer[0].triangles,
@@ -78,6 +78,28 @@ void computeMain(uint3 dispatch_thread_id : SV_DispatchThreadID,
 						ray_t.max = rec.t;
 					}
           if (hit) {
+						// Use the interpolated normal to set the outward normal
+						Triangle trig = uniform_buffer[0].triangles[rec.tri_id];
+						float trig_u = rec.u;
+						float trig_v = rec.v;
+						const float3 n0 = trig.n0.xyz;
+						const float3 n1 = trig.n1.xyz;
+						const float3 n2 = trig.n2.xyz;
+
+						const float alpha = 1.f - trig_u - trig_v;
+						float3 interpolated_normal = normalize(alpha * n0 + trig_u * n1 + trig_v * n2);
+						rec.normal = interpolated_normal;
+
+						// Get UV
+						const float2 uv_0 = trig.uv_0;
+						const float2 uv_1 = trig.uv_1;
+						const float2 uv_2 = trig.uv_2;
+						rec.u = alpha * uv_0.x + trig_u * uv_1.x + trig_v * uv_2.x;
+						rec.v = alpha * uv_0.y + trig_u * uv_1.y + trig_v * uv_2.y;
+
+						rec.material_index = trig.material_index;
+						rec.material_type = trig.material_type;
+
             Ray scattered;
             float3 material_attenuation = float3(0.f);
 

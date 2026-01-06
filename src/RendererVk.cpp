@@ -241,6 +241,7 @@ void RendererVk::init(u32 image_width_, real aspect_ratio_,
                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, "DielectricBuffer");
   u32 max_depth = 0;
   bvh[0] = BVH(triangles.data(), triangles.size(), true, tri_ids, tri_centroids, max_depth);
+  bvh[0].set_transform(Mat4::scale(2.f));
 
   max_depth = 0;
   bvh[1] = BVH(triangles.data(), triangles.size(), true, tri_ids, tri_centroids, max_depth);

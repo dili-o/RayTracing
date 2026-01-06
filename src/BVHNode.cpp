@@ -285,6 +285,7 @@ bool BVH::intersect(const Ray &ray, const u32 node_idx, const Interval &ray_t,
         if (trigs[tri_ids[node->left_first + i]].hit(
                 new_ray, Interval(ray_t.min, closest_so_far), rec)) {
           hit = true;
+          rec.tri_id = tri_ids[node->left_first + i];
           closest_so_far = rec.t;
         }
       if (stackPtr == 0)
