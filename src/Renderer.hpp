@@ -1,7 +1,6 @@
 #pragma once
 #include "HittableList.hpp"
 #include "Material.hpp"
-#include "Sphere.hpp"
 #include "TLAS.hpp"
 
 class Renderer {
@@ -12,8 +11,6 @@ public:
   virtual MaterialHandle add_metal_material(const Vec3 &albedo,
                                             real fuzziness) = 0;
   virtual MaterialHandle add_dielectric_material(real refraction_index) = 0;
-  virtual void add_sphere(const Vec3 &origin, real radius,
-                          MaterialHandle mat) = 0;
   virtual void add_triangle(const Vec3 &v0, const Vec3 &v1, const Vec3 &v2,
 														const Vec3 &n0, const Vec3 &n1, const Vec3 &n2,
 														Vec2 uv_0, Vec2 uv_1, Vec2 uv_2,
@@ -111,21 +108,19 @@ public:
   MaterialHandle add_metal_material(const Vec3 &albedo,
                                     real fuzziness) override;
   MaterialHandle add_dielectric_material(real refraction_index) override;
-  void add_sphere(const Vec3 &origin, real radius, MaterialHandle mat) override;
   void add_triangle(const Vec3 &v0, const Vec3 &v1, const Vec3 &v2,
 														const Vec3 &n0, const Vec3 &n1, const Vec3 &n2,
 														Vec2 uv_0, Vec2 uv_1, Vec2 uv_2,
 														MaterialHandle mat_handle) override;
 
 private:
-  Color ray_color(const Ray &r, u32 depth, const Hittable &world) ;
+  Color ray_color(const Ray &r, u32 depth) ;
   Vec3 sample_square() const;
   Point3 defocus_disk_sample() const;
   Ray get_ray(i32 i, i32 j) const;
   std::shared_ptr<Material> get_material(MaterialHandle handle);
 
 private:
-  HittableList world;
   std::vector<Triangle> triangles;
   std::vector<Vec3> tri_centroids;
   std::vector<std::shared_ptr<Lambertian>> lambert_mats;
@@ -146,7 +141,6 @@ public:
   MaterialHandle add_metal_material(const Vec3 &albedo,
                                     real fuzziness) override;
   MaterialHandle add_dielectric_material(real refraction_index) override;
-  void add_sphere(const Vec3 &origin, real radius, MaterialHandle mat) override;
   void add_triangle(const Vec3 &v0, const Vec3 &v1, const Vec3 &v2,
 														const Vec3 &n0, const Vec3 &n1, const Vec3 &n2,
 														Vec2 uv_0, Vec2 uv_1, Vec2 uv_2,
@@ -157,7 +151,6 @@ private:
   std::vector<GpuLambert> lambert_mats;
   std::vector<GpuMetal> metal_mats;
   std::vector<GpuDielectric> dielectric_mats;
-  std::vector<SphereGPU> spheres;
   std::vector<TriangleGPU> triangles;
   std::vector<Vec3> tri_centroids;
 };

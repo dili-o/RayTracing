@@ -1,5 +1,4 @@
 #include "Random.slang"
-#include "World.slang"
 #include "Material.slang"
 #include "TLAS.slang"
 
@@ -24,7 +23,6 @@ struct ShaderPushConstant {
 };
 
 struct Uniforms{
-	Sphere *spheres;
 	Triangle *triangles;
 	uint *tri_ids;
 	TLASNode *tlas_nodes;

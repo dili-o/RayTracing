@@ -23,7 +23,6 @@ static VulkanImageView final_image_view{};
 static VulkanBuffer imageBuffer{};
 static VkShaderModule comp_shader_module;
 static VkPipeline vkPipeline;
-static VulkanBuffer spheres_buffer{};
 static VulkanBuffer triangles_buffer{};
 static VulkanBuffer tri_ids_buffer{};
 static VulkanBuffer tlas_nodes_buffer{};
@@ -43,7 +42,6 @@ static std::vector<VulkanImage>     vk_images;
 static std::vector<VulkanImageView> vk_image_views;
 
 struct UniformBuffer {
-  VkDeviceAddress spheres;
   VkDeviceAddress triangles;
   VkDeviceAddress tri_ids;
   VkDeviceAddress tlas_nodes;
@@ -106,11 +104,6 @@ MaterialHandle RendererVk::add_metal_material(const Vec3 &albedo,
 MaterialHandle RendererVk::add_dielectric_material(real refraction_index) {
   dielectric_mats.push_back({refraction_index});
   return {MATERIAL_DIELECTRIC, ((u32)dielectric_mats.size() - 1)};
-}
-
-void RendererVk::add_sphere(const Vec3 &origin, real radius,
-                            MaterialHandle mat) {
-  spheres.push_back(SphereGPU(origin, radius, mat.index, mat.type));
 }
 
 void RendererVk::add_triangle(const Vec3 &v0, const Vec3 &v1, const Vec3 &v2,
@@ -203,12 +196,6 @@ void RendererVk::init(u32 image_width_, real aspect_ratio_,
   compShaderStageInfo.module = comp_shader_module;
   compShaderStageInfo.pName = "computeMain";
 
-  // Spheres buffer
-  ctx.CreateVmaBuffer(spheres_buffer, sizeof(SphereGPU) * spheres.size(),
-                      VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-                          VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-                      VMA_MEMORY_USAGE_UNKNOWN, 0,
-                      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, "SpheresBuffer");
   // Triangles buffer
   ctx.CreateVmaBuffer(triangles_buffer, sizeof(TriangleGPU) * triangles.size(),
                       VK_BUFFER_USAGE_TRANSFER_DST_BIT |
@@ -285,7 +272,6 @@ void RendererVk::init(u32 image_width_, real aspect_ratio_,
                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, "BVHNodesBuffer");
 
   UniformBuffer uniform_buffer_data{};
-  uniform_buffer_data.spheres = spheres_buffer.deviceAddress;
   uniform_buffer_data.triangles = triangles_buffer.deviceAddress;
   uniform_buffer_data.tri_ids = tri_ids_buffer.deviceAddress;
   uniform_buffer_data.tlas_nodes = tlas_nodes_buffer.deviceAddress;
@@ -384,8 +370,6 @@ void RendererVk::init(u32 image_width_, real aspect_ratio_,
   VK_CHECK(
       vkAllocateCommandBuffers(ctx.vkDevice, &cbAllocInfo, &vkCommandBuffer));
   // Transfer data to buffers
-  ctx.CopyToBuffer(spheres_buffer.vkHandle, 0, spheres_buffer.size,
-                   spheres.data(), vkCommandPool);
   ctx.CopyToBuffer(triangles_buffer.vkHandle, 0, triangles_buffer.size,
                    triangles.data(), vkCommandPool);
   ctx.CopyToBuffer(tri_ids_buffer.vkHandle, 0, tri_ids_buffer.size,
@@ -522,7 +506,6 @@ RendererVk::~RendererVk() {
   vkDestroyPipeline(ctx.vkDevice, vkPipeline, nullptr);
   vkDestroyDescriptorSetLayout(ctx.vkDevice, vkSetLayout, nullptr);
   vkDestroyShaderModule(ctx.vkDevice, comp_shader_module, nullptr);
-  util::DestroyVmaBuffer(ctx.vmaAllocator, spheres_buffer);
   util::DestroyVmaBuffer(ctx.vmaAllocator, triangles_buffer);
   util::DestroyVmaBuffer(ctx.vmaAllocator, tri_ids_buffer);
   util::DestroyVmaBuffer(ctx.vmaAllocator, tlas_nodes_buffer);
@@ -635,7 +618,7 @@ void RendererVk::render(u8 *out_pixels) {
   Vec3::set_float4(push_constant.camera_center, center);
   push_constant.image_width = image_width;
   push_constant.image_height = image_height;
-  push_constant.sphere_count = (u32)spheres.size();
+  push_constant.sphere_count = 0;
   push_constant.triangle_count = (u32)triangles.size();
   push_constant.samples_per_pixel = samples_per_pixel;
   push_constant.pixel_samples_scale = pixel_samples_scale;

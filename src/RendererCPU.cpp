@@ -26,12 +26,6 @@ MaterialHandle RendererCPU::add_dielectric_material(real refraction_index) {
   return {MATERIAL_DIELECTRIC, ((u32)dielectric_mats.size() - 1)};
 }
 
-void RendererCPU::add_sphere(const Vec3 &origin, real radius,
-                             MaterialHandle mat_handle) {
-  std::shared_ptr<Material> mat = get_material(mat_handle);
-  world.add(make_shared<Sphere>(origin, radius, mat));
-}
-
 void RendererCPU::add_triangle(const Vec3 &v0, const Vec3 &v1, const Vec3 &v2,
 														const Vec3 &n0, const Vec3 &n1, const Vec3 &n2,
 														Vec2 uv_0, Vec2 uv_1, Vec2 uv_2,
@@ -85,7 +79,7 @@ void RendererCPU::render(u8 *out_pixels) {
 
 				for (u32 sample = 0; sample < samples_per_pixel; ++sample) {
 					Ray ray = get_ray(i + u, j + v);
-					pixel_color += ray_color(ray, max_depth, world);
+					pixel_color += ray_color(ray, max_depth);
 				}
 				pixel_color *= pixel_samples_scale;
 
@@ -112,8 +106,7 @@ void RendererCPU::render(u8 *out_pixels) {
   std::clog << "\rDone.                 \n";
 }
 
-Color RendererCPU::ray_color(const Ray &r, u32 depth,
-                             const Hittable &world) {
+Color RendererCPU::ray_color(const Ray &r, u32 depth) {
   if (depth <= 0) {
     return Color(0.f, 0.f, 0.f);
   }
@@ -147,7 +140,7 @@ Color RendererCPU::ray_color(const Ray &r, u32 depth,
     Ray scattered;
     Color attenuation;
     if (rec.mat->scatter_ray(r, rec, attenuation, scattered)) {
-      return attenuation * ray_color(scattered, depth - 1, world);
+      return attenuation * ray_color(scattered, depth - 1);
     }
     return Color(0.f, 0.f, 0.f);
   }
