@@ -4,9 +4,11 @@
 
 struct TLASNode {
   float3 aabb_min;
-  uint left_blas;
+  uint left_right; // 2x16 bit
   float3 aabb_max;
-  uint is_leaf;
+  uint blas_idx;
+
+  bool is_leaf() { return left_right == 0; }
 };
 
 bool intersect_tlas(Ray ray, Interval ray_t, inout HitRecord rec,
@@ -19,18 +21,18 @@ bool intersect_tlas(Ray ray, Interval ray_t, inout HitRecord rec,
 
 	while (true) {
 		TLASNode node = tlas_nodes[node_stack[stack_ptr]];
-		if (node.is_leaf) {
-			if (intersect_bvh(ray, Interval(ray_t.min, closest_so_far), rec, bvhs[node.left_blas], bvh_nodes, triangles, tri_ids)) {
+		if (node.is_leaf()) {
+			if (intersect_bvh(ray, Interval(ray_t.min, closest_so_far), rec, bvhs[node.blas_idx], bvh_nodes, triangles, tri_ids)) {
 				hit = true;
 				closest_so_far = rec.t;
 			}
 			if (stack_ptr == 0) break;
 			else --stack_ptr;
 		} else {
-			TLASNode child1 = tlas_nodes[node.left_blas];
-			TLASNode child2 = tlas_nodes[node.left_blas + 1];
-			uint child1_idx = node.left_blas;
-			uint child2_idx = node.left_blas + 1;
+      uint child1_idx = node.left_right & 0x0000FFFF;
+      uint child2_idx = (node.left_right & 0xFFFF0000) >> 16;
+			TLASNode child1 = tlas_nodes[child1_idx];
+			TLASNode child2 = tlas_nodes[child2_idx];
 			float dist1 = intersect_aabb(ray, child1.aabb_min, child1.aabb_max, closest_so_far);
 			float dist2 = intersect_aabb(ray, child2.aabb_min, child2.aabb_max, closest_so_far);
 

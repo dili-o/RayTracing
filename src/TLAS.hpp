@@ -4,9 +4,11 @@
 
 struct alignas(16) TLASNode {
   Vec3 aabb_min;
-  u32 left_blas;
+  u32 left_right; // 2x16 bits
   Vec3 aabb_max;
-  u32 is_leaf;
+  u32 blas_idx;
+
+  bool is_leaf() const { return left_right == 0; }
 };
 
 class TLAS {
@@ -18,4 +20,7 @@ public:
 
   std::vector<TLASNode> tlas_nodes;
   const BVH *blas_list = nullptr;
+  u32 nodes_used;
+private:
+  i32 find_best_match(i32* list, i32 N, i32 a);
 };

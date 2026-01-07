@@ -242,17 +242,12 @@ void RendererVk::init(u32 image_width_, real aspect_ratio_,
                       VMA_MEMORY_USAGE_UNKNOWN, 0,
                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, "DielectricBuffer");
   u32 max_depth = 0;
-  bvh[0] = BVH(triangles.data(), triangles.size(), true, tri_ids, tri_centroids, max_depth);
-  bvh[0].set_transform(Mat4::translate(Vec3(-2.f, 1.f, 0.f)) *
-                       Mat4::rotate_z(degrees_to_radians(-90.f)));
 
-  max_depth = 0;
-  bvh[1] = BVH(triangles.data(), triangles.size(), true, tri_ids, tri_centroids, max_depth);
-  bvh[1].set_transform(Mat4::translate(Vec3(2.f, 1.f, 0.f)) *
-                       Mat4::rotate_z(degrees_to_radians(90.f)));
-
-  tlas = TLAS(bvh, 2);
-  tlas.build();
+  Mat4 transforms[ArraySize(bvh)];
+  transforms[0] = Mat4::translate(Vec3(-2.f, 1.f, 0.f)) *
+    Mat4::rotate_z(degrees_to_radians(-90.f));
+  transforms[1] = Mat4::translate(Vec3(2.f, 1.f, 0.f)) *
+    Mat4::rotate_z(degrees_to_radians(90.f));
 
   struct alignas(16) BVH_GPU {
     Mat4 transform;
@@ -260,19 +255,24 @@ void RendererVk::init(u32 image_width_, real aspect_ratio_,
     u32 node_index; f32 padding[3];
   };
 
-  BVH_GPU bvhs_gpu[2];
-  for (u32 i = 0; i < 2; ++i) {
+  BVH_GPU bvhs_gpu[ArraySize(bvh)];
+  for (u32 i = 0; i < ArraySize(bvh); ++i) {
+		bvh[i] = BVH(triangles.data(), triangles.size(), true, tri_ids, tri_centroids, max_depth);
+    bvh[i].set_transform(transforms[i]);
     bvhs_gpu[i].transform = bvh[i].inv_transform.inverse().transpose();
     bvhs_gpu[i].inv_transform = bvh[i].inv_transform.transpose();
     bvhs_gpu[i].node_index = 0;
   }
+
+  tlas = TLAS(bvh, ArraySize(bvh));
+  tlas.build();
 
   ctx.CreateVmaBuffer(tlas_nodes_buffer, sizeof(TLASNode) * tlas.tlas_nodes.size(),
                       VK_BUFFER_USAGE_TRANSFER_DST_BIT |
                           VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                       VMA_MEMORY_USAGE_UNKNOWN, 0,
                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, "TLASNodesBuffer");
-  ctx.CreateVmaBuffer(bvhs_buffer, sizeof(BVH_GPU) * 2,
+  ctx.CreateVmaBuffer(bvhs_buffer, sizeof(BVH_GPU) * ArraySize(bvh),
                       VK_BUFFER_USAGE_TRANSFER_DST_BIT |
                           VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                       VMA_MEMORY_USAGE_UNKNOWN, 0,

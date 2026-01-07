@@ -17,7 +17,7 @@ class BVH {
 public:
   BVH() = default;
   BVH(const void *triangles, size_t triangles_size, bool is_gpu,
-      std::vector<u32> &tri_ids, std::vector<Vec3> tri_centroids,
+      std::vector<u32> &tri_ids, const std::vector<Vec3> tri_centroids,
       u32 &bvh_depth);
   void refit();
   bool intersect(const Ray &ray, const Interval &ray_t,

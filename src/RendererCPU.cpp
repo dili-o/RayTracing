@@ -51,13 +51,16 @@ void RendererCPU::init(u32 image_width_, real aspect_ratio_,
   bvh[0] = BVH(triangles.data(), triangles.size(), false, tri_ids, tri_centroids, bvh_depth);
   bvh[0].set_transform(Mat4::translate(Vec3(-2.f, 1.f, 0.f)) *
                        Mat4::rotate_z(degrees_to_radians(-90.f)));
-  bvh_depth = 0;
+
   bvh[1] = BVH(triangles.data(), triangles.size(), false, tri_ids, tri_centroids, bvh_depth);
 
   bvh[1].set_transform(Mat4::translate(Vec3(2.f, 1.f, 0.f)) *
                        Mat4::rotate_z(degrees_to_radians(90.f)));
 
-  tlas = TLAS(bvh, 2);
+  bvh[2] = BVH(triangles.data(), triangles.size(), false, tri_ids, tri_centroids, bvh_depth);
+  bvh[2].set_transform(Mat4::identity());
+
+  tlas = TLAS(bvh, ArraySize(bvh));
   tlas.build();
   show_image = true;
 }

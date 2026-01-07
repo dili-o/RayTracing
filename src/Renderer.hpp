@@ -95,7 +95,7 @@ protected:
   }
 protected:
   TLAS tlas;
-  BVH bvh[2];
+  BVH bvh[3];
 };
 
 class RendererCPU final : public Renderer {

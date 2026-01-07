@@ -179,7 +179,7 @@ static void subdivide_node(BVHNode *bvh_nodes, const TrigType *triangles,
 }
 
 BVH::BVH(const void *triangles, size_t triangles_size, bool is_gpu,
-         std::vector<u32> &tri_ids, std::vector<Vec3> tri_centroids,
+         std::vector<u32> &tri_ids, const std::vector<Vec3> tri_centroids,
          u32 &bvh_depth)
     : triangles(triangles), tri_ids(tri_ids.data()), nodes_used(2),
       tri_count(triangles_size), is_gpu(is_gpu) {

@@ -1,43 +1,58 @@
 #include "TLAS.hpp"
 
-TLAS::TLAS(BVH* bvh_list, u32 N) {
-	tlas_nodes.resize(2 * N);
-	blas_list = bvh_list;
+TLAS::TLAS(BVH *bvh_list, u32 N) {
+  tlas_nodes.resize(2 * N);
+  blas_list = bvh_list;
 }
 
 void TLAS::build() {
-	// TODO: Hardcoded for now
+  const size_t blas_count = tlas_nodes.size() / 2;
+  std::vector<i32> tlas_node_ids(blas_count);
+  i32 node_indices = blas_count;
 
-	// Assign a TLASNode to each BLAS
-	tlas_nodes[2].left_blas = 0;
-	tlas_nodes[2].aabb_min = blas_list[0].bounds.min;
-	tlas_nodes[2].aabb_max = blas_list[0].bounds.max;
-	tlas_nodes[2].is_leaf = true;
+  nodes_used = 1;
+  for (size_t i = 0; i < blas_count; ++i) {
+    tlas_node_ids[i] = nodes_used;
+    tlas_nodes[nodes_used].left_right = 0; // Set a leaf node
+    tlas_nodes[nodes_used].aabb_min = blas_list[i].bounds.min;
+    tlas_nodes[nodes_used].aabb_max = blas_list[i].bounds.max;
+    tlas_nodes[nodes_used++].blas_idx = i;
+  }
 
-	tlas_nodes[3].left_blas = 1;
-	tlas_nodes[3].aabb_min = blas_list[1].bounds.min;
-	tlas_nodes[3].aabb_max = blas_list[1].bounds.max;
-	tlas_nodes[3].is_leaf = true;
+  // Agglomerative clustering to build the TLAS
+  i32 a = 0, b = find_best_match(tlas_node_ids.data(), node_indices, a);
+  while (node_indices > 1) {
+    i32 c = find_best_match(tlas_node_ids.data(), node_indices, b);
+    if (a == c) {
+      i32 node_idx_a = tlas_node_ids[a];
+      i32 node_idx_b = tlas_node_ids[b];
+      const TLASNode &node_a = tlas_nodes[node_idx_a];
+      const TLASNode &node_b = tlas_nodes[node_idx_b];
+      TLASNode &new_node = tlas_nodes[nodes_used];
+      new_node.left_right = node_idx_a + (node_idx_b << 16);
+      new_node.aabb_min = Vec3::fmin(node_a.aabb_min, node_b.aabb_min);
+      new_node.aabb_max = Vec3::fmax(node_a.aabb_max, node_b.aabb_max);
+      tlas_node_ids[a] = nodes_used++;
+      tlas_node_ids[b] = tlas_node_ids[node_indices - 1];
+      b = find_best_match(tlas_node_ids.data(), --node_indices, a);
+    } else {
+      a = b, b = c;
+    }
+  }
+  tlas_nodes[0] = tlas_nodes[tlas_node_ids[a]];
+} 
 
-	// create a root node over the two leaf nodes
-	tlas_nodes[0].left_blas = 2;
-	tlas_nodes[0].aabb_min = Vec3::fmin(tlas_nodes[2].aabb_min, tlas_nodes[3].aabb_min);
-	tlas_nodes[0].aabb_max = Vec3::fmax(tlas_nodes[2].aabb_max, tlas_nodes[3].aabb_max);
-	tlas_nodes[0].is_leaf = false;
-}
-
-bool TLAS::intersect(const Ray &ray, const Interval &ray_t,
-                    HitRecord &rec) {
+bool TLAS::intersect(const Ray &ray, const Interval &ray_t, HitRecord &rec) {
   const TLASNode *node = &tlas_nodes[0], *stack[64];
   u32 stackPtr = 0;
   bool hit = false;
   f32 closest_so_far = ray_t.max;
 
   while (1) {
-    if (node->is_leaf) {
-      if (blas_list[node->left_blas].intersect(ray, ray_t, rec)) {
+    if (node->is_leaf()) {
+      if (blas_list[node->blas_idx].intersect(ray, ray_t, rec)) {
         hit = true;
-				closest_so_far = rec.t;
+        closest_so_far = rec.t;
       }
       if (stackPtr == 0)
         break;
@@ -46,8 +61,10 @@ bool TLAS::intersect(const Ray &ray, const Interval &ray_t,
 
       continue;
     } else {
-      const TLASNode *child1 = &tlas_nodes[node->left_blas];
-      const TLASNode *child2 = &tlas_nodes[node->left_blas + 1];
+      const u32 l_idx = node->left_right & 0x0000FFFF;
+      const u32 r_idx = (node->left_right & 0xFFFF0000) >> 16;
+      const TLASNode *child1 = &tlas_nodes[l_idx];
+      const TLASNode *child2 = &tlas_nodes[r_idx];
       f32 dist1 = intersect_aabb(ray, child1->aabb_min, child1->aabb_max,
                                  closest_so_far);
       f32 dist2 = intersect_aabb(ray, child2->aabb_min, child2->aabb_max,
@@ -70,4 +87,22 @@ bool TLAS::intersect(const Ray &ray, const Interval &ray_t,
   }
 
   return hit;
+}
+
+i32 TLAS::find_best_match(i32 *list, i32 N, i32 a) {
+  f32 smallest = infinity;
+  i32 best_b = -1;
+  for (i32 b = 0; b < N; ++b) if(b != a) {
+    const Vec3 bmax =
+        Vec3::fmax(tlas_nodes[list[a]].aabb_max, tlas_nodes[list[b]].aabb_max);
+    const Vec3 bmin =
+        Vec3::fmin(tlas_nodes[list[a]].aabb_min, tlas_nodes[list[b]].aabb_min);
+    const Vec3 e = bmax - bmin;
+    f32 h_surface_area = e.x * e.y + e.y * e.z + e.z * e.x;
+    if (h_surface_area < smallest) {
+      smallest = h_surface_area;
+      best_b = b;
+    }
+  }
+  return best_b;
 }
