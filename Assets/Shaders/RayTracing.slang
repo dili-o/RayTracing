@@ -1,7 +1,7 @@
 #include "Random.slang"
 #include "World.slang"
 #include "Material.slang"
-#include "BVHNode.slang"
+#include "TLAS.slang"
 
 struct ShaderPushConstant {
   float4 pixel00_loc;   
@@ -27,6 +27,7 @@ struct Uniforms{
 	Sphere *spheres;
 	Triangle *triangles;
 	uint *tri_ids;
+	TLASNode *tlas_nodes;
 	BVH *bvhs;
 	BVHNode *bvh_nodes;
   MaterialLambert *lambert_mats;
@@ -68,15 +69,12 @@ void computeMain(uint3 dispatch_thread_id : SV_DispatchThreadID,
 					HitRecord rec;
 					rec.t = 1e30f;
 
-					bool hit = false;
-					for (uint i = 0; i < 1; ++i) {
-						hit |= intersect_bvh(r, ray_t, rec,
-							uniform_buffer[0].bvhs[i], 
+					bool hit = intersect_tlas(r, ray_t, rec,
+							uniform_buffer[0].tlas_nodes, 
+							uniform_buffer[0].bvhs, 
 							uniform_buffer[0].bvh_nodes, 
 							uniform_buffer[0].triangles,
 						  uniform_buffer[0].tri_ids);
-						ray_t.max = rec.t;
-					}
           if (hit) {
 						// Use the interpolated normal to set the outward normal
 						Triangle trig = uniform_buffer[0].triangles[rec.tri_id];

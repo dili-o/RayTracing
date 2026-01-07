@@ -20,8 +20,8 @@ public:
       std::vector<u32> &tri_ids, std::vector<Vec3> tri_centroids,
       u32 &bvh_depth);
   void refit();
-  bool intersect(const Ray &ray, const u32 node_idx, const Interval &ray_t,
-                 HitRecord &rec);
+  bool intersect(const Ray &ray, const Interval &ray_t,
+                 HitRecord &rec) const;
   void set_transform(const Mat4 &transform);
 
   std::vector<BVHNode> bvh_nodes;

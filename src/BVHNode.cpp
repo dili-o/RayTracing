@@ -7,25 +7,6 @@ struct Bin {
   i32 prim_count = 0;
 };
 
-f32 intersect_aabb(const Ray &ray, const Vec3 &bmin, const Vec3 &bmax,
-                   const f32 t) {
-  f32 tx1 = (bmin.x - ray.origin.x) * ray.inv_direction.x,
-      tx2 = (bmax.x - ray.origin.x) * ray.inv_direction.x;
-  f32 tmin = std::min(tx1, tx2), tmax = std::max(tx1, tx2);
-  f32 ty1 = (bmin.y - ray.origin.y) * ray.inv_direction.y,
-      ty2 = (bmax.y - ray.origin.y) * ray.inv_direction.y;
-  tmin = std::max(tmin, std::min(ty1, ty2)),
-  tmax = std::min(tmax, std::max(ty1, ty2));
-  f32 tz1 = (bmin.z - ray.origin.z) * ray.inv_direction.z,
-      tz2 = (bmax.z - ray.origin.z) * ray.inv_direction.z;
-  tmin = std::max(tmin, std::min(tz1, tz2)),
-  tmax = std::min(tmax, std::max(tz1, tz2));
-  if (tmax >= tmin && tmin < t && tmax > 0)
-    return tmin;
-  else
-    return infinity;
-}
-
 template <typename Tri> struct TrigTraits;
 
 template <> struct TrigTraits<Triangle> {
@@ -265,12 +246,12 @@ void BVH::refit() {
   }
 }
 
-bool BVH::intersect(const Ray &ray, const u32 node_idx, const Interval &ray_t,
-                    HitRecord &rec) {
+bool BVH::intersect(const Ray &ray, const Interval &ray_t,
+                    HitRecord &rec) const {
   HASSERT(!is_gpu);
   const BVHNode *node = &bvh_nodes[0], *stack[64];
   u32 stackPtr = 0;
-  float closest_so_far = ray_t.max;
+  f32 closest_so_far = ray_t.max;
   bool hit = false;
   const Triangle *trigs = static_cast<const Triangle *>(triangles);
 
@@ -295,8 +276,8 @@ bool BVH::intersect(const Ray &ray, const u32 node_idx, const Interval &ray_t,
 
       continue;
     } else {
-      BVHNode *child1 = &bvh_nodes[node->left_first];
-      BVHNode *child2 = &bvh_nodes[node->left_first + 1];
+      const BVHNode *child1 = &bvh_nodes[node->left_first];
+      const BVHNode *child2 = &bvh_nodes[node->left_first + 1];
       f32 dist1 = intersect_aabb(new_ray, child1->aabb_min, child1->aabb_max,
                                  closest_so_far);
       f32 dist2 = intersect_aabb(new_ray, child2->aabb_min, child2->aabb_max,
@@ -338,6 +319,6 @@ void BVH::set_transform(const Mat4 &transform) {
     Vec4 v = Vec4(i & 1 ? bmax.x : bmin.x, i & 2 ? bmax.y : bmin.y,
                   i & 4 ? bmax.z : bmin.z, 1.f);
     v = transform * v;
-    // bounds.grow(make_vec3(v));
+    bounds.grow(make_vec3(v));
   }
 }

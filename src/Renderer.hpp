@@ -2,7 +2,7 @@
 #include "HittableList.hpp"
 #include "Material.hpp"
 #include "Sphere.hpp"
-#include "BVHNode.hpp"
+#include "TLAS.hpp"
 
 class Renderer {
 public:
@@ -93,6 +93,8 @@ protected:
     defocus_disk_u = u * defocus_radius;
     defocus_disk_v = v * defocus_radius;
   }
+protected:
+  TLAS tlas;
   BVH bvh[2];
 };
 

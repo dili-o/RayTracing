@@ -49,11 +49,16 @@ void RendererCPU::init(u32 image_width_, real aspect_ratio_,
                     vfov_deg_);
   u32 bvh_depth = 0;
   bvh[0] = BVH(triangles.data(), triangles.size(), false, tri_ids, tri_centroids, bvh_depth);
+  bvh[0].set_transform(Mat4::translate(Vec3(-2.f, 1.f, 0.f)) *
+                       Mat4::rotate_z(degrees_to_radians(-90.f)));
   bvh_depth = 0;
   bvh[1] = BVH(triangles.data(), triangles.size(), false, tri_ids, tri_centroids, bvh_depth);
 
   bvh[1].set_transform(Mat4::translate(Vec3(2.f, 1.f, 0.f)) *
                        Mat4::rotate_z(degrees_to_radians(90.f)));
+
+  tlas = TLAS(bvh, 2);
+  tlas.build();
   show_image = true;
 }
 
@@ -111,13 +116,8 @@ Color RendererCPU::ray_color(const Ray &r, u32 depth,
   }
   HitRecord rec;
   rec.t = infinity;
-  bool hit_anything = false;
   Interval ray_t = Interval(0.001f, infinity);
-
-  for (u32 i = 0; i < 1; ++i) {
-    hit_anything |= bvh[i].intersect(r, 0, ray_t, rec);
-    ray_t.max = rec.t;
-  }
+  bool hit_anything = tlas.intersect(r, ray_t, rec);
 
   if (hit_anything) {
 		// Use the interpolated normal to set the outward normal

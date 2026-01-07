@@ -26,6 +26,7 @@ static VkPipeline vkPipeline;
 static VulkanBuffer spheres_buffer{};
 static VulkanBuffer triangles_buffer{};
 static VulkanBuffer tri_ids_buffer{};
+static VulkanBuffer tlas_nodes_buffer{};
 static VulkanBuffer bvhs_buffer{};
 static VulkanBuffer bvh_nodes_buffer{};
 static VulkanBuffer lambert_buffer{};
@@ -45,6 +46,7 @@ struct UniformBuffer {
   VkDeviceAddress spheres;
   VkDeviceAddress triangles;
   VkDeviceAddress tri_ids;
+  VkDeviceAddress tlas_nodes;
   VkDeviceAddress bvhs;
   VkDeviceAddress bvh_nodes;
   VkDeviceAddress lambert_materials;
@@ -241,12 +243,16 @@ void RendererVk::init(u32 image_width_, real aspect_ratio_,
                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, "DielectricBuffer");
   u32 max_depth = 0;
   bvh[0] = BVH(triangles.data(), triangles.size(), true, tri_ids, tri_centroids, max_depth);
-  bvh[0].set_transform(Mat4::scale(2.f));
+  bvh[0].set_transform(Mat4::translate(Vec3(-2.f, 1.f, 0.f)) *
+                       Mat4::rotate_z(degrees_to_radians(-90.f)));
 
   max_depth = 0;
   bvh[1] = BVH(triangles.data(), triangles.size(), true, tri_ids, tri_centroids, max_depth);
   bvh[1].set_transform(Mat4::translate(Vec3(2.f, 1.f, 0.f)) *
                        Mat4::rotate_z(degrees_to_radians(90.f)));
+
+  tlas = TLAS(bvh, 2);
+  tlas.build();
 
   struct alignas(16) BVH_GPU {
     Mat4 transform;
@@ -261,6 +267,11 @@ void RendererVk::init(u32 image_width_, real aspect_ratio_,
     bvhs_gpu[i].node_index = 0;
   }
 
+  ctx.CreateVmaBuffer(tlas_nodes_buffer, sizeof(TLASNode) * tlas.tlas_nodes.size(),
+                      VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                          VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                      VMA_MEMORY_USAGE_UNKNOWN, 0,
+                      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, "TLASNodesBuffer");
   ctx.CreateVmaBuffer(bvhs_buffer, sizeof(BVH_GPU) * 2,
                       VK_BUFFER_USAGE_TRANSFER_DST_BIT |
                           VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
@@ -277,6 +288,7 @@ void RendererVk::init(u32 image_width_, real aspect_ratio_,
   uniform_buffer_data.spheres = spheres_buffer.deviceAddress;
   uniform_buffer_data.triangles = triangles_buffer.deviceAddress;
   uniform_buffer_data.tri_ids = tri_ids_buffer.deviceAddress;
+  uniform_buffer_data.tlas_nodes = tlas_nodes_buffer.deviceAddress;
   uniform_buffer_data.bvhs = bvhs_buffer.deviceAddress;
   uniform_buffer_data.bvh_nodes = bvh_nodes_buffer.deviceAddress;
   uniform_buffer_data.lambert_materials = lambert_buffer.deviceAddress;
@@ -384,6 +396,8 @@ void RendererVk::init(u32 image_width_, real aspect_ratio_,
                    metal_mats.data(), vkCommandPool);
   ctx.CopyToBuffer(dielectric_buffer.vkHandle, 0, dielectric_buffer.size,
                    dielectric_mats.data(), vkCommandPool);
+  ctx.CopyToBuffer(tlas_nodes_buffer.vkHandle, 0, tlas_nodes_buffer.size,
+                   tlas.tlas_nodes.data(), vkCommandPool);
   ctx.CopyToBuffer(bvhs_buffer.vkHandle, 0, bvhs_buffer.size,
                    bvhs_gpu, vkCommandPool);
   ctx.CopyToBuffer(bvh_nodes_buffer.vkHandle, 0, bvh_nodes_buffer.size,
@@ -511,6 +525,7 @@ RendererVk::~RendererVk() {
   util::DestroyVmaBuffer(ctx.vmaAllocator, spheres_buffer);
   util::DestroyVmaBuffer(ctx.vmaAllocator, triangles_buffer);
   util::DestroyVmaBuffer(ctx.vmaAllocator, tri_ids_buffer);
+  util::DestroyVmaBuffer(ctx.vmaAllocator, tlas_nodes_buffer);
   util::DestroyVmaBuffer(ctx.vmaAllocator, bvhs_buffer);
   util::DestroyVmaBuffer(ctx.vmaAllocator, bvh_nodes_buffer);
   util::DestroyVmaBuffer(ctx.vmaAllocator, lambert_buffer);
