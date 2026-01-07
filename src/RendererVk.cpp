@@ -37,6 +37,7 @@ static VkPipelineLayout vkPipelineLayout;
 static VkSampler vkSampler;
 static VkCommandPool vkCommandPool;
 static VkCommandBuffer vkCommandBuffer;
+static VkQueryPool vk_query_pool;
 
 static std::vector<VulkanImage>     vk_images;
 static std::vector<VulkanImageView> vk_image_views;
@@ -489,9 +490,18 @@ void RendererVk::init(u32 image_width_, real aspect_ratio_,
 	stagingBuffer.pMappedData = nullptr;
 
   util::DestroyBuffer(ctx.vkDevice, nullptr, stagingBuffer);
+
+  // Create query pool
+  VkQueryPoolCreateInfo query_pool_info{VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
+  query_pool_info.queryType = VK_QUERY_TYPE_TIMESTAMP;
+  query_pool_info.queryCount = 2;
+  query_pool_info.pipelineStatistics = VK_QUERY_PIPELINE_STATISTIC_COMPUTE_SHADER_INVOCATIONS_BIT;
+  VK_CHECK(vkCreateQueryPool(ctx.vkDevice, &query_pool_info, nullptr, &vk_query_pool));
 }
 
 RendererVk::~RendererVk() {
+  vkDestroyQueryPool(ctx.vkDevice, vk_query_pool, nullptr);
+
   for (VulkanImage &image : vk_images) {
     util::DestroyVmaImage(ctx.vmaAllocator, image);
   }
@@ -527,6 +537,9 @@ void RendererVk::render(u8 *out_pixels) {
   VkCommandBufferBeginInfo beginInfo{
       VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
   VK_CHECK(vkBeginCommandBuffer(vkCommandBuffer, &beginInfo));
+
+  vkCmdResetQueryPool(vkCommandBuffer, vk_query_pool, 0, 2);
+
   InitRenderDocAPI();
   show_image = !rdoc_api;
 
@@ -553,6 +566,9 @@ void RendererVk::render(u8 *out_pixels) {
   dependencyInfo.imageMemoryBarrierCount = 1;
   dependencyInfo.pImageMemoryBarriers = &imageBarrier;
   vkCmdPipelineBarrier2(vkCommandBuffer, &dependencyInfo);
+
+  vkCmdWriteTimestamp2(vkCommandBuffer, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                       vk_query_pool, 0);
 
   vkCmdBindPipeline(vkCommandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,
                     vkPipeline);
@@ -631,7 +647,11 @@ void RendererVk::render(u8 *out_pixels) {
                      VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(ShaderPushConstant),
                      &push_constant);
 
+
   vkCmdDispatch(vkCommandBuffer, image_width / 8, image_height / 8, 1);
+
+  vkCmdWriteTimestamp2(vkCommandBuffer, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                       vk_query_pool, 1);
 
   // Pipeline Barrier
   imageBarrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
@@ -693,7 +713,21 @@ void RendererVk::render(u8 *out_pixels) {
 
   VK_CHECK(vkQueueSubmit(ctx.vkGraphicsQueue, 1, &submitInfo, VK_NULL_HANDLE));
 
-  VkResult res = vkQueueWaitIdle(ctx.vkGraphicsQueue);
+  // Get gpu time
+  u64 timestamps[2];
+
+  VkResult res = vkGetQueryPoolResults(
+      ctx.vkDevice, vk_query_pool, 0, 2, sizeof(timestamps), timestamps,
+      sizeof(u64), VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
+
+  f64 ts_period = ctx.vkPhysicalDeviceProperties.limits.timestampPeriod;
+  f64 time_ns = f64(timestamps[1] - timestamps[0]) * ts_period;
+
+  f64 time_s = time_ns * 1e-9;
+  std::cout << "Frame time: " << time_s << " seconds\n";
+
+
+  res = vkQueueWaitIdle(ctx.vkGraphicsQueue);
   if (rdoc_api)
     rdoc_api->EndFrameCapture(nullptr, nullptr);
 
