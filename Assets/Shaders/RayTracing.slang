@@ -10,7 +10,7 @@ struct ShaderPushConstant {
 
   uint image_width;
   uint image_height;
-  uint sphere_count;
+  uint seed_value;
   uint samples_per_pixel; // 80
 
   float pixel_samples_scale;
@@ -47,7 +47,7 @@ void computeMain(uint3 dispatch_thread_id : SV_DispatchThreadID,
 
     if (pixel_coord.x < pc.image_width && pixel_coord.y < pc.image_height) {
       float3 ray_color = float3(0.f);
-      uint seed = pixel_coord.x + pixel_coord.y * 1973u;
+      uint seed = pixel_coord.x + pixel_coord.y * pc.seed_value;
 
       for (uint sample = 0; sample < pc.samples_per_pixel; ++sample) {
         float2 jitter = float2(rand(seed), rand(seed));
@@ -132,6 +132,6 @@ void computeMain(uint3 dispatch_thread_id : SV_DispatchThreadID,
 
       ray_color *= pc.pixel_samples_scale;
 
-      output_image[pixel_coord] = float4(ray_color.r, ray_color.g, ray_color.b, 1.f);
+      output_image[pixel_coord] += float4(ray_color.r, ray_color.g, ray_color.b, 1.f);
     }
 }

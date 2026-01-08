@@ -3,7 +3,6 @@
 #include "Assert.hpp"
 #include "Material.hpp"
 
-
 MaterialHandle RendererCPU::add_lambert_material(const Vec3 &albedo) {
   lambert_mats.push_back(std::make_shared<Lambertian>(Lambertian(albedo)));
   return {MATERIAL_LAMBERT, ((u32)lambert_mats.size() - 1)};

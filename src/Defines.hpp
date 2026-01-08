@@ -11,7 +11,7 @@
 
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__)
 #define HLX_PLATFORM_WINDOWS 1
-
+#define NOMINMAX
 #ifndef _WIN64
 #error "64-bit is required on Windows"
 #endif // _WIN64
