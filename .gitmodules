@@ -1,6 +1,3 @@
-[submodule "Vendor/volk"]
-	path = Vendor/volk
-	url = https://github.com/zeux/volk.git
-[submodule "Vendor/spdlog"]
-	path = Vendor/spdlog
+[submodule "vendor/spdlog"]
+	path = vendor/spdlog
 	url = https://github.com/gabime/spdlog.git
