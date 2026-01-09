@@ -25,6 +25,7 @@ bool intersect_tlas(Ray ray, Interval ray_t, inout HitRecord rec,
 			if (intersect_bvh(ray, Interval(ray_t.min, closest_so_far), rec, bvhs[node.blas_idx], bvh_nodes, triangles, tri_ids)) {
 				hit = true;
 				closest_so_far = rec.t;
+				rec.bvh_id = node.blas_idx;
 			}
 			if (stack_ptr == 0) break;
 			else --stack_ptr;

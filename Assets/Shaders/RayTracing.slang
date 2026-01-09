@@ -2,6 +2,10 @@
 #include "Material.slang"
 #include "TLAS.slang"
 
+// #define VISUALIZE_DEPTH
+// #define VISUALIZE_UV
+// #define VISUALIZE_NORMAL
+
 struct ShaderPushConstant {
   float4 pixel00_loc;   
   float4 pixel_delta_u; 
@@ -119,7 +123,19 @@ void computeMain(uint3 dispatch_thread_id : SV_DispatchThreadID,
             }
 
             r = scattered;
+#ifdef VISUALIZE_DEPTH
+            float depth_near = 0.1f;
+						float depth_far  = 100.0f;
+            float depth01 = saturate((rec.t - depth_near) / (depth_far - depth_near));
+            float3 depth_color = float3(1.0f - depth01);
+            attenuation *= depth_color;
+#elif defined(VISUALIZE_NORMAL)
+            attenuation *= rec.normal;
+#elif defined(VISUALIZE_UV)
+            attenuation *= float3(rec.u, rec.v, 0.f);
+#else
             attenuation *= material_attenuation;
+#endif
           } else {
             float3 unit_direction = normalize(r.direction);
             float a = 0.5f * (unit_direction.y + 1.f);

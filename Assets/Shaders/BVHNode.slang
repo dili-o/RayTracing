@@ -46,10 +46,10 @@ bool intersect_bvh(Ray ray, Interval ray_t, inout HitRecord rec,
 
 	// Transform ray
 	float3 new_origin = mul(bvh.inv_transform, float4(ray.origin, 1.f)).xyz;
-	float3 new_dir = normalize(mul(bvh.inv_transform, float4(ray.direction, 0.f)).xyz);
+	float3 new_dir = (mul(bvh.inv_transform, float4(ray.direction, 0.f)).xyz);
   Ray new_ray = Ray(new_origin, new_dir);
 
-	while (true) {
+  while (true) {
 		BVHNode node = nodes[node_stack[stack_ptr]];
 		if (node.prim_count > 0) {
 			for (uint i = 0; i < node.prim_count; ++i) {
