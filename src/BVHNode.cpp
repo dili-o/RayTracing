@@ -178,10 +178,10 @@ static void subdivide_node(BVHNode *bvh_nodes, const TrigType *triangles,
                            max_depth);
 }
 
-BVH::BVH(const void *triangles, size_t triangles_size, bool is_gpu,
-         std::vector<u32> &tri_ids, const std::vector<Vec3> tri_centroids,
-         u32 &bvh_depth)
-    : triangles(triangles), tri_ids(tri_ids.data()), nodes_used(2),
+BVH::BVH(const void *triangles, size_t triangles_size, u32 triangle_offset, bool is_gpu,
+				 u32 *tri_ids, const Vec3 *tri_centroids,
+				 u32 &bvh_depth)
+    : nodes_used(2),
       tri_count(triangles_size), is_gpu(is_gpu) {
   std::chrono::steady_clock::time_point start;
   start = std::chrono::high_resolution_clock::now();
@@ -190,29 +190,32 @@ BVH::BVH(const void *triangles, size_t triangles_size, bool is_gpu,
   if (bvh_nodes.size() < N * 2 - 1)
     bvh_nodes.resize(N * 2 - 1);
   HASSERT(N);
-  HASSERT(tri_ids.size());
-  HASSERT(tri_centroids.size());
+  HASSERT(tri_ids);
+  HASSERT(tri_centroids);
 
   BVHNode &root = bvh_nodes[0];
   root.left_first = 0;
   root.prim_count = N;
   bvh_depth = 1;
+
+  tri_ids = tri_ids + triangle_offset;
+
   if (is_gpu) {
     update_node_bounds<TriangleGPU>(bvh_nodes.data(),
                                     static_cast<const TriangleGPU *>(triangles),
-                                    tri_ids.data(), 0);
+                                    tri_ids, 0);
     // subdivide recursively
     subdivide_node<TriangleGPU>(
         bvh_nodes.data(), static_cast<const TriangleGPU *>(triangles),
-        tri_ids.data(), tri_centroids.data(), nodes_used, 0, 1, bvh_depth);
+        tri_ids, tri_centroids, nodes_used, 0, 1, bvh_depth);
   } else {
     update_node_bounds<Triangle>(bvh_nodes.data(),
                                  static_cast<const Triangle *>(triangles),
-                                 tri_ids.data(), 0);
+                                 tri_ids, 0);
     // subdivide recursively
     subdivide_node<Triangle>(
         bvh_nodes.data(), static_cast<const Triangle *>(triangles),
-        tri_ids.data(), tri_centroids.data(), nodes_used, 0, 1, bvh_depth);
+        tri_ids, tri_centroids, nodes_used, 0, 1, bvh_depth);
   }
 
   auto end = std::chrono::high_resolution_clock::now();
@@ -222,7 +225,7 @@ BVH::BVH(const void *triangles, size_t triangles_size, bool is_gpu,
   HASSERT(bvh_depth <= 64);
 }
 
-void BVH::refit() {
+void BVH::refit(const void *triangles, u32 *tri_ids) {
   for (i32 i = nodes_used - 1; i >= 0; --i) {
     // Skipping index 1 because we leave that empty for cache line reasons
     if (i != 1) {
@@ -247,13 +250,13 @@ void BVH::refit() {
 }
 
 bool BVH::intersect(const Ray &ray, const Interval &ray_t,
-                    HitRecord &rec) const {
+                 HitRecord &rec, const Triangle *triangles,
+                 const u32 *tri_ids) const {
   HASSERT(!is_gpu);
   const BVHNode *node = &bvh_nodes[0], *stack[64];
   u32 stackPtr = 0;
   f32 closest_so_far = ray_t.max;
   bool hit = false;
-  const Triangle *trigs = static_cast<const Triangle *>(triangles);
 
   // Transform ray
   Vec3 new_origin = make_vec3(inv_transform * Vec4(ray.origin, 1.f));
@@ -262,13 +265,15 @@ bool BVH::intersect(const Ray &ray, const Interval &ray_t,
 
   while (1) {
     if (node->is_leaf()) {
-      for (u32 i = 0; i < node->prim_count; ++i)
-        if (trigs[tri_ids[node->left_first + i]].hit(
+      for (u32 i = 0; i < node->prim_count; ++i) {
+				u32 tri_index = node->left_first + trig_offset + i;
+        if (triangles[tri_ids[tri_index]].hit(
                 new_ray, Interval(ray_t.min, closest_so_far), rec)) {
           hit = true;
-          rec.tri_id = tri_ids[node->left_first + i];
+          rec.tri_id = tri_ids[tri_index];
           closest_so_far = rec.t;
         }
+      }
       if (stackPtr == 0)
         break;
       else

@@ -32,13 +32,14 @@ float intersect_aabb(const Ray ray, const float3 bmin, const float3 bmax, const 
 struct BVH {
   float4x4 transform;
   float4x4 inv_transform;
-  uint bvh_nodes_index; float3 padding;
+  uint bvh_nodes_index; uint trig_offset; float2 padding;
 };
 
 bool intersect_bvh(Ray ray, Interval ray_t, inout HitRecord rec,
 									 BVH bvh, BVHNode *nodes, Triangle *triangles, uint *tri_ids) {
 	uint node_stack[64];
 	node_stack[0] = bvh.bvh_nodes_index;
+	uint bvh_node_offset = bvh.bvh_nodes_index;
 	uint stack_ptr = 0;
 	float closest_so_far = ray_t.max;
 	bool hit = false;
@@ -52,19 +53,20 @@ bool intersect_bvh(Ray ray, Interval ray_t, inout HitRecord rec,
 		BVHNode node = nodes[node_stack[stack_ptr]];
 		if (node.prim_count > 0) {
 			for (uint i = 0; i < node.prim_count; ++i) {
-				if (triangle_hit(triangles[tri_ids[node.left_first + i]], new_ray, Interval(ray_t.min, closest_so_far), rec)) {
+				uint tri_index = node.left_first + bvh.trig_offset + i;
+				if (triangle_hit(triangles[tri_ids[tri_index]], new_ray, Interval(ray_t.min, closest_so_far), rec)) {
 					hit = true;
-					rec.tri_id = tri_ids[node.left_first + i];	
+					rec.tri_id = tri_ids[tri_index];	
 					closest_so_far = rec.t;
 				}
 			}
 			if (stack_ptr == 0) break;
 			else --stack_ptr;
-		} else {
-			BVHNode child1 = nodes[node.left_first];
-			BVHNode child2 = nodes[node.left_first + 1];
-			uint child1_idx = node.left_first;
-			uint child2_idx = node.left_first + 1;
+        } else {
+			uint child1_idx = node.left_first + bvh_node_offset;
+			uint child2_idx = child1_idx + 1;
+			BVHNode child1 = nodes[child1_idx];
+			BVHNode child2 = nodes[child2_idx];
 			float dist1 = intersect_aabb(new_ray, child1.aabb_min, child1.aabb_max, closest_so_far);
 			float dist2 = intersect_aabb(new_ray, child2.aabb_min, child2.aabb_max, closest_so_far);
 

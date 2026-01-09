@@ -42,7 +42,8 @@ void TLAS::build() {
   tlas_nodes[0] = tlas_nodes[tlas_node_ids[a]];
 } 
 
-bool TLAS::intersect(const Ray &ray, const Interval &ray_t, HitRecord &rec) {
+bool TLAS::intersect(const Ray &ray, const Interval &ray_t, HitRecord &rec,
+										 const Triangle *triangles, const u32 *tri_ids) {
   const TLASNode *node = &tlas_nodes[0], *stack[64];
   u32 stackPtr = 0;
   bool hit = false;
@@ -50,7 +51,7 @@ bool TLAS::intersect(const Ray &ray, const Interval &ray_t, HitRecord &rec) {
 
   while (1) {
     if (node->is_leaf()) {
-      if (blas_list[node->blas_idx].intersect(ray, ray_t, rec)) {
+      if (blas_list[node->blas_idx].intersect(ray, ray_t, rec, triangles, tri_ids)) {
         hit = true;
         closest_so_far = rec.t;
       }

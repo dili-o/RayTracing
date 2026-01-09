@@ -2,6 +2,8 @@
 #include "Vec3.hpp"
 #include "Vec4.hpp"
 
+// from https://github.com/jbikker/bvh_article/blob/main/template/precomp.h
+
 // Row major matrix class
 class Mat4 {
 public:
@@ -157,6 +159,17 @@ public:
     m.e[5] = cosf(a);
     return m;
   };
+
+  // Rotate about an angle
+  static Mat4 rotate(const f32 x, const f32 y, const f32 z, const f32 a) {
+		const f32 c = cosf(a), l_c = 1 - c, s = sinf(a);
+		Mat4 m;
+		m[0] = x * x + (1 - x * x) * c, m[1] = x * y * l_c + z * s, m[2] = x * z * l_c - y * s, m[3] = 0;
+		m[4] = x * y * l_c - z * s, m[5] = y * y + (1 - y * y) * c, m[6] = y * z * l_c + x * s, m[7] = 0;
+		m[8] = x * z * l_c + y * s, m[9] = y * z * l_c - x * s, m[10] = z * z + (1 - z * z) * c, m[11] = 0;
+		m[12] = m[13] = m[14] = 0, m[15] = 1;
+		return m;
+	}
 
   static Mat4 scale(const f32 s) {
     Mat4 m;

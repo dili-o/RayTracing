@@ -30,30 +30,41 @@ void RendererCPU::add_triangle(const Vec3 &v0, const Vec3 &v1, const Vec3 &v2,
 														Vec2 uv_0, Vec2 uv_1, Vec2 uv_2,
 														MaterialHandle mat_handle) {
   std::shared_ptr<Material> mat = get_material(mat_handle);
-  triangles.emplace_back(Triangle(v0, v1, v2, n0, n1, n2, uv_0, uv_1, uv_2, mat));
+  if (n0.x == std::numeric_limits<f32>::max()) {
+    const Vec3 edge1 = v1 - v0;
+    const Vec3 edge2 = v2 - v0;
+    const Vec3 n = cross(edge1, edge2);
+    triangles.emplace_back(Triangle(v0, v1, v2, n, n, n, uv_0, uv_1, uv_2, mat));
+  } else {
+    triangles.emplace_back(Triangle(v0, v1, v2, n0, n1, n2, uv_0, uv_1, uv_2, mat));
+  }
   Vec3 centroid = (v0 + v1 + v2) * 0.3333f;
   tri_centroids.push_back(centroid);
   tri_ids.push_back(static_cast<u32>(tri_ids.size()));
+}
+
+u32 RendererCPU::get_triangle_count() {
+  return triangles.size();
+}
+
+void RendererCPU::add_mesh(u32 triangles_offset,
+                          u32 triangle_count, const Mat4 &transform) {
+  // TODO:
+  u32 depth;
+  bvhs.emplace_back(BVH(triangles.data(),
+                    triangle_count, triangles_offset,
+                    false, tri_ids.data(),
+                    tri_centroids.data(), depth));
+  BVH &bvh = bvhs[bvhs.size() - 1];
+  bvh.trig_offset = triangles_offset;
+  bvh.set_transform(transform);
 }
 
 void RendererCPU::init(u32 image_width_, real aspect_ratio_,
                        u32 samples_per_pixel_, u32 max_depth_, real vfov_deg_) {
   initialize_camera(image_width_, aspect_ratio_, samples_per_pixel_, max_depth_,
                     vfov_deg_);
-  u32 bvh_depth = 0;
-  bvh[0] = BVH(triangles.data(), triangles.size(), false, tri_ids, tri_centroids, bvh_depth);
-  bvh[0].set_transform(Mat4::translate(Vec3(-2.f, 1.f, 0.f)) *
-                       Mat4::rotate_z(degrees_to_radians(-90.f)));
-
-  bvh[1] = BVH(triangles.data(), triangles.size(), false, tri_ids, tri_centroids, bvh_depth);
-
-  bvh[1].set_transform(Mat4::translate(Vec3(2.f, 1.f, 0.f)) *
-                       Mat4::rotate_z(degrees_to_radians(90.f)));
-
-  bvh[2] = BVH(triangles.data(), triangles.size(), false, tri_ids, tri_centroids, bvh_depth);
-  bvh[2].set_transform(Mat4::identity());
-
-  tlas = TLAS(bvh, ArraySize(bvh));
+  tlas = TLAS(bvhs.data(), bvhs.size());
   tlas.build();
   show_image = true;
 }
@@ -112,11 +123,10 @@ Color RendererCPU::ray_color(const Ray &r, u32 depth) {
   HitRecord rec;
   rec.t = infinity;
   Interval ray_t = Interval(0.001f, infinity);
-  bool hit_anything = tlas.intersect(r, ray_t, rec);
+  bool hit_anything = tlas.intersect(r, ray_t, rec, triangles.data(), tri_ids.data());
 
   if (hit_anything) {
 		// Use the interpolated normal to set the outward normal
-
 		const Triangle &trig = triangles[rec.tri_id];
 		f32 trig_u = rec.u;
 		f32 trig_v = rec.v;

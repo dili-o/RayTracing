@@ -1,5 +1,4 @@
 #pragma once
-#include "HittableList.hpp"
 #include "Material.hpp"
 #include "TLAS.hpp"
 
@@ -15,6 +14,8 @@ public:
 														const Vec3 &n0, const Vec3 &n1, const Vec3 &n2,
 														Vec2 uv_0, Vec2 uv_1, Vec2 uv_2,
 														MaterialHandle mat_handle) = 0;
+  virtual u32 get_triangle_count() = 0;
+  virtual void add_mesh(u32 triangles_offset, u32 triangle_count, const Mat4 &transform) = 0;
 
   virtual void init(u32 image_width_, real aspect_ratio_,
                     u32 samples_per_pixel_, u32 max_depth_, real vfov_deg_) = 0;
@@ -91,8 +92,8 @@ protected:
     defocus_disk_v = v * defocus_radius;
   }
 protected:
+  std::vector<BVH> bvhs;
   TLAS tlas;
-  BVH bvh[3];
 };
 
 class RendererCPU final : public Renderer {
@@ -112,6 +113,8 @@ public:
 														const Vec3 &n0, const Vec3 &n1, const Vec3 &n2,
 														Vec2 uv_0, Vec2 uv_1, Vec2 uv_2,
 														MaterialHandle mat_handle) override;
+  u32 get_triangle_count() override;
+  void add_mesh(u32 triangles_offset, u32 triangle_count, const Mat4 &transform) override;
 
 private:
   Color ray_color(const Ray &r, u32 depth) ;
@@ -145,6 +148,8 @@ public:
 														const Vec3 &n0, const Vec3 &n1, const Vec3 &n2,
 														Vec2 uv_0, Vec2 uv_1, Vec2 uv_2,
 														MaterialHandle mat_handle) override;
+  u32 get_triangle_count() override;
+  void add_mesh(u32 triangles_offset, u32 triangle_count, const Mat4 &transform) override;
 
 private:
   std::vector<Image> images;
@@ -153,4 +158,6 @@ private:
   std::vector<GpuDielectric> dielectric_mats;
   std::vector<TriangleGPU> triangles;
   std::vector<Vec3> tri_centroids;
+  std::vector<BVH_GPU> bvhs_gpu;
+  u32 bvh_nodes_size = 0;
 };

@@ -114,7 +114,8 @@ void RendererVk::add_triangle(const Vec3 &v0, const Vec3 &v1, const Vec3 &v2,
 														const Vec3 &n0, const Vec3 &n1, const Vec3 &n2,
 														Vec2 uv_0, Vec2 uv_1, Vec2 uv_2,
 														MaterialHandle mat_handle) {
-  Vec3 centroid = (v0 + v1 + v2) * 0.3333f;
+  const Vec3 centroid = (v0 + v1 + v2) * 0.3333f;
+
   tri_centroids.push_back(centroid);
   tri_ids.push_back(static_cast<u32>(tri_ids.size()));
 	switch (mat_handle.type) {
@@ -135,7 +136,38 @@ void RendererVk::add_triangle(const Vec3 &v0, const Vec3 &v1, const Vec3 &v2,
 		}
   }
 
-  triangles.push_back(TriangleGPU(v0, v1, v2, n0, n1, n2, uv_0, uv_1, uv_2, mat_handle));
+  if (n0.x == std::numeric_limits<f32>::max()) {
+    const Vec3 edge1 = v1 - v0;
+    const Vec3 edge2 = v2 - v0;
+    const Vec3 n = cross(edge1, edge2);
+    triangles.push_back(TriangleGPU(v0, v1, v2, n, n, n, uv_0, uv_1, uv_2, mat_handle));
+  } else {
+    triangles.push_back(TriangleGPU(v0, v1, v2, n0, n1, n2, uv_0, uv_1, uv_2, mat_handle));
+  }
+}
+
+u32 RendererVk::get_triangle_count() {
+  return triangles.size();
+}
+
+void RendererVk::add_mesh(u32 triangles_offset,
+                          u32 triangle_count, const Mat4 &transform) {
+  u32 depth;
+  bvhs.emplace_back(BVH(triangles.data(),
+                    triangle_count, triangles_offset,
+                    true, tri_ids.data(),
+                    tri_centroids.data(), depth));
+  BVH &bvh = bvhs[bvhs.size() - 1];
+  bvh.set_transform(transform);
+
+  BVH_GPU bvh_gpu;
+	bvh_gpu.transform = bvh.inv_transform.inverse().transpose();
+	bvh_gpu.inv_transform = bvh.inv_transform.transpose();
+	bvh_gpu.node_index = bvh_nodes_size;
+  bvh_gpu.trig_offset = triangles_offset;
+  bvhs_gpu.push_back(bvh_gpu);
+
+	bvh_nodes_size += bvh.bvh_nodes.size();
 }
 
 void RendererVk::init(u32 image_width_, real aspect_ratio_,
@@ -233,30 +265,8 @@ void RendererVk::init(u32 image_width_, real aspect_ratio_,
                           VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                       VMA_MEMORY_USAGE_UNKNOWN, 0,
                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, "DielectricBuffer");
-  u32 max_depth = 0;
 
-  Mat4 transforms[ArraySize(bvh)];
-  transforms[0] = Mat4::translate(Vec3(-2.f, 1.f, 0.f)) *
-    Mat4::rotate_z(degrees_to_radians(-90.f));
-  transforms[1] = Mat4::translate(Vec3(2.f, 1.f, 0.f)) *
-    Mat4::rotate_z(degrees_to_radians(90.f));
-
-  struct alignas(16) BVH_GPU {
-    Mat4 transform;
-    Mat4 inv_transform;
-    u32 node_index; f32 padding[3];
-  };
-
-  BVH_GPU bvhs_gpu[ArraySize(bvh)];
-  for (u32 i = 0; i < ArraySize(bvh); ++i) {
-		bvh[i] = BVH(triangles.data(), triangles.size(), true, tri_ids, tri_centroids, max_depth);
-    bvh[i].set_transform(transforms[i]);
-    bvhs_gpu[i].transform = bvh[i].inv_transform.inverse().transpose();
-    bvhs_gpu[i].inv_transform = bvh[i].inv_transform.transpose();
-    bvhs_gpu[i].node_index = 0;
-  }
-
-  tlas = TLAS(bvh, ArraySize(bvh));
+  tlas = TLAS(bvhs.data(), bvhs.size());
   tlas.build();
 
   ctx.CreateVmaBuffer(tlas_nodes_buffer, sizeof(TLASNode) * tlas.tlas_nodes.size(),
@@ -264,13 +274,13 @@ void RendererVk::init(u32 image_width_, real aspect_ratio_,
                           VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                       VMA_MEMORY_USAGE_UNKNOWN, 0,
                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, "TLASNodesBuffer");
-  ctx.CreateVmaBuffer(bvhs_buffer, sizeof(BVH_GPU) * ArraySize(bvh),
+  ctx.CreateVmaBuffer(bvhs_buffer, sizeof(BVH_GPU) * bvhs_gpu.size(),
                       VK_BUFFER_USAGE_TRANSFER_DST_BIT |
                           VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                       VMA_MEMORY_USAGE_UNKNOWN, 0,
                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, "BVHsBuffer");
 
-  ctx.CreateVmaBuffer(bvh_nodes_buffer, sizeof(BVHNode) * bvh[0].bvh_nodes.size(),
+  ctx.CreateVmaBuffer(bvh_nodes_buffer, sizeof(BVHNode) * bvh_nodes_size,
                       VK_BUFFER_USAGE_TRANSFER_DST_BIT |
                           VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                       VMA_MEMORY_USAGE_UNKNOWN, 0,
@@ -389,9 +399,18 @@ void RendererVk::init(u32 image_width_, real aspect_ratio_,
   ctx.CopyToBuffer(tlas_nodes_buffer.vkHandle, 0, tlas_nodes_buffer.size,
                    tlas.tlas_nodes.data(), vkCommandPool);
   ctx.CopyToBuffer(bvhs_buffer.vkHandle, 0, bvhs_buffer.size,
-                   bvhs_gpu, vkCommandPool);
-  ctx.CopyToBuffer(bvh_nodes_buffer.vkHandle, 0, bvh_nodes_buffer.size,
-                   bvh[0].bvh_nodes.data(), vkCommandPool);
+                   bvhs_gpu.data(), vkCommandPool);
+
+  u32 bvh_nodes_offset = 0;
+  for (size_t i = 0; i < bvhs.size(); ++i) {
+    u32 copy_size = sizeof(BVHNode) * bvhs[i].bvh_nodes.size();
+    ctx.CopyToBuffer(bvh_nodes_buffer.vkHandle,
+                     bvh_nodes_offset,
+                     copy_size,
+                     bvhs[i].bvh_nodes.data(),
+                     vkCommandPool);
+    bvh_nodes_offset += copy_size;
+  }
 
   // Transfer data to Uniform buffer
   ctx.CopyToBuffer(uniformBuffer.vkHandle, 0, uniformBuffer.size,
@@ -584,8 +603,9 @@ void RendererVk::render(u8 *out_pixels) {
   u32 frame_count = (samples_per_pixel + SAMPLES_PER_FRAME - 1) / SAMPLES_PER_FRAME;
   u32 total_samples = 0;
 
-
   for (u32 i = 0; i < frame_count; ++i) {
+    std::clog << "\rSamples remaining: " << (samples_per_pixel - total_samples) << ' ' << std::flush;
+
     u32 sample_count = std::min(SAMPLES_PER_FRAME , samples_per_pixel - total_samples); 
     total_samples += sample_count;
 
@@ -727,7 +747,10 @@ void RendererVk::render(u8 *out_pixels) {
     submitInfo.pSignalSemaphores = nullptr;
 
     VK_CHECK(vkQueueSubmit(ctx.vkGraphicsQueue, 1, &submitInfo, vk_frame_finished_fence));
+    if (i == 0) if (rdoc_api)
+			rdoc_api->EndFrameCapture(nullptr, nullptr);
   }
+  std::clog << "\rDone.                 \n";
 
 
   vkWaitForFences(ctx.vkDevice, 1, &vk_frame_finished_fence, VK_TRUE, UINT64_MAX);
@@ -813,8 +836,6 @@ void RendererVk::render(u8 *out_pixels) {
 
 
   res = vkQueueWaitIdle(ctx.vkGraphicsQueue);
-  if (rdoc_api)
-    rdoc_api->EndFrameCapture(nullptr, nullptr);
 
   VkDeviceFaultCountsEXT fault_counts{
       VK_STRUCTURE_TYPE_DEVICE_FAULT_COUNTS_EXT};

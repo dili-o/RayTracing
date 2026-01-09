@@ -16,7 +16,8 @@ public:
   TLAS() = default;
   TLAS(BVH *bvh_list, u32 N);
   void build();
-  bool intersect(const Ray &ray, const Interval &ray_t, HitRecord &rec);
+  bool intersect(const Ray &ray, const Interval &ray_t, HitRecord &rec,
+                 const Triangle *triangles, const u32 *tri_ids);
 
   std::vector<TLASNode> tlas_nodes;
   const BVH *blas_list = nullptr;
