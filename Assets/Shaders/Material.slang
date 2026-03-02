@@ -11,7 +11,7 @@ static const uint MATERIAL_DIELECTRIC = 2;
 #error "ALBEDO_TEXTURE_COUNT must be defined"
 #endif
 
-[[vk::binding(2, 0)]]
+[[vk::binding(0, 1)]]
 Sampler2D albedo_textures[ALBEDO_TEXTURE_COUNT];
 
 struct MaterialLambert {

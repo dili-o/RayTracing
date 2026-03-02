@@ -1,8 +1,6 @@
 #include "VulkanTypes.hpp"
 #include "Log.hpp"
 #include "Vulkan/VulkanUtils.hpp"
-// Vendor
-#include <iostream>
 
 #ifdef _DEBUG
 #define VULKAN_DEBUG_REPORT
@@ -357,6 +355,8 @@ bool VkContext::Init() {
     }
   }
 
+  free(instanceExtensions);
+
   validationLayerNames.push_back("VK_LAYER_KHRONOS_validation");
 
   u32 layerNotFoundIndex = 0;
@@ -424,7 +424,6 @@ bool VkContext::Init() {
   createInfo.pApplicationInfo = &appInfo;
   createInfo.enabledExtensionCount = (u32)requiredExtensions.size();
   createInfo.ppEnabledExtensionNames = requiredExtensions.data();
-  createInfo.enabledLayerCount = 0;
   createInfo.enabledLayerCount = (u32)validationLayerNames.size();
   createInfo.ppEnabledLayerNames = validationLayerNames.data();
   VK_CHECK(vkCreateInstance(&createInfo, nullptr, &vkInstance));

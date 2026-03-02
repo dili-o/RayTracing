@@ -41,7 +41,7 @@ struct Uniforms{
 RWTexture2D<float4> output_image;
 
 [[vk::binding(1, 0)]]
-StructuredBuffer<Uniforms> uniform_buffer;
+StructuredBuffer<Uniforms> uniform_buffer; // TODO: COnstant buffer
 
 [shader("compute")]
 [numthreads(8,8,1)]
