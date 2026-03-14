@@ -1,6 +1,6 @@
-#include "Defines.hpp"
+#include "Core/Defines.hpp"
 #include "Renderer.hpp"
-#include "Assert.hpp"
+#include "Core/Assert.hpp"
 #include "Material.hpp"
 
 MaterialHandle RendererCPU::add_lambert_material(const Vec3 &albedo) {

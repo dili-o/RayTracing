@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Defines.hpp"
+#include "Core/Defines.hpp"
 
 class Vec2 {
 public:

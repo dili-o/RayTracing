@@ -1,6 +1,6 @@
 #include "VkStagingBuffer.hpp"
-#include "Assert.hpp"
-#include "Log.hpp"
+#include "Core/Assert.hpp"
+#include "Core/Log.hpp"
 #include "Vulkan/VulkanTypes.hpp"
 
 namespace hlx {

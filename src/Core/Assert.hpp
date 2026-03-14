@@ -8,14 +8,14 @@
 
 #ifdef HASSERTIONS_ENABLED
 namespace hlx {
-void ReportAssertionFailure(cstring expression, cstring message, cstring file,
-                            i32 line);
+void HLX_API ReportAssertionFailure(cstring expression, cstring message,
+                                    cstring file, i32 line);
 
 #define HASSERT(expr)                                                          \
   {                                                                            \
     if (expr) {                                                                \
     } else {                                                                   \
-      hlx::ReportAssertionFailure(#expr, "", __FILE__, __LINE__);                   \
+      hlx::ReportAssertionFailure(#expr, "", __FILE__, __LINE__);              \
       HLX_DEBUG_BREAK;                                                         \
     }                                                                          \
   }
@@ -24,7 +24,7 @@ void ReportAssertionFailure(cstring expression, cstring message, cstring file,
   {                                                                            \
     if (expr) {                                                                \
     } else {                                                                   \
-      hlx::ReportAssertionFailure(#expr, message, __FILE__, __LINE__);              \
+      hlx::ReportAssertionFailure(#expr, message, __FILE__, __LINE__);         \
       HLX_DEBUG_BREAK;                                                         \
     }                                                                          \
   }
@@ -45,7 +45,7 @@ void ReportAssertionFailure(cstring expression, cstring message, cstring file,
   {                                                                            \
     if (expr) {                                                                \
     } else {                                                                   \
-      hlx::ReportAssertionFailure(#expr, "", __FILE__, __LINE__);                   \
+      hlx::ReportAssertionFailure(#expr, "", __FILE__, __LINE__);              \
       HLX_DEBUG_BREAK;                                                         \
     }                                                                          \
   }

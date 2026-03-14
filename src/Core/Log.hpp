@@ -1,15 +1,13 @@
 
 #pragma once
 
-#include "Defines.hpp"
-
 #include <memory>
 #include <spdlog/fmt/ostr.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 
 namespace hlx {
-class HLX_API Logger {
+class Logger {
 public:
   Logger();
   ~Logger();

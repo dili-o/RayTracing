@@ -5,7 +5,7 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Release>:Release>")
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 project(RayTracer)
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 
 # Ensure Vulkan SDK environment variable is correctly normalized
 file(TO_CMAKE_PATH "$ENV{VULKAN_SDK}" VULKAN_SDK)
@@ -14,7 +14,7 @@ file(TO_CMAKE_PATH "$ENV{VULKAN_SDK}" VULKAN_SDK)
 set(SPIRV_REFLECT_INCLUDE_DIR "${VULKAN_SDK}/Source/SPIRV-Reflect")
 
 file(GLOB_RECURSE SOURCE_LIST "Src/*.h" "Src/*.hpp" "Src/*.cpp" 
-    "${SPIRV_REFLECT_INCLUDE_DIR}/spirv_reflect.c" "Vendor/simdjson/simdjson.cpp"
+  "${SPIRV_REFLECT_INCLUDE_DIR}/spirv_reflect.c" "Vendor/simdjson/simdjson.cpp"
 )
 
 add_executable (${PROJECT_NAME} ${SOURCE_LIST} "Src/Scene.cpp" "Src/BVHNode.cpp" "Src/TLAS.cpp")
@@ -28,13 +28,10 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE SHADER_PATH="${CMAKE_CURRENT_
 find_package(Vulkan REQUIRED)
 
 if(Vulkan_FOUND)
-    # Include Vulkan headers
-    target_include_directories(${PROJECT_NAME} PRIVATE ${Vulkan_INCLUDE_DIRS})
-
-    # Link against Vulkan library using keyword signature
-    target_link_libraries(${PROJECT_NAME} PRIVATE ${Vulkan_LIBRARIES})
+  target_include_directories(${PROJECT_NAME} PRIVATE ${Vulkan_INCLUDE_DIRS})
+  target_link_libraries(${PROJECT_NAME} PRIVATE ${Vulkan_LIBRARIES})
 else()
-    message(FATAL_ERROR "Vulkan SDK not found. Make sure it is installed and accessible.")
+  message(FATAL_ERROR "Vulkan SDK not found. Make sure it is installed and accessible.")
 endif()
 
 # ----------------- Vendors
@@ -46,8 +43,16 @@ endif()
 # spdlog
 add_subdirectory(Vendor/spdlog)
 target_link_libraries(${PROJECT_NAME} PRIVATE spdlog::spdlog)
+# sdl
+set(SDL_STATIC OFF CACHE BOOL "" FORCE)
+set(SDL_SHARED ON CACHE BOOL "" FORCE)
+set(SDL_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(SDL_TEST OFF CACHE BOOL "" FORCE)
+add_subdirectory(Vendor/sdl EXCLUDE_FROM_ALL)
+target_link_libraries(${PROJECT_NAME} PUBLIC SDL3-shared)
+# Slang
+target_link_libraries(${PROJECT_NAME} PRIVATE "${VULKAN_SDK}/Lib/slang.lib")
 # -------------------------
-
 target_include_directories(${PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/")
 target_include_directories(${PROJECT_NAME} PRIVATE "Src/")
 target_include_directories(${PROJECT_NAME} PRIVATE "${SPIRV_REFLECT_INCLUDE_DIR}/")
@@ -67,4 +72,14 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
     _UNICODE
     VEXPORT
     _CRT_SECURE_NO_WARNINGS
+)
+
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${VULKAN_SDK}/Bin/slang.dll"
+    "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "$<TARGET_FILE:SDL3-shared>"
+    "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
+  COMMENT "Copying DLLs to output directory"
 )

@@ -1,8 +1,8 @@
 #ifndef VEC3_H
 #define VEC3_H
 
-#include "Assert.hpp"
-#include "Defines.hpp"
+#include "Core/Assert.hpp"
+#include "Core/Defines.hpp"
 
 #include <cmath>
 #include <iostream>

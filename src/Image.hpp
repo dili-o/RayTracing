@@ -1,5 +1,5 @@
 #pragma once
-#include "Assert.hpp"
+#include "Core/Assert.hpp"
 #include <memory>
 #include <Vendor/stb_image.h>
 
