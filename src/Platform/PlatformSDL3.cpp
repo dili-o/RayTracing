@@ -3,6 +3,7 @@
 #include "Core/Input.hpp"
 #include "Core/Log.hpp"
 #include "Platform.hpp"
+#include "Vulkan/VkDeviceManager.h"
 // Vendor
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_cpuinfo.h>
@@ -67,8 +68,12 @@ void Platform::handle_os_messages() {
     } break;
     case SDL_EVENT_WINDOW_ENTER_FULLSCREEN:
     case SDL_EVENT_WINDOW_LEAVE_FULLSCREEN:
+    case SDL_EVENT_WINDOW_MINIMIZED:
+    case SDL_EVENT_WINDOW_MAXIMIZED:
     case SDL_EVENT_WINDOW_RESIZED: {
       SDL_GetWindowSize(window, &platform_state.width, &platform_state.height);
+      platform_state.is_suspended =
+          e.type == SDL_EVENT_WINDOW_MINIMIZED ? true : false;
       EventContext context{};
       context.data.i32[0] = platform_state.width;
       context.data.i32[1] = platform_state.height;
@@ -145,11 +150,10 @@ void Platform::shutdown() {
   SDL_Quit();
 }
 
-// bool Platform::create_vulkan_surface(VkGpuDevice *device) {
-//   return SDL_Vulkan_CreateSurface(window, device->vk_instance,
-//                                   device->vk_allocation_callbacks,
-//                                   &device->vk_surface);
-// }
+bool Platform::create_vulkan_surface(VkDeviceManager *device) {
+  return SDL_Vulkan_CreateSurface(window, device->vk_instance, nullptr,
+                                  &device->vk_surface);
+}
 
 const char *const *Platform::get_vulkan_extension_names(u32 *count) {
   return SDL_Vulkan_GetInstanceExtensions(count);

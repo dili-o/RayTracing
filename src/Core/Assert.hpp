@@ -40,6 +40,17 @@ void HLX_API ReportAssertionFailure(cstring expression, cstring message,
     }                                                                          \
   }
 
+#if HLX_PLATFORM_WINDOWS
+std::string GetWin32ErrorStringAnsi(unsigned long errorCode);
+
+#define Win32Call(x)                                                           \
+  do {                                                                         \
+    BOOL res_ = x;                                                             \
+    HASSERT_MSGS(res_ != 0, "{}",                                              \
+                 GetWin32ErrorStringAnsi(GetLastError()).c_str());             \
+  } while (0)
+#endif
+
 #ifdef _DEBUG
 #define HASSERT_DEBUG(expr)                                                    \
   {                                                                            \

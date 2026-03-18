@@ -146,8 +146,6 @@ void computeMain(uint3 dispatch_thread_id : SV_DispatchThreadID,
         ray_color += attenuation;
       }
 
-      ray_color *= pc.pixel_samples_scale;
-
       output_image[pixel_coord] += float4(ray_color.r, ray_color.g, ray_color.b, 1.f);
     }
 }

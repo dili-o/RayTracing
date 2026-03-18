@@ -103,12 +103,12 @@ struct alignas(16) TriangleGPU {
     material_index(mat.index),
     material_type(mat.type) {}
 
-  Vec3 v0; f32 pad_0; // 16
-  Vec3 v1; f32 pad_1; // 16
-  Vec3 v2; f32 pad_2; // 16
-  Vec3 n0; f32 pad_3; // 16
-  Vec3 n1; f32 pad_4; // 16
-  Vec3 n2; f32 pad_5; // 16
+  Vec3 v0; f32 pad_0{0.f}; // 16
+  Vec3 v1; f32 pad_1{0.f}; // 16
+  Vec3 v2; f32 pad_2{0.f}; // 16
+  Vec3 n0; f32 pad_3{0.f}; // 16
+  Vec3 n1; f32 pad_4{0.f}; // 16
+  Vec3 n2; f32 pad_5{0.f}; // 16
   Vec2 uv_0; //
   Vec2 uv_1; // 16
 

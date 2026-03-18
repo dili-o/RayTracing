@@ -10,12 +10,13 @@
 #endif
 
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__)
+#define WIN32_LEAN_AND_MEAN
 #define HLX_PLATFORM_WINDOWS 1
-#define HLX_PLATFORM_SDL3 1
 #define NOMINMAX
 #ifndef _WIN64
 #error "64-bit is required on Windows"
 #endif // _WIN64
+#define HLX_PLATFORM_SDL3 1
 
 #else
 #error "Unsupported Platform!"
@@ -63,6 +64,8 @@ typedef float f32;
 typedef double f64;
 
 typedef const char *cstring;
+
+typedef wchar_t wchar;
 
 static const u64 u64_max = UINT64_MAX;
 static const i64 i64_max = INT64_MAX;

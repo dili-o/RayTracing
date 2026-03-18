@@ -14,20 +14,23 @@ struct Vertex {
   Vec3 normal;
   Vec2 texcoord;
 
-  bool operator==(const Vertex& other) const {
-		return position == other.position && normal == other.normal && texcoord == other.texcoord;
-	}
+  bool operator==(const Vertex &other) const {
+    return position == other.position && normal == other.normal &&
+           texcoord == other.texcoord;
+  }
 };
 
 namespace std {
-	template<> struct hash<Vertex> {
-		size_t operator()(Vertex const& vertex) const {
-      return ((hash<Vec3>()(vertex.position) ^
-                   (hash<Vec3>()(vertex.normal) << 1)) >> 1) ^
-                   (hash<Vec2>()(vertex.texcoord) << 1);;
-		}
-	};
-}
+template <> struct hash<Vertex> {
+  size_t operator()(Vertex const &vertex) const {
+    return ((hash<Vec3>()(vertex.position) ^
+             (hash<Vec3>()(vertex.normal) << 1)) >>
+            1) ^
+           (hash<Vec2>()(vertex.texcoord) << 1);
+    ;
+  }
+};
+} // namespace std
 
 static MaterialHandle default_material;
 
@@ -42,24 +45,26 @@ void load_obj_model(Renderer *renderer, const std::string &model_path) {
   fs::path model_parent_path = fs::path(model_path).parent_path();
   fs::current_path(model_parent_path);
 
-  if (!tinyobj::LoadObj(&attrib, &obj_shapes, &obj_materials, &warn, &err, model_path.c_str())) {
+  if (!tinyobj::LoadObj(&attrib, &obj_shapes, &obj_materials, &warn, &err,
+                        model_path.c_str())) {
     throw std::runtime_error(err);
   }
   if (!warn.empty()) {
     HWARN("tinyobj: {}", warn.c_str());
   }
-  
+
   // Load model materials
   std::vector<MaterialHandle> model_mats;
   model_mats.resize(obj_materials.size());
   for (size_t i = 0; i < obj_materials.size(); ++i) {
     const auto &mat = obj_materials[i];
     if (!mat.diffuse_texname.empty()) {
-      std::string img_path = model_parent_path.string() + "/" +
-         mat.diffuse_texname;
+      std::string img_path =
+          model_parent_path.string() + "/" + mat.diffuse_texname;
       model_mats[i] = renderer->add_lambert_material(img_path);
     } else {
-      model_mats[i] = renderer->add_lambert_material(Color(mat.diffuse[0], mat.diffuse[1], mat.diffuse[2]));
+      model_mats[i] = renderer->add_lambert_material(
+          Color(mat.diffuse[0], mat.diffuse[1], mat.diffuse[2]));
     }
   }
   fs::current_path(old_dir);
@@ -68,42 +73,34 @@ void load_obj_model(Renderer *renderer, const std::string &model_path) {
   std::vector<Vertex> vertices;
   std::unordered_map<Vertex, u32> uniqueVertices;
 
-  for (const auto& shape : obj_shapes) {
+  for (const auto &shape : obj_shapes) {
     const auto &mat_ids = shape.mesh.material_ids;
     size_t old_indices_size = obj_indices.size();
-    for (const auto& index : shape.mesh.indices) {
+    for (const auto &index : shape.mesh.indices) {
       Vertex vertex{};
 
-      vertex.position = {
-        attrib.vertices[3 * index.vertex_index + 0],
-        attrib.vertices[3 * index.vertex_index + 1],
-        attrib.vertices[3 * index.vertex_index + 2]
-      };
+      vertex.position = {attrib.vertices[3 * index.vertex_index + 0],
+                         attrib.vertices[3 * index.vertex_index + 1],
+                         attrib.vertices[3 * index.vertex_index + 2]};
 
       // Tex Coords
       if (index.texcoord_index == -1) {
-        vertex.texcoord = { 0.f, 0.f };
+        vertex.texcoord = {0.f, 0.f};
+      } else {
+        vertex.texcoord = {attrib.texcoords[2 * index.texcoord_index + 0],
+                           1.0f -
+                               attrib.texcoords[2 * index.texcoord_index + 1]};
       }
-      else {
-        vertex.texcoord = {
-          attrib.texcoords[2 * index.texcoord_index + 0],
-          1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
-        };
-      }
-      
+
       // Normals
       if (index.normal_index != -1) {
-        vertex.normal = {
-          attrib.normals[3 * index.normal_index + 0],
-          attrib.normals[3 * index.normal_index + 1],
-          attrib.normals[3 * index.normal_index + 2]
-        };
+        vertex.normal = {attrib.normals[3 * index.normal_index + 0],
+                         attrib.normals[3 * index.normal_index + 1],
+                         attrib.normals[3 * index.normal_index + 2]};
       } else {
-        vertex.normal = {
-          std::numeric_limits<f32>::max(),
-          std::numeric_limits<f32>::max(),
-          std::numeric_limits<f32>::max()
-        };
+        vertex.normal = {std::numeric_limits<f32>::max(),
+                         std::numeric_limits<f32>::max(),
+                         std::numeric_limits<f32>::max()};
       }
 
       if (uniqueVertices.count(vertex) == 0) {
@@ -114,36 +111,37 @@ void load_obj_model(Renderer *renderer, const std::string &model_path) {
       obj_indices.push_back(uniqueVertices[vertex]);
     }
 
-    for (size_t idx = old_indices_size, mat_id = 0; idx < obj_indices.size(); idx += 3, ++mat_id) {
+    for (size_t idx = old_indices_size, mat_id = 0; idx < obj_indices.size();
+         idx += 3, ++mat_id) {
       const Vertex &v0 = vertices[obj_indices[idx]];
       const Vertex &v1 = vertices[obj_indices[idx + 1]];
       const Vertex &v2 = vertices[obj_indices[idx + 2]];
-      MaterialHandle material; 
+      MaterialHandle material;
       if (model_mats.size()) {
         material = mat_ids[mat_id] == -1 ? default_material
                                          : model_mats[mat_ids[mat_id]];
       } else {
         material = default_material;
       }
-      renderer->add_triangle(v0.position, v1.position, v2.position,
-                           v0.normal, v1.normal, v2.normal,
-                             v0.texcoord, v1.texcoord, v2.texcoord,
-                             material);
+      renderer->add_triangle(v0.position, v1.position, v2.position, v0.normal,
+                             v1.normal, v2.normal, v0.texcoord, v1.texcoord,
+                             v2.texcoord, material);
     }
   }
 }
 
-void load_default_scene(Renderer* renderer) {
+void load_default_scene(Renderer *renderer) {
   HASSERT(renderer);
   // TODO:
 }
 
-bool load_scene(const fs::path &scene_path, Renderer* renderer) {
+bool load_scene(const fs::path &scene_path, Renderer *renderer) {
   if (!fs::exists(scene_path)) {
-    HERROR("Error: JSON file not found at path: {}", scene_path.string().c_str());
+    HERROR("Error: JSON file not found at path: {}",
+           scene_path.string().c_str());
     return false;
   }
-	fs::path scene_parent_path = fs::path(scene_path).parent_path();
+  fs::path scene_parent_path = fs::path(scene_path).parent_path();
   using namespace simdjson;
   ondemand::parser parser;
   padded_string json = padded_string::load(scene_path.string());
@@ -172,7 +170,8 @@ bool load_scene(const fs::path &scene_path, Renderer* renderer) {
   renderer->defocus_angle = camera["defocus_angle"].get_double().value();
   renderer->focus_dist = camera["focus_dist"].get_double().value();
 
-  i32 screen_width = static_cast<i32>(camera["screen_width"].get_int64().value());
+  i32 screen_width =
+      static_cast<i32>(camera["screen_width"].get_int64().value());
   real aspect_ratio = camera["aspect_ratio"].get_double().value();
   i32 samples_per_pixel = camera["samples_per_pixel"].get_int64().value();
   i32 max_depth = camera["max_depth"].get_int64().value();
@@ -187,8 +186,9 @@ bool load_scene(const fs::path &scene_path, Renderer* renderer) {
     ondemand::array models = scene["models"];
     for (ondemand::object model : models) {
       u32 triangle_offset = renderer->get_triangle_count();
-      std::string model_path = scene_parent_path.string() + "/" +
-                               std::string(model["model_path"].get_string().value());
+      std::string model_path =
+          scene_parent_path.string() + "/" +
+          std::string(model["model_path"].get_string().value());
       load_obj_model(renderer, model_path);
 
       Mat4 transform = Mat4::identity();
@@ -203,24 +203,31 @@ bool load_scene(const fs::path &scene_path, Renderer* renderer) {
         std::vector<f32> value;
         value.reserve(4);
         ondemand::array rotation = model["rotation"];
-        for (auto v : rotation) value.push_back(static_cast<f32>(v.get_double().value()));
+        for (auto v : rotation)
+          value.push_back(static_cast<f32>(v.get_double().value()));
 
-        transform = Mat4::rotate(value[0], value[1], value[2], degrees_to_radians(value[3])) * transform;
+        transform = Mat4::rotate(value[0], value[1], value[2],
+                                 degrees_to_radians(value[3])) *
+                    transform;
       }
       auto translation_field = model["translation"];
       if (translation_field.error() != NO_SUCH_FIELD) {
         std::vector<f32> value;
         value.reserve(3);
         ondemand::array translation = model["translation"];
-        for (auto v : translation) value.push_back(static_cast<f32>(v.get_double().value()));
+        for (auto v : translation)
+          value.push_back(static_cast<f32>(v.get_double().value()));
 
         transform = Mat4::translate({value[0], value[1], value[2]}) * transform;
       }
-      renderer->add_mesh(triangle_offset, renderer->get_triangle_count() - triangle_offset, transform);
+      renderer->add_mesh(triangle_offset,
+                         renderer->get_triangle_count() - triangle_offset,
+                         transform);
     }
   }
 
-  renderer->init(screen_width, aspect_ratio, samples_per_pixel, max_depth, vfov_deg);
+  renderer->init(screen_width, aspect_ratio, samples_per_pixel, max_depth,
+                 vfov_deg);
 
   return true;
 }

@@ -1,231 +1,251 @@
-#include "VkStagingBuffer.hpp"
+#include "VkStagingBuffer.h"
 #include "Core/Assert.hpp"
-#include "Core/Log.hpp"
-#include "Vulkan/VulkanTypes.hpp"
+#include "PCH.h"
+#include "VkDeviceManager.h"
+#include "VkErr.h"
+#include "VkResourceManager.hpp"
 
 namespace hlx {
 
-void VkStagingBuffer::Shutdown() {
-  if (pCtx == nullptr) {
+void VkStagingBuffer::shutdown() {
+  if (!p_device) {
     return;
   }
 
-  vkDestroyCommandPool(pCtx->vkDevice, vkCommandPool, nullptr);
-  vmaDestroyBuffer(pCtx->vmaAllocator, buffer.vkHandle, buffer.vmaAllocation);
+  vkDestroyCommandPool(p_device->vk_device, vk_command_pool, nullptr);
 
-  pCtx = nullptr;
-  vkCommandPool = VK_NULL_HANDLE;
-  vkCommandBuffer = VK_NULL_HANDLE;
+  p_resource_manager->queue_destroy({buffer_handle, 0});
+
+  p_device = nullptr;
+  p_resource_manager = nullptr;
+  vk_command_pool = VK_NULL_HANDLE;
+  vk_command_buffer = VK_NULL_HANDLE;
   capacity = 0;
-  currentSize = 0;
-  isRecording = false;
+  current_size = 0;
+  is_recording = false;
 }
 
-void VkStagingBuffer::Begin() {
-  if (isRecording)
+void VkStagingBuffer::begin() {
+  if (is_recording)
     return;
-  VkCommandBufferBeginInfo beginInfo{
+  VkCommandBufferBeginInfo begin_info{
       VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
-  beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+  begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
-  VK_CHECK(vkBeginCommandBuffer(vkCommandBuffer, &beginInfo));
-  isRecording = true;
+  VK_CHECK(vkBeginCommandBuffer(vk_command_buffer, &begin_info));
+  is_recording = true;
 }
 
-void VkStagingBuffer::End() {
-  if (!isRecording)
+void VkStagingBuffer::end() {
+  if (!is_recording)
     return;
 
-  VK_CHECK(vkEndCommandBuffer(vkCommandBuffer));
+  VK_CHECK(vkEndCommandBuffer(vk_command_buffer));
 
-  isRecording = false;
+  is_recording = false;
 }
 
-void VkStagingBuffer::Initialize(const VkContext *pVkContext, size_t size) {
-  HASSERT(pVkContext);
-  if (buffer.vkHandle != VK_NULL_HANDLE) {
-    HWARN("VkStagingBuffer has already been initialized!");
+void VkStagingBuffer::init(VkDeviceManager *p_device,
+                           VkResourceManager *p_manager, u32 queue_family_index,
+                           VkQueue vk_queue, size_t size) {
+  HASSERT(p_device);
+  HASSERT(p_manager);
+  if (p_manager->access_buffer(buffer_handle)) {
+    std::printf("VkStagingBuffer has already been initialized!\n");
     return;
   }
 
-  util::CreateVmaBuffer(pVkContext->vmaAllocator, pVkContext->vkDevice, buffer,
-                        size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                        VMA_MEMORY_USAGE_CPU_TO_GPU,
-                        VMA_ALLOCATION_CREATE_MAPPED_BIT,
-                        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+  this->p_device = p_device;
+  this->p_resource_manager = p_manager;
+  this->vk_queue = vk_queue;
 
-  pCtx = pVkContext;
+  VkBufferCreateInfo buffer_info{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+  buffer_info.size = size;
+  buffer_info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+  buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-  VkCommandPoolCreateInfo commandPoolCreateInfo{
+  VmaAllocationCreateInfo vma_info{};
+  vma_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                           VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+  vma_info.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+  buffer_handle =
+      p_resource_manager->create_buffer("StagingBuffer", buffer_info, vma_info);
+
+  VkCommandPoolCreateInfo command_pool_create_info{
       VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
-  commandPoolCreateInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-  commandPoolCreateInfo.queueFamilyIndex =
-      pVkContext->queueFamilyIndices.transferFamilyIndex.value();
-  VK_CHECK(vkCreateCommandPool(pCtx->vkDevice, &commandPoolCreateInfo, nullptr,
-                               &vkCommandPool));
+  command_pool_create_info.flags =
+      VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+  command_pool_create_info.queueFamilyIndex = queue_family_index;
+  VK_CHECK(vkCreateCommandPool(p_device->vk_device, &command_pool_create_info,
+                               nullptr, &vk_command_pool));
 
-  VkCommandBufferAllocateInfo cbAllocInfo{
+  VkCommandBufferAllocateInfo cb_alloc_info{
       VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
-  cbAllocInfo.commandPool = vkCommandPool;
-  cbAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-  cbAllocInfo.commandBufferCount = 1;
-  VK_CHECK(
-      vkAllocateCommandBuffers(pCtx->vkDevice, &cbAllocInfo, &vkCommandBuffer));
+  cb_alloc_info.commandPool = vk_command_pool;
+  cb_alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+  cb_alloc_info.commandBufferCount = 1;
+  VK_CHECK(vkAllocateCommandBuffers(p_device->vk_device, &cb_alloc_info,
+                                    &vk_command_buffer));
 
   capacity = size;
 }
 
-void VkStagingBuffer::StageBuffer(const void *pData,
-                                  const VulkanBuffer *pDstBuffer,
-                                  size_t dstOffset, size_t size) {
+void VkStagingBuffer::stage(const void *p_data, BufferHandle dst_buffer_handle,
+                            size_t dst_offset, size_t size) {
   if (size == 0)
     return;
 
-  Begin();
+  begin();
 
   // Data to transfer cannot fit inside the staging buffer
-  if ((currentSize + size) > capacity) {
-    const size_t remainingSize = capacity - currentSize;
-    StageBuffer(pData, pDstBuffer, dstOffset, remainingSize);
-    Flush();
-
-    dstOffset += remainingSize;
-    size -= remainingSize;
-
-    const u8 *pRemainingData = static_cast<const u8 *>(pData) + remainingSize;
-
-    StageBuffer(pRemainingData, pDstBuffer, dstOffset, size);
+  if ((current_size + size) > capacity) {
+    const size_t remaining_size = capacity - current_size;
+    stage(p_data, dst_buffer_handle, dst_offset, remaining_size);
+    flush();
+    dst_offset += remaining_size;
+    size -= remaining_size;
+    const u8 *p_remaining_data =
+        static_cast<const u8 *>(p_data) + remaining_size;
+    stage(p_remaining_data, dst_buffer_handle, dst_offset, size);
   } else {
-    std::memcpy(static_cast<u8 *>(buffer.pMappedData) + currentSize, pData,
-                size);
+    VulkanBuffer *buffer = p_resource_manager->access_buffer(buffer_handle);
+    VulkanBuffer *dst_buffer =
+        p_resource_manager->access_buffer(dst_buffer_handle);
+    std::memcpy(static_cast<u8 *>(buffer->p_data) + current_size, p_data, size);
 
     VkBufferCopy2 region{VK_STRUCTURE_TYPE_BUFFER_COPY_2};
-    region.srcOffset = currentSize;
-    region.dstOffset = dstOffset;
+    region.srcOffset = current_size;
+    region.dstOffset = dst_offset;
     region.size = size;
 
-    VkCopyBufferInfo2 bufferInfo{VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2};
-    bufferInfo.srcBuffer = buffer.vkHandle;
-    bufferInfo.dstBuffer = pDstBuffer->vkHandle;
-    bufferInfo.regionCount = 1;
-    bufferInfo.pRegions = &region;
+    VkCopyBufferInfo2 buffer_info{VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2};
+    buffer_info.srcBuffer = buffer->vk_handle;
+    buffer_info.dstBuffer = dst_buffer->vk_handle;
+    buffer_info.regionCount = 1;
+    buffer_info.pRegions = &region;
 
-    vkCmdCopyBuffer2(vkCommandBuffer, &bufferInfo);
+    vkCmdCopyBuffer2(vk_command_buffer, &buffer_info);
 
-    currentSize += size;
+    current_size += size;
   }
 }
 
-void VkStagingBuffer::StageImage(const void *pData, const VulkanImage *pImage,
-                                 const size_t size, size_t alignment) {
-  Begin();
+void VkStagingBuffer::stage(const void *p_data,
+                            ImageViewHandle image_view_handle, size_t size,
+                            size_t alignment) {
+  begin();
 
   // Align Up
-  currentSize = (currentSize + alignment - 1) & ~(alignment - 1);
+  current_size = (current_size + alignment - 1) & ~(alignment - 1);
 
-  if ((currentSize + size) > capacity) {
-    if (size > capacity) {
-      HCRITICAL("VkStagingBuffer::StageImage - Image size ({}) exceeds buffer "
-                "capacity ({})",
-                size, capacity);
-    } else {
-      Flush();
-      StageImage(pData, pImage, size);
-      return;
-    }
-  }
-
-  std::memcpy(static_cast<u8 *>(buffer.pMappedData) + currentSize, pData, size);
-
-  // Transition image to transfer dst
-  VkImageMemoryBarrier2 imageBarrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
-  imageBarrier.srcStageMask = VK_PIPELINE_STAGE_2_NONE;
-  imageBarrier.srcAccessMask = VK_ACCESS_2_NONE;
-  imageBarrier.dstStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
-  imageBarrier.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-  imageBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-  imageBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-  imageBarrier.image = pImage->vkHandle;
-  imageBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-  imageBarrier.subresourceRange.baseMipLevel = 0;
-  imageBarrier.subresourceRange.levelCount = pImage->mipCount;
-  imageBarrier.subresourceRange.baseArrayLayer = 0;
-  imageBarrier.subresourceRange.layerCount = 1;
-
-  VkDependencyInfo dependencyInfo{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
-  dependencyInfo.dependencyFlags = 0;
-  dependencyInfo.imageMemoryBarrierCount = 1;
-  dependencyInfo.pImageMemoryBarriers = &imageBarrier;
-
-  vkCmdPipelineBarrier2(vkCommandBuffer, &dependencyInfo);
-
-  VkBufferImageCopy2 region{VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2};
-  region.bufferOffset = currentSize;
-  region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-  region.imageSubresource.mipLevel = 0;
-  region.imageSubresource.baseArrayLayer = 0;
-  region.imageSubresource.layerCount = 1;
-  region.imageOffset = {0, 0, 0};
-  region.imageExtent = {pImage->vkExtents.width, pImage->vkExtents.height, 1};
-
-  VkCopyBufferToImageInfo2 bufferImageInfo{
-      VK_STRUCTURE_TYPE_COPY_BUFFER_TO_IMAGE_INFO_2};
-  bufferImageInfo.srcBuffer = buffer.vkHandle;
-  bufferImageInfo.dstImage = pImage->vkHandle;
-  bufferImageInfo.dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-  bufferImageInfo.regionCount = 1;
-  bufferImageInfo.pRegions = &region;
-  vkCmdCopyBufferToImage2(vkCommandBuffer, &bufferImageInfo);
-
-  // Transition image to shader read only
-  imageBarrier.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
-  imageBarrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-  imageBarrier.dstStageMask = VK_PIPELINE_STAGE_2_NONE;
-  imageBarrier.dstAccessMask = VK_ACCESS_2_NONE;
-  imageBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-  imageBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-  vkCmdPipelineBarrier2(vkCommandBuffer, &dependencyInfo);
-
-  currentSize += size;
-}
-
-void VkStagingBuffer::CopyData(const void *pData, size_t size,
-                               size_t alignment) {
-  // Align Up
-  currentSize = (currentSize + alignment - 1) & ~(alignment - 1);
-
-  if ((currentSize + size) > capacity) {
+  if ((current_size + size) > capacity) {
     if (size > capacity) {
       throw std::out_of_range(
           "VkStagingBuffer::Stage - Data size (" + std::to_string(size) +
           ") exceeds buffer capacity (" + std::to_string(capacity) + ")");
     } else {
-      Flush();
+      flush();
+      stage(p_data, image_view_handle, size);
+      return;
     }
   }
 
-  Begin();
+  VulkanBuffer *buffer = p_resource_manager->access_buffer(buffer_handle);
+  std::memcpy(static_cast<u8 *>(buffer->p_data) + current_size, p_data, size);
 
-  std::memcpy(static_cast<u8 *>(buffer.pMappedData) + currentSize, pData, size);
+  // Transition image to transfer dst
+  VulkanImageView *image_view =
+      p_resource_manager->access_image_view(image_view_handle);
+  VulkanImage *image =
+      p_resource_manager->access_image(image_view->image_handle);
+  VkImageMemoryBarrier2 image_barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+  image_barrier.srcStageMask = VK_PIPELINE_STAGE_2_NONE;
+  image_barrier.srcAccessMask = VK_ACCESS_2_NONE;
+  image_barrier.dstStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+  image_barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+  image_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+  image_barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+  image_barrier.image = image->vk_handle;
+  image_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  image_barrier.subresourceRange.baseMipLevel = image_view->base_level;
+  image_barrier.subresourceRange.levelCount = image_view->level_count;
+  image_barrier.subresourceRange.baseArrayLayer = image_view->base_layer;
+  image_barrier.subresourceRange.layerCount = image_view->layer_count;
 
-  currentSize += size;
+  VkDependencyInfo dependency_info{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+  dependency_info.dependencyFlags = 0;
+  dependency_info.imageMemoryBarrierCount = 1;
+  dependency_info.pImageMemoryBarriers = &image_barrier;
+
+  vkCmdPipelineBarrier2(vk_command_buffer, &dependency_info);
+
+  VkBufferImageCopy2 region{VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2};
+  region.bufferOffset = current_size;
+  region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  region.imageSubresource.mipLevel = 0;
+  region.imageSubresource.baseArrayLayer = 0;
+  region.imageSubresource.layerCount = 1;
+  region.imageOffset = {0, 0, 0};
+  region.imageExtent = {image->width(), image->height(), 1};
+
+  VkCopyBufferToImageInfo2 buffer_image_info{
+      VK_STRUCTURE_TYPE_COPY_BUFFER_TO_IMAGE_INFO_2};
+  buffer_image_info.srcBuffer = buffer->vk_handle;
+  buffer_image_info.dstImage = image->vk_handle;
+  buffer_image_info.dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+  buffer_image_info.regionCount = 1;
+  buffer_image_info.pRegions = &region;
+  vkCmdCopyBufferToImage2(vk_command_buffer, &buffer_image_info);
+
+  // Transition image to shader read only
+  image_barrier.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+  image_barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+  image_barrier.dstStageMask = VK_PIPELINE_STAGE_2_NONE;
+  image_barrier.dstAccessMask = VK_ACCESS_2_NONE;
+  image_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+  image_barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+  vkCmdPipelineBarrier2(vk_command_buffer, &dependency_info);
+
+  current_size += size;
 }
 
-void VkStagingBuffer::Flush() {
-  End();
+void VkStagingBuffer::copy_data(const void *p_data, size_t size,
+                                size_t alignment) {
+  // Align Up
+  current_size = (current_size + alignment - 1) & ~(alignment - 1);
 
-  VkCommandBufferSubmitInfo commandSubmitInfo{
+  if ((current_size + size) > capacity) {
+    if (size > capacity) {
+      throw std::out_of_range(
+          "VkStagingBuffer::Stage - Data size (" + std::to_string(size) +
+          ") exceeds buffer capacity (" + std::to_string(capacity) + ")");
+    } else {
+      flush();
+    }
+  }
+
+  begin();
+
+  VulkanBuffer *buffer = p_resource_manager->access_buffer(buffer_handle);
+  std::memcpy(static_cast<u8 *>(buffer->p_data) + current_size, p_data, size);
+
+  current_size += size;
+}
+
+void VkStagingBuffer::flush() {
+  end();
+
+  VkCommandBufferSubmitInfo command_submit_info{
       VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO};
-  commandSubmitInfo.commandBuffer = vkCommandBuffer;
+  command_submit_info.commandBuffer = vk_command_buffer;
 
-  VkSubmitInfo2 submitInfo{VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
-  submitInfo.commandBufferInfoCount = 1;
-  submitInfo.pCommandBufferInfos = &commandSubmitInfo;
+  VkSubmitInfo2 submit_info{VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
+  submit_info.commandBufferInfoCount = 1;
+  submit_info.pCommandBufferInfos = &command_submit_info;
 
-  vkQueueSubmit2(pCtx->vkTransferQueue, 1, &submitInfo, VK_NULL_HANDLE);
-  vkQueueWaitIdle(pCtx->vkTransferQueue);
+  vkQueueSubmit2(vk_queue, 1, &submit_info, VK_NULL_HANDLE);
+  vkQueueWaitIdle(vk_queue);
 
-  currentSize = 0;
+  current_size = 0;
 }
 } // namespace hlx

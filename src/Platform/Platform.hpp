@@ -8,14 +8,14 @@ struct PlatformConfiguration {
   cstring name;
 }; // struct WindowConfiguration
 
-struct VkGpuDevice;
+struct VkDeviceManager;
 
 struct HLX_API Platform {
   static void init(const PlatformConfiguration &config);
   static void shutdown();
   static void *get_platform_handle();
   static bool is_suspended();
-  // static bool create_vulkan_surface(VkGpuDevice *device);
+  static bool create_vulkan_surface(VkDeviceManager *device);
   static const char *const *get_vulkan_extension_names(u32 *count);
   static void handle_os_messages();
   static f64 get_absolute_time_s();

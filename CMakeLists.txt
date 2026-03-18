@@ -57,13 +57,15 @@ target_include_directories(${PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/
 target_include_directories(${PROJECT_NAME} PRIVATE "Src/")
 target_include_directories(${PROJECT_NAME} PRIVATE "${SPIRV_REFLECT_INCLUDE_DIR}/")
 target_include_directories(${PROJECT_NAME} PRIVATE "Vendor/")
-
 # Set output directory to Bin/Engine
 set_target_properties(${PROJECT_NAME} PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/Bin/$<CONFIG>/${PROJECT_NAME}"
     ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/Bin/$<CONFIG>/${PROJECT_NAME}"
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/Bin/$<CONFIG>/${PROJECT_NAME}"
 )
+# PCH
+target_precompile_headers(${PROJECT_NAME} PRIVATE
+  "$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_CURRENT_SOURCE_DIR}/Src/PCH.h>")
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE
     $<$<CONFIG:DEBUG>:_DEBUG>
@@ -72,6 +74,8 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
     _UNICODE
     VEXPORT
     _CRT_SECURE_NO_WARNINGS
+    VK_NO_PROTOTYPES
+    MAX_FRAMES_IN_FLIGHT=2
 )
 
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD

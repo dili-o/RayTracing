@@ -1,30 +1,32 @@
 #pragma once
 #include "Material.hpp"
 #include "TLAS.hpp"
+#include "Vulkan/VkDeviceManager.h"
+#include "Vulkan/VkResourceManager.hpp"
+#include "Vulkan/VkStagingBuffer.h"
 
 class Renderer {
 public:
-  virtual void render(u8 *out_pixels) = 0;
-  virtual MaterialHandle add_lambert_material(const Vec3 &albedo) = 0;
-  virtual MaterialHandle add_lambert_material(const std::string& filename) = 0;
-  virtual MaterialHandle add_metal_material(const Vec3 &albedo,
-                                            real fuzziness) = 0;
-  virtual MaterialHandle add_dielectric_material(real refraction_index) = 0;
-  virtual void add_triangle(const Vec3 &v0, const Vec3 &v1, const Vec3 &v2,
-														const Vec3 &n0, const Vec3 &n1, const Vec3 &n2,
-														Vec2 uv_0, Vec2 uv_1, Vec2 uv_2,
-														MaterialHandle mat_handle) = 0;
-  virtual u32 get_triangle_count() = 0;
-  virtual void add_mesh(u32 triangles_offset, u32 triangle_count, const Mat4 &transform) = 0;
-
-  virtual void init(u32 image_width_, real aspect_ratio_,
-                    u32 samples_per_pixel_, u32 max_depth_, real vfov_deg_) = 0;
+  void render(u64 frame_number);
+  MaterialHandle add_lambert_material(const Vec3 &albedo);
+  MaterialHandle add_lambert_material(const std::string &filename);
+  MaterialHandle add_metal_material(const Vec3 &albedo, real fuzziness);
+  MaterialHandle add_dielectric_material(real refraction_index);
+  void add_triangle(const Vec3 &v0, const Vec3 &v1, const Vec3 &v2,
+                    const Vec3 &n0, const Vec3 &n1, const Vec3 &n2, Vec2 uv_0,
+                    Vec2 uv_1, Vec2 uv_2, MaterialHandle mat_handle);
+  u32 get_triangle_count();
+  void add_mesh(u32 triangles_offset, u32 triangle_count,
+                const Mat4 &transform);
+  void init(u32 image_width_, real aspect_ratio_, u32 samples_per_pixel_,
+            u32 max_depth_, real vfov_deg_);
+  void shutdown();
 
 public:
   real aspect_ratio;
   u32 max_depth;
-  u32 image_width;
-  u32 image_height;
+  i32 image_width;
+  i32 image_height;
   Point3 center;      // camera center
   Point3 pixel00_loc; // Location of pixel 0, 0
   Vec3 pixel_delta_u; // Offset to pixel to the right
@@ -44,115 +46,10 @@ public:
   bool show_image;     // Open the image after rendering
 
   std::vector<u32> tri_ids;
-protected:
-  void initialize_camera(u32 image_width_, real aspect_ratio_,
-                         u32 samples_per_pixel_, u32 max_depth_,
-                         real vfov_deg_) {
-    image_width = image_width_;
-    aspect_ratio = aspect_ratio_;
-    samples_per_pixel = samples_per_pixel_;
-    image_height = u32(image_width / aspect_ratio);
-    image_height = (image_height < 1) ? 1 : image_height;
-    max_depth = max_depth_;
-    vfov = vfov_deg_;
 
-    pixel_samples_scale = 1.f / samples_per_pixel;
-
-    // Determine viewport dimensions.
-    real theta = degrees_to_radians(vfov);
-    real h = std::tan(theta / 2.f);
-    real viewport_height = 2.f * h * focus_dist;
-    real viewport_width = viewport_height * (real(image_width) / image_height);
-
-    // Calculate the u,v,w unit basis vectors for the camera coordinate frame.
-    w = unit_vector(center - lookat);
-    u = unit_vector(cross(vup, w));
-    v = cross(w, u);
-
-    // Calculate the vectors across the horizontal and down the vertical
-    // viewport edges.
-    Vec3 viewport_u =
-        viewport_width * u; // Vector across viewport horizontal edge
-    Vec3 viewport_v =
-        viewport_height * -v; // Vector down viewport vertical edge
-
-    // Calculate the horizontal and vertical delta vectors from pixel to pixel.
-    pixel_delta_u = viewport_u / (real)image_width;
-    pixel_delta_v = viewport_v / (real)image_height;
-
-    // Calculate the location of the upper left pixel.
-    Vec3 viewport_upper_left =
-        center - (focus_dist * w) - viewport_u / 2.f - viewport_v / 2.f;
-    pixel00_loc = viewport_upper_left + 0.5f * (pixel_delta_u + pixel_delta_v);
-
-    // Calculate the camera defocus disk basis vectors.
-    real defocus_radius =
-        focus_dist * std::tan(degrees_to_radians(defocus_angle / 2.f));
-    defocus_disk_u = u * defocus_radius;
-    defocus_disk_v = v * defocus_radius;
-  }
-protected:
-  std::vector<BVH> bvhs;
-  TLAS tlas;
-};
-
-class RendererCPU final : public Renderer {
 public:
-  void init(u32 image_width_, real aspect_ratio_, u32 samples_per_pixel_,
-            u32 max_depth_, real vfov_deg_) override;
-
-  ~RendererCPU();
-
-  void render(u8 *out_pixels) override;
-  MaterialHandle add_lambert_material(const Vec3 &albedo) override;
-  MaterialHandle add_lambert_material(const std::string &filename) override;
-  MaterialHandle add_metal_material(const Vec3 &albedo,
-                                    real fuzziness) override;
-  MaterialHandle add_dielectric_material(real refraction_index) override;
-  void add_triangle(const Vec3 &v0, const Vec3 &v1, const Vec3 &v2,
-														const Vec3 &n0, const Vec3 &n1, const Vec3 &n2,
-														Vec2 uv_0, Vec2 uv_1, Vec2 uv_2,
-														MaterialHandle mat_handle) override;
-  u32 get_triangle_count() override;
-  void add_mesh(u32 triangles_offset, u32 triangle_count, const Mat4 &transform) override;
-
-private:
-  Color ray_color(const Ray &r, u32 depth) ;
-  Vec3 sample_square() const;
-  Point3 defocus_disk_sample() const;
-  Ray get_ray(i32 i, i32 j) const;
-  std::shared_ptr<Material> get_material(MaterialHandle handle);
-
-private:
-  std::vector<Triangle> triangles;
-  std::vector<Vec3> tri_centroids;
-  std::vector<std::shared_ptr<Lambertian>> lambert_mats;
-  std::vector<std::shared_ptr<Metal>> metal_mats;
-  std::vector<std::shared_ptr<Dielectric>> dielectric_mats;
-};
-
-class RendererVk final : public Renderer {
-public:
-  ~RendererVk();
-
-  void init(u32 image_width_, real aspect_ratio_, u32 samples_per_pixel_,
-            u32 max_depth_, real vfov_deg_) override;
-
-  void render(u8 *out_pixels) override;
-  MaterialHandle add_lambert_material(const Vec3 &albedo) override;
-  MaterialHandle add_lambert_material(const std::string &filename) override;
-  MaterialHandle add_metal_material(const Vec3 &albedo,
-                                    real fuzziness) override;
-  MaterialHandle add_dielectric_material(real refraction_index) override;
-  void add_triangle(const Vec3 &v0, const Vec3 &v1, const Vec3 &v2,
-														const Vec3 &n0, const Vec3 &n1, const Vec3 &n2,
-														Vec2 uv_0, Vec2 uv_1, Vec2 uv_2,
-														MaterialHandle mat_handle) override;
-  u32 get_triangle_count() override;
-  void add_mesh(u32 triangles_offset, u32 triangle_count, const Mat4 &transform) override;
-
-private:
-  std::vector<Image> images;
+  hlx::VkStagingBuffer staging_buffer;
+  bool reset_accumulation{true};
   std::vector<GpuLambert> lambert_mats;
   std::vector<GpuMetal> metal_mats;
   std::vector<GpuDielectric> dielectric_mats;
@@ -160,4 +57,36 @@ private:
   std::vector<Vec3> tri_centroids;
   std::vector<BVH_GPU> bvhs_gpu;
   u32 bvh_nodes_size = 0;
+  hlx::VkDeviceManager *p_device{nullptr};
+  hlx::VkResourceManager *p_resource_manager{nullptr};
+  hlx::ImageViewHandle final_image_view{};
+  hlx::BufferHandle image_buffer{};
+  hlx::ShaderHandle comp_shader_module;
+  hlx::PipelineHandle path_tracing_pipeline_handle{};
+  hlx::BufferHandle triangles_buffer{};
+  hlx::BufferHandle tri_ids_buffer{};
+  hlx::BufferHandle tlas_nodes_buffer{};
+  hlx::BufferHandle bvhs_buffer{};
+  hlx::BufferHandle bvh_nodes_buffer{};
+  hlx::BufferHandle lambert_buffer{};
+  hlx::BufferHandle metal_buffer{};
+  hlx::BufferHandle dielectric_buffer{};
+  hlx::BufferHandle uniform_buffer{};
+  VkDescriptorPool vk_descriptor_pool;
+  VkDescriptorPool vk_bindless_descriptor_pool;
+  hlx::SetLayoutHandle vk_scene_data_set_layout;
+  hlx::SetLayoutHandle vk_bindless_texture_set_layout;
+  VkDescriptorSet vk_scene_data_set;
+  VkDescriptorSet vk_bindless_texture_set;
+  hlx::SamplerHandle vk_sampler;
+  std::vector<hlx::ImageViewHandle> vk_image_views;
+
+protected:
+  void initialize_camera(u32 image_width_, real aspect_ratio_,
+                         u32 samples_per_pixel_, u32 max_depth_,
+                         real vfov_deg_);
+
+protected:
+  std::vector<BVH> bvhs;
+  TLAS tlas;
 };
