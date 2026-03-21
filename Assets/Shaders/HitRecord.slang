@@ -3,14 +3,14 @@
 #include "Ray.slang"
 
 struct HitRecord {
-  float3 p;       uint material_index;
-  float3 normal;  uint material_type;
+  float3 p;       
+  float3 normal; 
+  uint tri_id;
   float t;
+  bool front_face;
   float u;
   float v;
-  bool front_face;
-  uint tri_id;
-  uint bvh_id;
+  // uint bvh_id;
 
   [mutating]
   void set_face_normal(in Ray r,

@@ -1,21 +1,22 @@
 #include "PathTracer.hpp"
+#include "Camera.hpp"
+#include "Core/Clock.hpp"
 #include "Core/Event.hpp"
 #include "Core/Exceptions.hpp"
 #include "Core/Input.hpp"
 #include "Platform/Platform.hpp"
-#include "Renderer.hpp"
-#include "Scene.hpp"
 #include "Vulkan/VkPipelineStates.hpp"
 #include "Vulkan/VkResources.hpp"
 #include "Vulkan/VkShaderCompilation.h"
+#include "Vulkan/VkUtils.hpp"
 // Vendor
-#include <filesystem>
+#include <glm/vec3.hpp>
 
 namespace hlx {
 bool application_on_resize_event(u16 event_code, void *sender, void *listener,
                                  EventContext context) {
   PathTracer *app = (PathTracer *)listener;
-  app->device.reset();
+  app->resize();
   return false;
 }
 
@@ -33,15 +34,22 @@ bool application_on_event(u16 event_code, void *sender, void *listener,
 
 bool application_on_key(u16 event_code, void *sender, void *listener,
                         EventContext context) {
-  switch (event_code) {
-  case SDL_EVENT_KEY_DOWN: {
-    u16 key_code = context.data.u16[0];
-    if (key_code == SDL_SCANCODE_ESCAPE) {
+  PathTracer *app = static_cast<PathTracer *>(listener);
+  if (event_code == SDL_EVENT_KEY_DOWN) {
+    u16 scan_code = context.data.u16[0];
+    switch (scan_code) {
+    case SDL_SCANCODE_ESCAPE: {
       EventContext context{};
       EventSys::fire_event(SDL_EVENT_QUIT, 0, context);
       return true;
     }
-  } break;
+    case SDL_SCANCODE_P: {
+      app->device.set_vsync(!app->device.vsync_enabled);
+      return false;
+    }
+    default:
+      break;
+    }
   }
   return false;
 }
@@ -55,40 +63,47 @@ void PathTracer::init() {
   EventSys::register_event(SDL_EVENT_WINDOW_RESIZED, this,
                            application_on_resize_event);
   EventSys::register_event(SDL_EVENT_QUIT, this, application_on_event);
-  EventSys::register_event(SDL_EVENT_KEY_DOWN, 0, application_on_key);
-  EventSys::register_event(SDL_EVENT_KEY_UP, 0, application_on_key);
+  EventSys::register_event(SDL_EVENT_KEY_DOWN, this, application_on_key);
+  EventSys::register_event(SDL_EVENT_KEY_UP, this, application_on_key);
   device.init();
-  resource_manager.init(&device);
+  rm.init(&device);
   SlangCompiler::init();
+  renderer.init(&device, &rm, config.width, config.height);
 
   end_application = false;
 }
 
 void PathTracer::run() {
-  Renderer renderer;
-  renderer.p_resource_manager = &resource_manager;
-  renderer.p_device = &device;
-  renderer.staging_buffer.init(
-      &device, &resource_manager,
-      device.queue_family_indices.graphics_family_index.value(),
-      device.vk_graphics_queue, 100'000'000);
-  std::filesystem::path scene_path =
-      "D:/raytracing-in-one-weekend/Scenes/CubeWorld.json";
-  load_scene(scene_path, &renderer);
-
   ShaderHandle vert_shader;
   ShaderHandle frag_shader;
-  PipelineHandle full_screen;
+  PipelineHandle fullscreen_pipeline;
 
+  // Create the fullscreen pipeline sampler
+  VkSamplerCreateInfo sampler_info{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+  sampler_info.magFilter = VK_FILTER_NEAREST;
+  sampler_info.minFilter = VK_FILTER_NEAREST;
+  sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+  sampler_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+  sampler_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+  sampler_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+  sampler_info.anisotropyEnable = VK_FALSE;
+  sampler_info.compareEnable = VK_FALSE;
+  sampler_info.minLod = 0.f;
+  sampler_info.maxLod = VK_LOD_CLAMP_NONE;
+  sampler_info.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+  sampler_info.unnormalizedCoordinates = VK_FALSE;
+  fullscreen_sampler = rm.create_sampler("FullscreenSampler", sampler_info);
+
+  // Compile the fullscreen pipeline's shaders
   ShaderBlob blob;
   try {
     SlangCompiler::compile_code("vertMain", "Fullscreen",
                                 ASSETS_PATH "/Shaders/Fullscreen.slang", blob);
-    vert_shader = resource_manager.create_shader("FullscreenVert", blob);
+    vert_shader = rm.create_shader("FullscreenVert", blob);
 
     SlangCompiler::compile_code("fragMain", "Fullscreen",
                                 ASSETS_PATH "/Shaders/Fullscreen.slang", blob);
-    frag_shader = resource_manager.create_shader("FullscreenFrag", blob);
+    frag_shader = rm.create_shader("FullscreenFrag", blob);
 
   } catch (Exception exception) {
     HERROR("{}", exception.what());
@@ -104,27 +119,20 @@ void PathTracer::run() {
       VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
   layout_info.bindingCount = 1;
   layout_info.pBindings = &binding;
-  SetLayoutHandle final_image_set_layout =
-      resource_manager.create_descriptor_set_layout("FinalImageSetLayout",
-                                                    layout_info);
+  SetLayoutHandle final_image_set_layout = rm.create_descriptor_set_layout(
+      "FullscreenDescriptorSetLayout", layout_info);
 
   const VkDescriptorSetAllocateInfo alloc_info = {
       .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
       .descriptorPool = device.vk_descriptor_pool,
       .descriptorSetCount = 1,
-      .pSetLayouts =
-          &resource_manager.access_set_layout(final_image_set_layout)
-               ->vk_handle};
+      .pSetLayouts = &rm.access_set_layout(final_image_set_layout)->vk_handle};
 
-  VkDescriptorSet final_image_set;
   VK_CHECK(vkAllocateDescriptorSets(device.vk_device, &alloc_info,
                                     &final_image_set));
   VkDescriptorImageInfo image_info = {
-      .sampler =
-          resource_manager.access_sampler(renderer.vk_sampler)->vk_handle,
-      .imageView =
-          resource_manager.access_image_view(renderer.final_image_view)
-              ->vk_handle,
+      .sampler = rm.access_sampler(fullscreen_sampler)->vk_handle,
+      .imageView = rm.access_image_view(renderer.output_image_view)->vk_handle,
       .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
   VkWriteDescriptorSet write_info{
       .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -134,7 +142,6 @@ void PathTracer::run() {
       .descriptorCount = 1,
       .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
       .pImageInfo = &image_info};
-
   vkUpdateDescriptorSets(device.vk_device, 1, &write_info, 0, nullptr);
 
   // Create the pipeline
@@ -154,7 +161,7 @@ void PathTracer::run() {
           .pNext = nullptr,
           .flags = 0,
           .stage = VK_SHADER_STAGE_VERTEX_BIT,
-          .module = resource_manager.access_shader(vert_shader)->vk_handle,
+          .module = rm.access_shader(vert_shader)->vk_handle,
           .pName = "main",
           .pSpecializationInfo = nullptr},
       VkPipelineShaderStageCreateInfo{
@@ -162,7 +169,7 @@ void PathTracer::run() {
           .pNext = nullptr,
           .flags = 0,
           .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-          .module = resource_manager.access_shader(frag_shader)->vk_handle,
+          .module = rm.access_shader(frag_shader)->vk_handle,
           .pName = "main",
           .pSpecializationInfo = nullptr}};
   const VkPipelineColorBlendAttachmentState color_blend_attachment{
@@ -222,30 +229,42 @@ void PathTracer::run() {
   const VkPipelineLayoutCreateInfo pipeline_layout_info = {
       .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
       .setLayoutCount = 1,
-      .pSetLayouts =
-          &resource_manager.access_set_layout(final_image_set_layout)
-               ->vk_handle,
+      .pSetLayouts = &rm.access_set_layout(final_image_set_layout)->vk_handle,
       .pushConstantRangeCount = 1,
       .pPushConstantRanges = &push_constant};
 
-  full_screen = resource_manager.create_graphics_pipeline(
-      "Fullscreen", pipeline_info, pipeline_layout_info);
+  fullscreen_pipeline = rm.create_graphics_pipeline("Fullscreen", pipeline_info,
+                                                    pipeline_layout_info);
 
+  Clock clock;
+  clock.start();
+  f64 last_time = clock.get_elapsed_time_s();
   u64 frame_number = 0;
+  Camera cam;
+  cam.position = glm::vec3(0.f);
+  cam.look_at = glm::vec3(0.f, 0.f, -1.f);
+  cam.fov = 90.f;
+  cam.v_up = glm::vec3(0.f, 1.f, 0.f);
+  cam.init();
   while (!end_application) {
     Platform::handle_os_messages();
+    f64 current_time = clock.get_elapsed_time_s();
+    f64 delta_time = current_time - last_time;
+    last_time = current_time;
 
     if (!Platform::is_suspended()) {
+      cam.update(delta_time);
       device.begin_frame();
       VkCommandBuffer cmd = device.get_current_cmd_buffer();
 
-      renderer.render(0);
+      renderer.render(cam);
 
-      // Transition the final image to sampled layout
-      VulkanImageView *vk_final_image_view =
-          resource_manager.access_image_view(renderer.final_image_view);
-      VulkanImage *vk_final_image =
-          resource_manager.access_image(vk_final_image_view->image_handle);
+      push_debug_label(cmd, "Fullscreen");
+      // Transition the output image to sampled layout
+      VulkanImageView *vk_output_image_view =
+          rm.access_image_view(renderer.output_image_view);
+      VulkanImage *vk_output_image =
+          rm.access_image(vk_output_image_view->image_handle);
       VkImageMemoryBarrier2 image_barrier{
           VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
       image_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -253,7 +272,7 @@ void PathTracer::run() {
       image_barrier.subresourceRange.levelCount = 1;
       image_barrier.subresourceRange.baseArrayLayer = 0;
       image_barrier.subresourceRange.layerCount = 1;
-      image_barrier.image = vk_final_image->vk_handle;
+      image_barrier.image = vk_output_image->vk_handle;
       image_barrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
       image_barrier.srcAccessMask =
           VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT;
@@ -293,68 +312,86 @@ void PathTracer::run() {
 
       const VkRect2D scissor{.offset = {0, 0}, .extent = screen_extents};
       vkCmdSetScissor(cmd, 0, 1, &scissor);
-      const VkViewport viewport{
-          .x = 0.f,
-          .y = 0.f,
-          .width = static_cast<float>(screen_extents.width),
-          .height = static_cast<float>(screen_extents.height),
-          .minDepth = 0.f,
-          .maxDepth = 1.f};
+      const VkViewport viewport{.x = 0.f,
+                                .y = 0.f,
+                                .width = static_cast<f32>(screen_extents.width),
+                                .height =
+                                    static_cast<f32>(screen_extents.height),
+                                .minDepth = 0.f,
+                                .maxDepth = 1.f};
       vkCmdSetViewport(cmd, 0, 1, &viewport);
 
-      vkCmdBindPipeline(
-          cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-          resource_manager.access_pipeline(full_screen)->vk_handle);
+      vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                        rm.access_pipeline(fullscreen_pipeline)->vk_handle);
 
       const VkBindDescriptorSetsInfo bind_info{
           .sType = VK_STRUCTURE_TYPE_BIND_DESCRIPTOR_SETS_INFO,
           .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
-          .layout =
-              resource_manager.access_pipeline(full_screen)->vk_pipeline_layout,
+          .layout = rm.access_pipeline(fullscreen_pipeline)->vk_pipeline_layout,
           .firstSet = 0,
           .descriptorSetCount = 1,
           .pDescriptorSets = &final_image_set,
       };
       vkCmdBindDescriptorSets2(cmd, &bind_info);
-      float total_rays =
-          float(frame_number + 1) * float(renderer.samples_per_pixel);
+      f32 total_rays = 0.f;
       vkCmdPushConstants(
-          cmd,
-          resource_manager.access_pipeline(full_screen)->vk_pipeline_layout,
-          VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(float), &total_rays);
+          cmd, rm.access_pipeline(fullscreen_pipeline)->vk_pipeline_layout,
+          VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(f32), &total_rays);
       vkCmdDraw(cmd, 3, 1, 0, 0);
 
       vkCmdEndRendering(cmd);
+      pop_debug_label(cmd);
 
       device.end_frame();
       device.present();
-      ++frame_number;
+      rm.update(frame_number++);
+      Platform::set_title(
+          std::format("Path tracer, frame time: {:.3f}s, trig count: {}",
+                      delta_time, renderer.triangle_count)
+              .c_str());
     }
   }
 
-  renderer.shutdown();
-  resource_manager.queue_destroy({final_image_set_layout, 0});
-  resource_manager.queue_destroy({full_screen, 0});
-  resource_manager.queue_destroy({vert_shader, 0});
-  resource_manager.queue_destroy({frag_shader, 0});
-
-  vkDeviceWaitIdle(device.vk_device);
-  // Deletes all remaining resources
-  resource_manager.update(UINT64_MAX);
+  cam.shutdown();
+  rm.queue_destroy({fullscreen_sampler});
+  rm.queue_destroy({final_image_set_layout});
+  rm.queue_destroy({fullscreen_pipeline});
+  rm.queue_destroy({vert_shader});
+  rm.queue_destroy({frag_shader});
 }
 
 void PathTracer::shutdown() {
+  renderer.shutdown();
   SlangCompiler::shutdown();
-  resource_manager.shutdown();
+  rm.shutdown();
   device.shutdown();
   InputSys::shutdown();
   EventSys::unregister_event(SDL_EVENT_WINDOW_RESIZED, this,
                              application_on_resize_event);
   EventSys::unregister_event(SDL_EVENT_QUIT, this, application_on_event);
-  EventSys::unregister_event(SDL_EVENT_KEY_DOWN, 0, application_on_key);
-  EventSys::unregister_event(SDL_EVENT_KEY_UP, 0, application_on_key);
+  EventSys::unregister_event(SDL_EVENT_KEY_DOWN, this, application_on_key);
+  EventSys::unregister_event(SDL_EVENT_KEY_UP, this, application_on_key);
   EventSys::shutdown();
   Platform::shutdown();
+}
+
+void PathTracer::resize() {
+  device.reset();
+  renderer.resize(device.back_buffer_width, device.back_buffer_height);
+
+  VkDescriptorImageInfo image_info = {
+      .sampler = rm.access_sampler(fullscreen_sampler)->vk_handle,
+      .imageView = rm.access_image_view(renderer.output_image_view)->vk_handle,
+      .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+  VkWriteDescriptorSet write_info{
+      .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+      .dstSet = final_image_set,
+      .dstBinding = 0,
+      .dstArrayElement = 0,
+      .descriptorCount = 1,
+      .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+      .pImageInfo = &image_info};
+  vkUpdateDescriptorSets(device.vk_device, 1, &write_info, 0, nullptr);
 }
 
 } // namespace hlx

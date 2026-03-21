@@ -4,7 +4,6 @@
 #define VULKAN_DEBUG_REPORT
 // #define VULKAN_EXTRA_VALIDATION
 #endif // _DEBUG
-#define VULKAN_DEBUG_NAMES
 
 #include "VkErr.h"
 // External
@@ -72,15 +71,6 @@ public:
     VK_CHECK(vkSetDebugUtilsObjectNameEXT(vk_device, &name_info));
 #endif // VULKAN_DEBUG_NAMES
   }
-
-  void push_debug_label(std::string_view name) const {
-    const std::array<float, 4> color = {1.f, 1.f, 1.f, 1.f};
-    push_debug_label(name, color);
-  }
-
-  void push_debug_label(std::string_view name,
-                        const std::array<float, 4> &color) const;
-  void pop_debug_label() const;
 
 public:
   VkInstance vk_instance{VK_NULL_HANDLE};

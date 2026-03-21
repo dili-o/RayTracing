@@ -50,6 +50,12 @@ set(SDL_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(SDL_TEST OFF CACHE BOOL "" FORCE)
 add_subdirectory(Vendor/sdl EXCLUDE_FROM_ALL)
 target_link_libraries(${PROJECT_NAME} PUBLIC SDL3-shared)
+# GLM
+set(GLM_BUILD_TESTS OFF CACHE BOOL "Disable GLM tests" FORCE)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "Use static GLM library" FORCE)
+add_subdirectory(Vendor/glm)
+target_link_libraries(${PROJECT_NAME} PUBLIC glm::glm)
+target_include_directories(${PROJECT_NAME} PUBLIC Vendor/glm)
 # Slang
 target_link_libraries(${PROJECT_NAME} PRIVATE "${VULKAN_SDK}/Lib/slang.lib")
 # -------------------------
@@ -76,6 +82,7 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
     _CRT_SECURE_NO_WARNINGS
     VK_NO_PROTOTYPES
     MAX_FRAMES_IN_FLIGHT=2
+    VULKAN_DEBUG_NAMES
 )
 
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD

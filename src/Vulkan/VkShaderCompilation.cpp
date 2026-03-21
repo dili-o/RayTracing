@@ -4,10 +4,10 @@
 #include "Core/MurmurHash.h"
 #include "PCH.h"
 #include "Platform/FileIO.h"
-// Externals
-#include "slang/slang-com-ptr.h"
-#include "slang/slang.h"
+// Vendor
 #include <filesystem>
+#include <slang/slang-com-ptr.h>
+#include <slang/slang.h>
 
 using std::string;
 using std::vector;
@@ -30,7 +30,6 @@ static string get_expanded_shader_code(std::string_view path,
   bool file_in_path = false;
   for (u64 i = 0; i < file_paths.size(); ++i) {
     if (file_paths.at(i) == path) {
-      // throw Exception("File \"" + string(path) + " is recursively included");
       file_in_path = true;
       break;
     }

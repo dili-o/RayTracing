@@ -1,4 +1,5 @@
 #pragma once
+#if 0
 #include "Vec3.hpp"
 
 struct AABB {
@@ -41,3 +42,4 @@ static f32 intersect_aabb(const Ray &ray, const Vec3 &bmin, const Vec3 &bmax,
   else
     return infinity;
 }
+#endif

@@ -1,30 +1,31 @@
 #pragma once
-#include "Vec3.hpp"
 #include "Image.hpp"
+// Vendor
+#include <glm/vec3.hpp>
 
 class Texture {
 public:
 	virtual ~Texture() = default;
-	virtual Color sample(real u, real v) const = 0;
+	virtual glm::vec3 sample(real u, real v) const = 0;
 };
 
 class SolidTexture : public Texture {
 public:
-	SolidTexture(const Color& albedo) : albedo(albedo) {}
+	SolidTexture(const glm::vec3& albedo) : albedo(albedo) {}
 
-	Color sample(real u, real v) const override {
+	glm::vec3 sample(real u, real v) const override {
 		return albedo;
 	}
 
 private:
-	Color albedo;
+	glm::vec3 albedo;
 };
 
 class ImageTexture : public Texture {
 public:
 	ImageTexture(const std::string &filename) : image_data(filename.c_str()) {}
 
-	Color sample(real u, real v) const override {
+	glm::vec3 sample(real u, real v) const override {
 		// Repeat address mode
 		u = u - std::floor(u);
 		v = v - std::floor(v);
@@ -40,7 +41,7 @@ public:
 		}
 
 		real color_scale = 1.f / 255.f;
-		return Color(pixel_data[0] * color_scale, pixel_data[1] * color_scale, pixel_data[2] * color_scale);
+		return glm::vec3(pixel_data[0] * color_scale, pixel_data[1] * color_scale, pixel_data[2] * color_scale);
 	}
 private:
 	Image image_data;

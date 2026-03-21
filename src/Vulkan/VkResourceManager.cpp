@@ -84,7 +84,8 @@ void VkResourceManager::update(u64 current_frame_index) {
             using T = std::decay_t<decltype(handle)>;
             if constexpr (std::is_same_v<T, BufferHandle>) {
               VulkanBuffer *buffer = access_buffer(handle);
-              if (!buffer) return;
+              if (!buffer)
+                return;
               if (buffer->p_data) {
                 vmaUnmapMemory(p_device->vma_allocator, buffer->vma_allocation);
               }
@@ -93,7 +94,8 @@ void VkResourceManager::update(u64 current_frame_index) {
               buffer_pool.release(handle);
             } else if constexpr (std::is_same_v<T, ImageHandle>) {
               VulkanImage *image = access_image(handle);
-              if (!image) return;
+              if (!image)
+                return;
               if (image->view_count == 0) {
                 vmaDestroyImage(p_device->vma_allocator, image->vk_handle,
                                 image->vma_allocation);
@@ -101,7 +103,8 @@ void VkResourceManager::update(u64 current_frame_index) {
               }
             } else if constexpr (std::is_same_v<T, ImageViewHandle>) {
               VulkanImageView *image_view = access_image_view(handle);
-              if (!image_view) return;
+              if (!image_view)
+                return;
               VulkanImage *image = access_image(image_view->image_handle);
               HASSERT(image);
               if (--image->view_count == 0) {
@@ -114,7 +117,8 @@ void VkResourceManager::update(u64 current_frame_index) {
               image_view_pool.release(handle);
             } else if constexpr (std::is_same_v<T, PipelineHandle>) {
               VulkanPipeline *pipeline = access_pipeline(handle);
-              if (!pipeline) return;
+              if (!pipeline)
+                return;
               vkDestroyPipelineLayout(p_device->vk_device,
                                       pipeline->vk_pipeline_layout, nullptr);
               vkDestroyPipeline(p_device->vk_device, pipeline->vk_handle,
@@ -122,19 +126,22 @@ void VkResourceManager::update(u64 current_frame_index) {
               pipeline_pool.release(handle);
             } else if constexpr (std::is_same_v<T, SamplerHandle>) {
               VulkanSampler *sampler = access_sampler(handle);
-              if (!sampler) return;
+              if (!sampler)
+                return;
               vkDestroySampler(p_device->vk_device, sampler->vk_handle,
                                nullptr);
               sampler_pool.release(handle);
             } else if constexpr (std::is_same_v<T, ShaderHandle>) {
               VulkanShader *shader = access_shader(handle);
-              if (!shader) return;
+              if (!shader)
+                return;
               vkDestroyShaderModule(p_device->vk_device, shader->vk_handle,
                                     nullptr);
               shader_pool.release(handle);
             } else {
               VulkanSetLayout *set_layout = access_set_layout(handle);
-              if (!set_layout) return;
+              if (!set_layout)
+                return;
               vkDestroyDescriptorSetLayout(p_device->vk_device,
                                            set_layout->vk_handle, nullptr);
               set_layout_pool.release(handle);
@@ -246,6 +253,16 @@ VkResourceManager::create_image_view(std::string_view name,
   image_view->layer_count = view_create_info.subresourceRange.layerCount;
 
   return handle;
+}
+
+ImageViewHandle VkResourceManager::create_image_view(
+    std::string_view view_name, std::string_view image_name,
+    const VkImageCreateInfo &image_create_info,
+    const VmaAllocationCreateInfo &vma_create_info,
+    VkImageViewCreateInfo &view_create_info) {
+  return create_image_view(
+      view_name, create_image(image_name, image_create_info, vma_create_info),
+      view_create_info);
 }
 
 PipelineHandle VkResourceManager::create_graphics_pipeline(
@@ -376,6 +393,10 @@ void VkResourceManager::queue_destroy(DeletionEntry entry) {
 }
 
 void VkResourceManager::shutdown() {
+  // Update with max uint64 to delete all queued handles
+  vkDeviceWaitIdle(p_device->vk_device);
+  update(UINT64_MAX);
+
   // Save Pipeline Cache
   size_t cache_size = 0;
   VK_CHECK(vkGetPipelineCacheData(p_device->vk_device, vk_pipeline_cache,

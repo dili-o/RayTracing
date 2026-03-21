@@ -12,7 +12,7 @@ using DestroyHandle =
                  SamplerHandle, ShaderHandle, SetLayoutHandle>;
 struct DeletionEntry {
   DestroyHandle handle;
-  u64 frame_index;
+  u64 frame_index{0};
 };
 
 struct VkResourceManager {
@@ -31,6 +31,11 @@ public:
   ImageViewHandle create_image_view(std::string_view name,
                                     ImageHandle image_handle,
                                     VkImageViewCreateInfo &view_create_info);
+  ImageViewHandle
+  create_image_view(std::string_view view_name, std::string_view image_name,
+                    const VkImageCreateInfo &image_create_info,
+                    const VmaAllocationCreateInfo &vma_create_info,
+                    VkImageViewCreateInfo &view_create_info);
   PipelineHandle create_graphics_pipeline(
       std::string_view name, VkGraphicsPipelineCreateInfo &pipeline_info,
       const VkPipelineLayoutCreateInfo &pipeline_layout_info);

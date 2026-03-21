@@ -1,8 +1,8 @@
 #pragma once
-
-#include "Triangle.hpp"
+#if 0
 #include "AABB.hpp"
 #include "Mat4.hpp"
+#include "Triangle.hpp"
 
 struct alignas(16) BVHNode {
   Vec3 aabb_min;
@@ -38,3 +38,4 @@ struct alignas(16) BVH_GPU {
 	Mat4 inv_transform;
 	u32 node_index; u32 trig_offset; f32 padding[2];
 };
+#endif

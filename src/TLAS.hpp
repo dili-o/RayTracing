@@ -1,5 +1,5 @@
 #pragma once
-
+#if 0
 #include "BVHNode.hpp"
 
 struct alignas(16) TLASNode {
@@ -25,3 +25,4 @@ public:
 private:
   i32 find_best_match(i32* list, i32 N, i32 a);
 };
+#endif

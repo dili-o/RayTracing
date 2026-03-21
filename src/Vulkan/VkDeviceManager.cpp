@@ -792,6 +792,7 @@ void VkDeviceManager::create_swapchain() {
 
   back_buffer_width = swapchain_extents.width;
   back_buffer_height = swapchain_extents.height;
+  vsync_changed = false;
 }
 
 void VkDeviceManager::destroy_swapchain() noexcept {
@@ -840,10 +841,6 @@ void VkDeviceManager::shutdown() {
 void VkDeviceManager::set_vsync(bool enable) {
   vsync_changed = enable != vsync_enabled;
   vsync_enabled = enable;
-  if (vsync_changed && !swapchain_maintenance) {
-    reset();
-    vsync_changed = false;
-  }
 }
 
 void VkDeviceManager::reset() {
@@ -854,6 +851,9 @@ void VkDeviceManager::reset() {
 }
 
 void VkDeviceManager::begin_frame() {
+  if (vsync_changed) {
+    reset();
+  }
   // Wait for the frame's fence
   VK_CHECK(vkWaitForFences(vk_device, 1,
                            &frame_in_flight_fences.at(current_frame), VK_TRUE,
@@ -995,24 +995,6 @@ void VkDeviceManager::present() {
   }
 
   current_frame = (current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
-}
-
-void VkDeviceManager::push_debug_label(
-    std::string_view name, const std::array<float, 4> &color) const {
-#ifdef VULKAN_DEBUG_NAMES
-  const VkDebugUtilsLabelEXT debug_label{
-      .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT,
-      .pNext = nullptr,
-      .pLabelName = name.data(),
-      .color = {color.at(0), color.at(1), color.at(2), color.at(3)}};
-  vkCmdBeginDebugUtilsLabelEXT(get_current_cmd_buffer(), &debug_label);
-#endif // VULKAN_DEBUG_NAMES
-}
-
-void VkDeviceManager::pop_debug_label() const {
-#ifdef VULKAN_DEBUG_NAMES
-  vkCmdEndDebugUtilsLabelEXT(get_current_cmd_buffer());
-#endif // VULKAN_DEBUG_NAMES
 }
 } // namespace hlx
 // #pragma warning(pop)

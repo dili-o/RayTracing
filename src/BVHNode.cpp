@@ -1,5 +1,5 @@
 #include "BVHNode.hpp"
-
+#if 0
 #define BINS 100
 
 struct Bin {
@@ -327,3 +327,4 @@ void BVH::set_transform(const Mat4 &transform) {
     bounds.grow(make_vec3(v));
   }
 }
+#endif

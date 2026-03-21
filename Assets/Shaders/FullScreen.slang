@@ -48,8 +48,9 @@ float3 agxToneMap(float3 color) {
 
 [shader("fragment")]
 float4 fragMain(VertexOutput inVert, uniform float total_rays) : SV_Target {
-  float3 color = image.Sample(inVert.texCoord).xyz;
-  float3 average_color = color;
-  float3 mapped = agxToneMap(average_color);
-  return float4(mapped, 1.0);
+  float3 color = max(image.Sample(inVert.texCoord).xyz, 0.f);
+  // float3 average_color = color;
+  // float3 mapped = agxToneMap(average_color);
+  // return float4(mapped, 1.f);
+  return float4(color, 1.f);
 }

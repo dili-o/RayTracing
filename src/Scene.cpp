@@ -1,3 +1,4 @@
+#if 0
 #include "Scene.hpp"
 #include "Renderer.hpp"
 // Vendor
@@ -231,3 +232,4 @@ bool load_scene(const fs::path &scene_path, Renderer *renderer) {
 
   return true;
 }
+#endif

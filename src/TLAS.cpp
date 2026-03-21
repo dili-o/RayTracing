@@ -1,5 +1,5 @@
 #include "TLAS.hpp"
-
+#if 0
 TLAS::TLAS(BVH *bvh_list, u32 N) {
   tlas_nodes.resize(2 * N);
   blas_list = bvh_list;
@@ -107,3 +107,4 @@ i32 TLAS::find_best_match(i32 *list, i32 N, i32 a) {
   }
   return best_b;
 }
+#endif
