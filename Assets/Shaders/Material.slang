@@ -5,6 +5,7 @@
 static const uint MATERIAL_LAMBERT  = 0;
 static const uint MATERIAL_METALLIC = 1;
 static const uint MATERIAL_DIELECTRIC = 2;
+static const uint MATERIAL_EMISSIVE = 3;
 
 struct MaterialHandle {
   uint material_index;
@@ -87,5 +88,13 @@ struct DielectricMaterial {
   }
 
   float refraction_index;
+};
+
+struct EmissiveMaterial {
+  void scatter_ray(out float3 emission) {
+    emission = intensity.xyz;
+  }
+
+  float4 intensity;
 };
 

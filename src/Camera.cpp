@@ -9,12 +9,12 @@
 #include <glm/gtx/transform.hpp>
 
 namespace hlx {
-static u16 s_left_button = SDL_SCANCODE_A;
-static u16 s_right_button = SDL_SCANCODE_D;
-static u16 s_forward_button = SDL_SCANCODE_W;
-static u16 s_backward_button = SDL_SCANCODE_S;
-static u16 s_up_button = SDL_SCANCODE_SPACE;
-static u16 s_down_button = SDL_SCANCODE_LCTRL;
+static constexpr u16 s_left_button = SDL_SCANCODE_A;
+static constexpr u16 s_right_button = SDL_SCANCODE_D;
+static constexpr u16 s_forward_button = SDL_SCANCODE_W;
+static constexpr u16 s_backward_button = SDL_SCANCODE_S;
+static constexpr u16 s_up_button = SDL_SCANCODE_SPACE;
+static constexpr u16 s_down_button = SDL_SCANCODE_LCTRL;
 
 // Move these into Camera.cpp
 static bool camera_move_event(u16 code, void *sender, void *listener,
@@ -95,34 +95,63 @@ void Camera::update(f32 delta_time) {
 void Camera::on_key_event(bool key_down, u16 key_code) {
   if (!is_active)
     return;
-  // TODO: Switch statement
   if (key_down) {
-    if (key_code == s_left_button) {
+    switch (key_code) {
+    case s_left_button: {
       velocity.x = -1;
-    } else if (key_code == s_right_button) {
+      break;
+    }
+    case s_right_button: {
       velocity.x = 1;
-    } else if (key_code == s_forward_button) {
+      break;
+    }
+    case s_forward_button: {
       velocity.z = 1;
-    } else if (key_code == s_backward_button) {
+      break;
+    }
+    case s_backward_button: {
       velocity.z = -1;
-    } else if (key_code == s_up_button) {
+      break;
+    }
+    case s_up_button: {
       velocity.y = 1;
-    } else if (key_code == s_down_button) {
+      break;
+    }
+    case s_down_button: {
       velocity.y = -1;
+      break;
+    }
+    default:
+      break;
     }
   } else {
-    if (key_code == s_left_button) {
+    switch (key_code) {
+    case s_left_button: {
       velocity.x = 0;
-    } else if (key_code == s_right_button) {
+      break;
+    }
+    case s_right_button: {
       velocity.x = 0;
-    } else if (key_code == s_forward_button) {
+      break;
+    }
+    case s_forward_button: {
       velocity.z = 0;
-    } else if (key_code == s_backward_button) {
+      break;
+    }
+    case s_backward_button: {
       velocity.z = 0;
-    } else if (key_code == s_up_button) {
+      break;
+    }
+    case s_up_button: {
       velocity.y = 0;
-    } else if (key_code == s_down_button) {
+      break;
+    }
+    case s_down_button: {
       velocity.y = 0;
+      break;
+    }
+    default:
+      break;
     }
   }
   changed = true;
@@ -163,5 +192,16 @@ void Camera::on_mouse_button_event(bool key_down, u16 key_code) {
     }
   }
 }
-void Camera::on_mouse_scroll_event(i8 direction) {}
+
+void Camera::on_mouse_scroll_event(i8 direction) {
+  if (InputSys::is_key_down(SDL_SCANCODE_LSHIFT)) {
+    speed = direction > 0 ? (speed + 0.5f) : (speed - 0.5f);
+    speed = glm::clamp(speed, 0.5f, 100.f);
+  } else {
+    f32 scroll_factor = 2.f;
+    fov += (direction * -scroll_factor);
+    fov = glm::clamp(fov, 2.f, 90.f);
+  }
+  changed = true;
+}
 } // namespace hlx

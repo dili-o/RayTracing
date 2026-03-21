@@ -31,6 +31,7 @@ public:
   BufferHandle lambert_materials_buffer;
   BufferHandle metal_materials_buffer;
   BufferHandle dielectric_materials_buffer;
+  BufferHandle emissive_materials_buffer;
   u32 triangle_count{0};
   u32 frame_index{0};
 };

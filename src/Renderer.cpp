@@ -114,6 +114,7 @@ struct alignas(16) UniformData {
   VkDeviceAddress lambert_materials_buffer;
   VkDeviceAddress metal_materials_buffer;
   VkDeviceAddress dielectric_materials_buffer;
+  VkDeviceAddress emissive_materials_buffer;
 };
 
 struct PushConstant {
@@ -219,6 +220,7 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
   std::vector<MaterialHandle> handles;
   std::vector<Lambert> lambert_mats;
   std::vector<Metal> metal_mats;
+  std::vector<Emissive> emissive_mats;
   size_t index_offset = 0;
   // center
   lambert_mats.push_back({0.1f, 0.2f, 0.5f, 1.f});
@@ -243,8 +245,8 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
   }
   index_offset = indices.size();
   // right
-  metal_mats.push_back({0.8f, 0.6f, 0.2f, 1.0f});
-  MaterialHandle right_mat = {1, MATERIAL_METAL};
+  emissive_mats.push_back({0.7f, 0.8f, 1.0f, 1.0f});
+  MaterialHandle right_mat = {0, MATERIAL_EMISSIVE};
   generate_sphere(positions, indices, normals, 0.5f, 16, 8,
                   glm::vec3(1.f, 0.f, -1.f));
   trig_count = (indices.size() - index_offset) / 3;
@@ -301,6 +303,12 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
   metal_materials_buffer =
       p_rm->create_buffer("MetalMaterialsBuffer", buffer_info, vma_alloc_info);
 
+  // TODO: Dielectrics
+
+  buffer_info.size = emissive_mats.size() * sizeof(Emissive);
+  emissive_materials_buffer = p_rm->create_buffer("EmissiveMaterialsBuffer",
+                                                  buffer_info, vma_alloc_info);
+
   VulkanBuffer *vk_trig_pos = p_rm->access_buffer(triangle_geom_buffer);
   VulkanBuffer *vk_trig_shad_data =
       p_rm->access_buffer(triangle_shading_buffer);
@@ -308,11 +316,12 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
       p_rm->access_buffer(triangle_mat_ids_buffer);
   VulkanBuffer *vk_lamberts = p_rm->access_buffer(lambert_materials_buffer);
   VulkanBuffer *vk_metals = p_rm->access_buffer(metal_materials_buffer);
+  VulkanBuffer *vk_emissives = p_rm->access_buffer(emissive_materials_buffer);
 
   VkDeviceSize total_size =
       vk_trig_pos->vk_device_size + vk_trig_shad_data->vk_device_size +
       vk_trig_mats_buffer->vk_device_size + vk_lamberts->vk_device_size +
-      vk_metals->vk_device_size;
+      vk_metals->vk_device_size + vk_emissives->vk_device_size;
   VkStagingBuffer staging_buffer;
   staging_buffer.init(
       p_device, p_rm,
@@ -328,6 +337,8 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
                        vk_lamberts->vk_device_size);
   staging_buffer.stage(metal_mats.data(), metal_materials_buffer, 0,
                        vk_metals->vk_device_size);
+  staging_buffer.stage(emissive_mats.data(), emissive_materials_buffer, 0,
+                       vk_emissives->vk_device_size);
   staging_buffer.flush();
   // Uniform buffers
   buffer_info.size = sizeof(UniformData);
@@ -349,6 +360,7 @@ void Renderer::shutdown() {
   for (BufferHandle &handle : uniform_buffers) {
     p_rm->queue_destroy({handle});
   }
+  p_rm->queue_destroy({emissive_materials_buffer});
   p_rm->queue_destroy({metal_materials_buffer});
   p_rm->queue_destroy({lambert_materials_buffer});
   p_rm->queue_destroy({triangle_mat_ids_buffer});
@@ -442,6 +454,8 @@ void Renderer::render(Camera &camera) {
           p_rm->access_buffer(lambert_materials_buffer)->vk_device_address,
       .metal_materials_buffer =
           p_rm->access_buffer(metal_materials_buffer)->vk_device_address,
+      .emissive_materials_buffer =
+          p_rm->access_buffer(emissive_materials_buffer)->vk_device_address,
       // TODO:
       // VkDeviceAddress dielectric_materials_buffer;
   };

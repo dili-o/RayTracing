@@ -24,11 +24,11 @@ public:
   f32 fov;
   bool changed{false};
   bool is_active{false};
-  f32 yaw = -90.0f; // looking down -Z
-  f32 pitch = 0.0f;
+  f32 yaw{-90.0f};
+  f32 pitch{0.0f};
 
   glm::vec3 velocity;
-  f32 speed = 5.0f;
-  f32 sensitivity = 0.1f;
+  f32 speed{5.0f};
+  f32 sensitivity{0.1f};
 };
 } // namespace hlx

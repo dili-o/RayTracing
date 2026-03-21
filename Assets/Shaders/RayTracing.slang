@@ -14,6 +14,7 @@ struct UniformData {
   LambertMaterial *lambert_materials_buffer;
   MetalMaterial *metal_materials_buffer;
   DielectricMaterial *dielectric_materials_buffer;
+  EmissiveMaterial *emissive_materials_buffer;
 };
 
 struct PushConstants {
@@ -47,10 +48,12 @@ void compute_main(uint3 dispatch_thread_id : SV_DispatchThreadID,
       float3 ray_direction = normalize(pixel_sample - pc.uniform_data_buffer[0].camera_center);
       Ray r = Ray(pc.uniform_data_buffer[0].camera_center, ray_direction);
       float3 attenuation = float3(1.f);
+      float3 radiance = float3(0.f);
 
       for (uint d = 0; d < max_depth; ++d) {
         Interval ray_t = Interval(0.0001f, 1000.f);
         HitRecord rec;
+        float3 emission = float3(0.f);
 
         bool hit_anything = false;
         for (uint i = 0; i < pc.triangle_count; ++i) {
@@ -66,40 +69,55 @@ void compute_main(uint3 dispatch_thread_id : SV_DispatchThreadID,
           rec.normal = pc.uniform_data_buffer[0].triangle_shading_buffer[rec.tri_id]
                          .interpolate_normal(rec.u, rec.v);
 
+          bool ray_scattered = false;
           Ray r_out;
           MaterialHandle mat_handle = pc.uniform_data_buffer[0]
                                         .triangle_mat_ids_buffer[rec.tri_id];
           float3 material_attenuation = float3(0.f);
           switch (mat_handle.material_type) {
             case MATERIAL_LAMBERT: {
-                pc.uniform_data_buffer[0]
-                  .lambert_materials_buffer[mat_handle.material_index]
-                  .scatter_ray(seed, rec, material_attenuation, r_out);
-                  break;
-              }
+              pc.uniform_data_buffer[0]
+                .lambert_materials_buffer[mat_handle.material_index]
+                .scatter_ray(seed, rec, material_attenuation, r_out);
+                ray_scattered = true;
+                break;
+            }
             case MATERIAL_METALLIC: {
-                pc.uniform_data_buffer[0]
-                  .metal_materials_buffer[mat_handle.material_index]
-                  .scatter_ray(seed, r, rec, material_attenuation, r_out);
-                  break;
-              }
+              pc.uniform_data_buffer[0]
+                .metal_materials_buffer[mat_handle.material_index]
+                .scatter_ray(seed, r, rec, material_attenuation, r_out);
+                ray_scattered = true;
+                break;
+            }
+            case MATERIAL_EMISSIVE: {
+              pc.uniform_data_buffer[0]
+                .emissive_materials_buffer[mat_handle.material_index]
+                .scatter_ray(emission);
+                ray_scattered = false;
+                break;
+            }
             default: break;
           }
 
-          // float3 direction = rec.normal + rand_unit_vector(seed);  
-          // r = Ray(rec.p + rec.normal * 0.001f, direction);
-          r = r_out;
+          radiance += attenuation * emission;
+          // It is absorbed instead
+          if (!ray_scattered)
+            break;
+
           attenuation *= material_attenuation;
+          r = r_out;
         } else {
           float3 unit_direction = normalize(r.direction);
           float a = 0.5f * (unit_direction.y + 1.f);
-          attenuation *= (1.f - a) * float3(1.f) + a * float3(0.5f, 0.7f, 1.f);
+          // float3 sky = (1.f - a) * float3(1.f) + a * float3(0.5f, 0.7f, 1.f);
+          float3 sky = float3(0.f);
+          radiance += attenuation * sky;
           break;
         }
       }
 
       float3 prev = output_image[pixel_coord].xyz;
-      float3 accumulated = (prev * pc.frame_index + attenuation) / (pc.frame_index + 1);
+      float3 accumulated = (prev * pc.frame_index + radiance) / (pc.frame_index + 1);
       output_image[pixel_coord] = float4(accumulated, 1.f);
     }
 }
