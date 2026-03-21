@@ -245,10 +245,10 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
   }
   index_offset = indices.size();
   // right
-  emissive_mats.push_back({0.7f, 0.8f, 1.0f, 1.0f});
+  emissive_mats.push_back({2.f, 2.f, 2.f, 1.f});
   MaterialHandle right_mat = {0, MATERIAL_EMISSIVE};
-  generate_sphere(positions, indices, normals, 0.5f, 16, 8,
-                  glm::vec3(1.f, 0.f, -1.f));
+  generate_sphere(positions, indices, normals, 0.25f, 16, 8,
+                  glm::vec3(-0.5f, 2.f, -1.f));
   trig_count = (indices.size() - index_offset) / 3;
   handles.reserve(trig_count);
   for (size_t i = 0; i < trig_count; ++i) {
