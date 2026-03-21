@@ -126,7 +126,8 @@ struct PushConstant {
 };
 
 void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
-                    u32 output_image_width, u32 output_image_height) {
+                    VkStagingBuffer &staging_buffer, u32 output_image_width,
+                    u32 output_image_height) {
   HASSERT(p_device);
   HASSERT(p_rm);
   this->p_device = p_device;
@@ -322,11 +323,6 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
       vk_trig_pos->vk_device_size + vk_trig_shad_data->vk_device_size +
       vk_trig_mats_buffer->vk_device_size + vk_lamberts->vk_device_size +
       vk_metals->vk_device_size + vk_emissives->vk_device_size;
-  VkStagingBuffer staging_buffer;
-  staging_buffer.init(
-      p_device, p_rm,
-      p_device->queue_family_indices.transfer_family_index.value(),
-      p_device->vk_transfer_queue, total_size);
   staging_buffer.stage(triangle_positions.data(), triangle_geom_buffer, 0,
                        vk_trig_pos->vk_device_size);
   staging_buffer.stage(triangle_surface_data.data(), triangle_shading_buffer, 0,
@@ -339,7 +335,6 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
                        vk_metals->vk_device_size);
   staging_buffer.stage(emissive_mats.data(), emissive_materials_buffer, 0,
                        vk_emissives->vk_device_size);
-  staging_buffer.flush();
   // Uniform buffers
   buffer_info.size = sizeof(UniformData);
   buffer_info.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
@@ -350,8 +345,6 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
   for (BufferHandle &handle : uniform_buffers) {
     handle = p_rm->create_buffer("UniformBuffer", buffer_info, vma_alloc_info);
   }
-
-  staging_buffer.shutdown();
 }
 
 void Renderer::shutdown() {

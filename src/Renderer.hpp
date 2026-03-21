@@ -7,11 +7,13 @@
 namespace hlx {
 struct VkDeviceManager;
 struct VkResourceManager;
+struct VkStagingBuffer;
 
 struct Renderer {
 public:
   void init(VkDeviceManager *p_device, VkResourceManager *p_rm,
-            u32 output_image_width, u32 output_image_height);
+            VkStagingBuffer &staging_buffer, u32 output_image_width,
+            u32 output_image_height);
   void shutdown();
   void resize(u32 output_image_width, u32 output_image_height);
   void render(Camera &camera);

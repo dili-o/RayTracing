@@ -9,6 +9,7 @@
 #include "Vulkan/VkResources.hpp"
 #include "Vulkan/VkShaderCompilation.h"
 #include "Vulkan/VkUtils.hpp"
+#include "imgui/imgui.h"
 // Vendor
 #include <glm/vec3.hpp>
 
@@ -67,10 +68,16 @@ void PathTracer::init() {
   EventSys::register_event(SDL_EVENT_KEY_UP, this, application_on_key);
   device.init();
   rm.init(&device);
+  staging_buffer.init(&device, &rm,
+                      device.queue_family_indices.transfer_family_index.value(),
+                      device.vk_transfer_queue, 1'000'000);
   SlangCompiler::init();
-  renderer.init(&device, &rm, config.width, config.height);
+  renderer.init(&device, &rm, staging_buffer, config.width, config.height);
+
+  scene_ui.init(&device, &rm, staging_buffer);
 
   end_application = false;
+  staging_buffer.flush();
 }
 
 void PathTracer::run() {
@@ -247,7 +254,7 @@ void PathTracer::run() {
   cam.v_up = glm::vec3(0.f, 1.f, 0.f);
   cam.init();
   while (!end_application) {
-    Platform::handle_os_messages();
+    Platform::handle_os_messages(scene_ui);
     f64 current_time = clock.get_elapsed_time_s();
     f64 delta_time = current_time - last_time;
     last_time = current_time;
@@ -339,9 +346,14 @@ void PathTracer::run() {
           VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(f32), &total_rays);
       vkCmdDraw(cmd, 3, 1, 0, 0);
 
-      vkCmdEndRendering(cmd);
       pop_debug_label(cmd);
 
+      // Imgui
+      scene_ui.begin_frame();
+      ImGui::ShowDemoWindow();
+      scene_ui.end_frame();
+
+      vkCmdEndRendering(cmd);
       device.end_frame();
       device.present();
       rm.update(frame_number++);
@@ -361,6 +373,8 @@ void PathTracer::run() {
 }
 
 void PathTracer::shutdown() {
+  scene_ui.shutdown();
+  staging_buffer.shutdown();
   renderer.shutdown();
   SlangCompiler::shutdown();
   rm.shutdown();

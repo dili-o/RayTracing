@@ -3,6 +3,7 @@
 #include "Core/Input.hpp"
 #include "Core/Log.hpp"
 #include "Platform.hpp"
+#include "SceneUI.hpp"
 #include "Vulkan/VkDeviceManager.h"
 // Vendor
 #include <SDL3/SDL.h>
@@ -55,12 +56,15 @@ void *Platform::get_platform_handle() { return window; }
 
 bool Platform::is_suspended() { return platform_state.is_suspended; }
 
-void Platform::handle_os_messages() {
+void Platform::handle_os_messages(SceneUI &scene_ui) {
   HASSERT(is_initialized);
   SDL_Event e;
   SDL_zero(e);
 
   while (SDL_PollEvent(&e)) {
+    if (scene_ui.handle_events(&e))
+      continue;
+
     switch (e.type) {
     case SDL_EVENT_QUIT: {
       EventContext context{};

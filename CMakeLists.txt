@@ -16,8 +16,12 @@ set(SPIRV_REFLECT_INCLUDE_DIR "${VULKAN_SDK}/Source/SPIRV-Reflect")
 file(GLOB_RECURSE SOURCE_LIST "Src/*.h" "Src/*.hpp" "Src/*.cpp" 
   "${SPIRV_REFLECT_INCLUDE_DIR}/spirv_reflect.c" "Vendor/simdjson/simdjson.cpp"
 )
+# Imgui
+file(GLOB IMGUI_SOURCE_LIST 
+  "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/imgui/*.cpp"
+)
 
-add_executable (${PROJECT_NAME} ${SOURCE_LIST} "Src/Scene.cpp" "Src/BVHNode.cpp" "Src/TLAS.cpp")
+add_executable (${PROJECT_NAME} ${SOURCE_LIST} ${IMGUI_SOURCE_LIST} "Src/Scene.cpp" "Src/BVHNode.cpp" "Src/TLAS.cpp")
 
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/Assets/Shaders/Spirv")
 target_compile_definitions(${PROJECT_NAME} PRIVATE HOME_PATH="${CMAKE_CURRENT_SOURCE_DIR}")

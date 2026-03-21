@@ -9,6 +9,7 @@ struct PlatformConfiguration {
 }; // struct WindowConfiguration
 
 struct VkDeviceManager;
+struct SceneUI;
 
 struct HLX_API Platform {
   static void init(const PlatformConfiguration &config);
@@ -17,7 +18,7 @@ struct HLX_API Platform {
   static bool is_suspended();
   static bool create_vulkan_surface(VkDeviceManager *device);
   static const char *const *get_vulkan_extension_names(u32 *count);
-  static void handle_os_messages();
+  static void handle_os_messages(SceneUI &scene_ui);
   static f64 get_absolute_time_s();
   static f64 get_absolute_time_ms();
   static void get_mouse_position(f32 *mouseX, f32 *mouseY);
