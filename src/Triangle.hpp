@@ -6,16 +6,16 @@
 
 struct alignas(16) TriangleGeom {
   TriangleGeom(const glm::vec3 &v0, const glm::vec3 &v1, const glm::vec3 &v2)
-      : v0(glm::vec4(v0, 1.f)) {
-    edge_1 = glm::vec4(v1, 1.f) - glm::vec4(v0, 0.f);
-    edge_2 = glm::vec4(v2, 1.f) - glm::vec4(v0, 0.f);
+      : v0(glm::vec4(v0, 1.f)), v1(glm::vec4(v1, 1.f)), v2(glm::vec4(v2, 1.f)) {
+    glm::vec3 edge_1 = v1 - v0;
+    glm::vec3 edge_2 = v2 - v0;
     normal = glm::vec4(
         glm::normalize(glm::cross(glm::vec3(edge_1), glm::vec3(edge_2))), 1.f);
   }
 
   glm::vec4 v0;
-  glm::vec4 edge_1;
-  glm::vec4 edge_2;
+  glm::vec4 v1;
+  glm::vec4 v2;
   glm::vec4 normal;
 };
 

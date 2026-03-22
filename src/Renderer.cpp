@@ -1,5 +1,7 @@
 #include "Renderer.hpp"
+#include "BVHNode.hpp"
 #include "Core/Assert.hpp"
+#include "Core/Clock.hpp"
 #include "Core/Defines.hpp"
 #include "Core/Exceptions.hpp"
 #include "Material.hpp"
@@ -19,6 +21,21 @@
 static constexpr VkFormat output_image_format = VK_FORMAT_R32G32B32A32_SFLOAT;
 
 namespace hlx {
+struct alignas(16) UniformData {
+  glm::vec4 pixel00_loc;
+  glm::vec4 pixel_delta_u;
+  glm::vec4 pixel_delta_v;
+  glm::vec4 camera_center;
+  VkDeviceAddress triangle_geom_buffer;
+  VkDeviceAddress triangle_shading_buffer;
+  VkDeviceAddress bvh_nodes_buffer;
+  VkDeviceAddress tri_ids_buffer;
+  VkDeviceAddress triangle_mat_ids_buffer;
+  VkDeviceAddress lambert_materials_buffer;
+  VkDeviceAddress metal_materials_buffer;
+  VkDeviceAddress dielectric_materials_buffer;
+  VkDeviceAddress emissive_materials_buffer;
+};
 
 void generate_sphere(std::vector<glm::vec3> &out_vertices,
                      std::vector<uint32_t> &out_indices,
@@ -102,20 +119,6 @@ void generate_plane(std::vector<glm::vec3> &out_vertices,
     }
   }
 }
-
-struct alignas(16) UniformData {
-  glm::vec4 pixel00_loc;
-  glm::vec4 pixel_delta_u;
-  glm::vec4 pixel_delta_v;
-  glm::vec4 camera_center;
-  VkDeviceAddress triangle_geom_buffer;
-  VkDeviceAddress triangle_shading_buffer;
-  VkDeviceAddress triangle_mat_ids_buffer;
-  VkDeviceAddress lambert_materials_buffer;
-  VkDeviceAddress metal_materials_buffer;
-  VkDeviceAddress dielectric_materials_buffer;
-  VkDeviceAddress emissive_materials_buffer;
-};
 
 struct PushConstant {
   VkDeviceAddress uniform_data_buffer;
@@ -214,7 +217,7 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
 
   vkUpdateDescriptorSets(p_device->vk_device, 1, &write_info, 0, nullptr);
 
-  // Create circle
+  // Create circles
   std::vector<glm::vec3> positions;
   std::vector<glm::vec3> normals;
   std::vector<u32> indices;
@@ -246,7 +249,7 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
   }
   index_offset = indices.size();
   // right
-  emissive_mats.push_back({2.f, 2.f, 2.f, 1.f});
+  emissive_mats.push_back({5.f, 5.f, 5.f, 1.f});
   MaterialHandle right_mat = {0, MATERIAL_EMISSIVE};
   generate_sphere(positions, indices, normals, 0.25f, 16, 8,
                   glm::vec3(-0.5f, 2.f, -1.f));
@@ -267,17 +270,39 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
     handles.push_back(ground_mat);
   }
 
+  std::vector<glm::vec3> triangle_centroids;
   std::vector<TriangleGeom> triangle_positions;
   std::vector<TriangleShading> triangle_surface_data;
+  std::vector<u32> triangle_ids;
   for (size_t i = 0; i < indices.size(); i += 3) {
     triangle_positions.push_back(TriangleGeom(positions[indices[i]],
                                               positions[indices[i + 1]],
                                               positions[indices[i + 2]]));
     triangle_surface_data.push_back(TriangleShading(
         normals[indices[i]], normals[indices[i + 1]], normals[indices[i + 2]]));
+    triangle_centroids.push_back((positions[indices[i]] +
+                                  positions[indices[i + 1]] +
+                                  positions[indices[i + 2]]) *
+                                 0.3333f);
+    triangle_ids.push_back(triangle_ids.size());
   }
   triangle_count = triangle_positions.size();
 
+  // BVH
+  u32 root_node_idx = 0, nodes_used = 1;
+  std::vector<BVHNode> bvh_nodes(triangle_count * 2 - 1);
+  BVHNode &root = bvh_nodes[root_node_idx];
+  root.left_first = 0;
+  root.tri_count = triangle_count;
+  Clock clock;
+  clock.start();
+  update_node_bounds(bvh_nodes, triangle_positions, triangle_ids,
+                     root_node_idx);
+  subdivide(bvh_nodes, triangle_positions, triangle_centroids, triangle_ids,
+            root_node_idx, nodes_used);
+  HINFO("BVH build time: {}", clock.get_elapsed_time_s());
+
+  // Create the buffers
   VmaAllocationCreateInfo vma_alloc_info{
       .requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT};
   VkBufferCreateInfo buffer_info{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
@@ -309,6 +334,12 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
   buffer_info.size = emissive_mats.size() * sizeof(Emissive);
   emissive_materials_buffer = p_rm->create_buffer("EmissiveMaterialsBuffer",
                                                   buffer_info, vma_alloc_info);
+  buffer_info.size = nodes_used * sizeof(BVHNode);
+  bvh_nodes_buffer =
+      p_rm->create_buffer("BVHNodesBuffer", buffer_info, vma_alloc_info);
+  buffer_info.size = triangle_ids.size() * sizeof(u32);
+  tri_ids_buffer =
+      p_rm->create_buffer("TriangleIDsBuffer", buffer_info, vma_alloc_info);
 
   VulkanBuffer *vk_trig_pos = p_rm->access_buffer(triangle_geom_buffer);
   VulkanBuffer *vk_trig_shad_data =
@@ -318,11 +349,9 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
   VulkanBuffer *vk_lamberts = p_rm->access_buffer(lambert_materials_buffer);
   VulkanBuffer *vk_metals = p_rm->access_buffer(metal_materials_buffer);
   VulkanBuffer *vk_emissives = p_rm->access_buffer(emissive_materials_buffer);
+  VulkanBuffer *vk_bvh_nodes = p_rm->access_buffer(bvh_nodes_buffer);
+  VulkanBuffer *vk_tri_ids = p_rm->access_buffer(tri_ids_buffer);
 
-  VkDeviceSize total_size =
-      vk_trig_pos->vk_device_size + vk_trig_shad_data->vk_device_size +
-      vk_trig_mats_buffer->vk_device_size + vk_lamberts->vk_device_size +
-      vk_metals->vk_device_size + vk_emissives->vk_device_size;
   staging_buffer.stage(triangle_positions.data(), triangle_geom_buffer, 0,
                        vk_trig_pos->vk_device_size);
   staging_buffer.stage(triangle_surface_data.data(), triangle_shading_buffer, 0,
@@ -335,6 +364,10 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
                        vk_metals->vk_device_size);
   staging_buffer.stage(emissive_mats.data(), emissive_materials_buffer, 0,
                        vk_emissives->vk_device_size);
+  staging_buffer.stage(bvh_nodes.data(), bvh_nodes_buffer, 0,
+                       vk_bvh_nodes->vk_device_size);
+  staging_buffer.stage(triangle_ids.data(), tri_ids_buffer, 0,
+                       vk_tri_ids->vk_device_size);
   // Uniform buffers
   buffer_info.size = sizeof(UniformData);
   buffer_info.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
@@ -353,6 +386,8 @@ void Renderer::shutdown() {
   for (BufferHandle &handle : uniform_buffers) {
     p_rm->queue_destroy({handle});
   }
+  p_rm->queue_destroy({tri_ids_buffer});
+  p_rm->queue_destroy({bvh_nodes_buffer});
   p_rm->queue_destroy({emissive_materials_buffer});
   p_rm->queue_destroy({metal_materials_buffer});
   p_rm->queue_destroy({lambert_materials_buffer});
@@ -405,8 +440,6 @@ void Renderer::render(Camera &camera) {
       p_rm->access_image(vk_output_image_view->image_handle);
   VkExtent2D screen_extents = {vk_output_image->width(),
                                vk_output_image->height()};
-  VulkanBuffer *uniform_buffer =
-      p_rm->access_buffer(uniform_buffers.at(p_device->current_frame));
   f32 focal_length = glm::length(camera.position - camera.look_at);
   f32 theta = degrees_to_radians(camera.fov);
   f32 h = std::tan(theta / 2.f);
@@ -441,6 +474,9 @@ void Renderer::render(Camera &camera) {
           p_rm->access_buffer(triangle_geom_buffer)->vk_device_address,
       .triangle_shading_buffer =
           p_rm->access_buffer(triangle_shading_buffer)->vk_device_address,
+      .bvh_nodes_buffer =
+          p_rm->access_buffer(bvh_nodes_buffer)->vk_device_address,
+      .tri_ids_buffer = p_rm->access_buffer(tri_ids_buffer)->vk_device_address,
       .triangle_mat_ids_buffer =
           p_rm->access_buffer(triangle_mat_ids_buffer)->vk_device_address,
       .lambert_materials_buffer =
@@ -452,6 +488,8 @@ void Renderer::render(Camera &camera) {
       // TODO:
       // VkDeviceAddress dielectric_materials_buffer;
   };
+  VulkanBuffer *uniform_buffer =
+      p_rm->access_buffer(uniform_buffers.at(p_device->current_frame));
   std::memcpy(uniform_buffer->p_data, &uniform_data, sizeof(UniformData));
 
   VkCommandBuffer cmd = p_device->get_current_cmd_buffer();

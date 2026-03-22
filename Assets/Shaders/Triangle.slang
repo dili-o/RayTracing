@@ -4,6 +4,8 @@
 
 struct TriangleGeom {
   bool hit(in Ray r, in Interval ray_t, inout HitRecord rec) {
+    const float3 edge_1 = (v1 - v0).xyz;
+    const float3 edge_2 = (v2 - v0).xyz;
     const float3 h = cross(r.direction, edge_2.xyz);
     const float a = dot(edge_1.xyz, h);
 
@@ -39,8 +41,8 @@ struct TriangleGeom {
   }
 
   float4 v0;
-  float4 edge_1;
-  float4 edge_2;
+  float4 v1;
+  float4 v2;
   float4 normal;
 };
 

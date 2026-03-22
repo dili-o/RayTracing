@@ -29,6 +29,8 @@ public:
   std::array<BufferHandle, MAX_FRAMES_IN_FLIGHT> uniform_buffers;
   BufferHandle triangle_geom_buffer;
   BufferHandle triangle_shading_buffer;
+  BufferHandle bvh_nodes_buffer;
+  BufferHandle tri_ids_buffer;
   BufferHandle triangle_mat_ids_buffer;
   BufferHandle lambert_materials_buffer;
   BufferHandle metal_materials_buffer;

@@ -1,15 +1,17 @@
 #pragma once
-#include "Triangle.slang"
-#include "Random.slang"
 #include "Material.slang"
+#include "BVHNode.slang"
 
 struct UniformData {
   float3 pixel00_loc; float pad_0;
   float3 pixel_delta_u; float pad_1;
   float3 pixel_delta_v; float pad_2;
   float3 camera_center; float pad_3;
+
   TriangleGeom *triangle_geom_buffer;
   TriangleShading *triangle_shading_buffer;
+  BVHNode *bvh_nodes;
+  uint *tri_ids;
   MaterialHandle *triangle_mat_ids_buffer;
   LambertMaterial *lambert_materials_buffer;
   MetalMaterial *metal_materials_buffer;
@@ -37,6 +39,8 @@ void compute_main(uint3 dispatch_thread_id : SV_DispatchThreadID,
     int2 pixel_coord  = int2(dispatch_thread_id.xy);
 
     if (pixel_coord.x < pc.image_width && pixel_coord.y < pc.image_height) {
+      UniformData data = pc.uniform_data_buffer[0];
+
       uint seed = pixel_coord.x * 1973u 
                   ^ pixel_coord.y * 9277u 
                   ^ pc.frame_index * 26699u;
@@ -55,14 +59,7 @@ void compute_main(uint3 dispatch_thread_id : SV_DispatchThreadID,
         HitRecord rec;
         float3 emission = float3(0.f);
 
-        bool hit_anything = false;
-        for (uint i = 0; i < pc.triangle_count; ++i) {
-          if (pc.uniform_data_buffer[0].triangle_geom_buffer[i].hit(r, ray_t, rec)) {
-            ray_t.max = rec.t;
-            rec.tri_id = i;
-            hit_anything = true;
-          }
-        }
+        bool hit_anything = intersect_bvh(r, ray_t, rec, data.bvh_nodes, data.triangle_geom_buffer, data.tri_ids);
 
         if (hit_anything) {
           // Set the HitRecord normal to the interpolated normal

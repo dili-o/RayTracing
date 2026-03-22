@@ -9,7 +9,7 @@ struct BVHNode {
   uint left_first; // Points to the left node or the first prim
 
 	float3 aabb_max;
-  uint prim_count;
+  uint tri_count;
 };
 
 float intersect_aabb(const Ray ray, const float3 bmin, const float3 bmax, const float t) {
@@ -29,6 +29,68 @@ float intersect_aabb(const Ray ray, const float3 bmin, const float3 bmax, const 
 	else return 1e30f;
 }
 
+bool intersect_bvh(Ray ray, Interval ray_t, inout HitRecord rec,
+									 BVHNode *nodes, TriangleGeom *tris, uint *tri_ids) {
+	uint node_id_stack[64];
+  // Initialize first item in the stack to the root node
+	node_id_stack[0] = 0;
+	uint stack_ptr = 0;
+	float closest_so_far = ray_t.max;
+	bool hit = false;
+
+  while (true) {
+		BVHNode node = nodes[node_id_stack[stack_ptr]];
+		if (node.tri_count > 0) { // The node is a leaf
+			for (uint i = 0; i < node.tri_count; ++i) {
+				uint tri_id_index = node.left_first + i;
+				if ((tris[tri_ids[tri_id_index]].hit(ray, Interval(ray_t.min, closest_so_far), rec))) {
+					hit = true;
+					rec.tri_id = tri_ids[tri_id_index];	
+					closest_so_far = rec.t;
+				}
+			}
+
+      // Terminate when stack is empty
+			if (stack_ptr == 0) break;
+			else --stack_ptr;
+    } else { // The node has children
+			uint child1_idx = node.left_first;
+			uint child2_idx = child1_idx + 1;
+			BVHNode child1 = nodes[child1_idx];
+			BVHNode child2 = nodes[child2_idx];
+			float dist1 = intersect_aabb(ray, child1.aabb_min, child1.aabb_max, closest_so_far);
+			float dist2 = intersect_aabb(ray, child2.aabb_min, child2.aabb_max, closest_so_far);
+
+			if (dist1 > dist2) {
+				// Swap
+				float temp = dist1;
+				dist1 = dist2;
+				dist2 = temp;
+				// Swap
+				uint temp_c = child1_idx;
+				child1_idx = child2_idx;
+				child2_idx = temp_c;
+			}
+
+			if (dist1 == 1e30f) { // None of the aabbs were hit
+				if (stack_ptr == 0) break;
+				else --stack_ptr;
+			} else {
+        
+        if (dist2 != 1e30f) {
+          node_id_stack[stack_ptr++] = child2_idx;
+          node_id_stack[stack_ptr] = child1_idx;
+        } else {
+          node_id_stack[stack_ptr] = child1_idx;
+        }
+			}
+		}
+  }
+
+	return hit;
+}
+
+#if 0
 struct BVH {
   float4x4 transform;
   float4x4 inv_transform;
@@ -90,6 +152,7 @@ bool intersect_bvh(Ray ray, Interval ray_t, inout HitRecord rec,
 			}
 		}
   }
+
   if (hit) {
 		float4x4 transform = bvh.transform;
 		float4x4 inv_transform_t = transpose(bvh.inv_transform);
@@ -98,4 +161,4 @@ bool intersect_bvh(Ray ray, Interval ray_t, inout HitRecord rec,
   }
 	return hit;
 }
-
+#endif
