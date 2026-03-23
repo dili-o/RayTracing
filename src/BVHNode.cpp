@@ -1,31 +1,76 @@
 #include "BVHNode.hpp"
 #include "AABB.hpp"
+#include "Triangle.hpp"
+
+constexpr u32 BIN_COUNT = 200;
 
 namespace hlx {
-f32 evaluate_sah(BVHNode &node, std::span<TriangleGeom> tris,
-                 std::span<glm::vec3> centroids, std::span<u32> tri_ids,
-                 i32 axis, f32 split_pos) {
-  AABB left_box, right_box;
-  i32 left_count = 0, right_count = 0;
-  for (u32 i = 0; i < node.tri_count; ++i) {
-    u32 tri_id = tri_ids[node.left_first + i];
-    TriangleGeom &triangle = tris[tri_id];
-    f32 candidate_pos = centroids[tri_id][axis];
-    if (candidate_pos < split_pos) {
-      ++left_count;
-      left_box.grow(triangle.v0);
-      left_box.grow(triangle.v1);
-      left_box.grow(triangle.v2);
-    } else {
-      ++right_count;
-      right_box.grow(triangle.v0);
-      right_box.grow(triangle.v1);
-      right_box.grow(triangle.v2);
+
+struct Bin {
+  AABB bounds;
+  u32 tri_count = 0;
+};
+
+static f32 find_best_split_plane(BVHNode &node, std::span<TriangleGeom> tris,
+                                 std::span<glm::vec3> centroids,
+                                 std::span<u32> tri_ids, i32 &axis,
+                                 f32 &split_pos) {
+  f32 best_cost = infinity;
+
+  for (i32 a = 0; a < 3; ++a) {
+    f32 bounds_min = infinity;
+    f32 bounds_max = -infinity;
+    for (u32 i = 0; i < node.tri_count; ++i) {
+      f32 &centroid_pos = centroids[tri_ids[node.left_first + i]][a];
+      bounds_min = std::min(bounds_min, centroid_pos);
+      bounds_max = std::max(bounds_max, centroid_pos);
+    }
+    if (bounds_min == bounds_max)
+      continue;
+    // Populate bins
+    Bin bins[BIN_COUNT];
+    f32 scale = BIN_COUNT / (bounds_max - bounds_min);
+    for (u32 i = 0; i < node.tri_count; ++i) {
+      TriangleGeom &triangle = tris[tri_ids[node.left_first + i]];
+      f32 &centroid_pos = centroids[tri_ids[node.left_first + i]][a];
+
+      u32 bin_idx =
+          std::min(BIN_COUNT - 1, u32((centroid_pos - bounds_min) * scale));
+      Bin &bin = bins[bin_idx];
+      bin.tri_count++;
+      bin.bounds.grow(triangle.v0);
+      bin.bounds.grow(triangle.v1);
+      bin.bounds.grow(triangle.v2);
+    }
+
+    f32 left_half_area[BIN_COUNT - 1], right_half_area[BIN_COUNT - 1];
+    i32 left_count[BIN_COUNT - 1], right_count[BIN_COUNT - 1];
+    AABB left_box, right_box;
+    i32 left_sum = 0, right_sum = 0;
+    for (u32 i = 0; i < BIN_COUNT - 1; ++i) {
+      left_sum += bins[i].tri_count;
+      left_count[i] = left_sum;
+      left_box.grow(bins[i].bounds);
+      left_half_area[i] = left_box.half_area();
+
+      right_sum += bins[BIN_COUNT - 1 - i].tri_count;
+      right_count[BIN_COUNT - 2 - i] = right_sum;
+      right_box.grow(bins[BIN_COUNT - 1 - i].bounds);
+      right_half_area[BIN_COUNT - 2 - i] = right_box.half_area();
+    }
+
+    scale = (bounds_max - bounds_min) / BIN_COUNT;
+    for (u32 i = 0; i < BIN_COUNT - 1; ++i) {
+      f32 plane_cost = left_count[i] * left_half_area[i] +
+                       right_count[i] * right_half_area[i];
+      if (plane_cost < best_cost) {
+        best_cost = plane_cost, split_pos = bounds_min + scale * (i + 1),
+        axis = a;
+      }
     }
   }
-  f32 cost =
-      left_count * left_box.half_area() + right_count * right_box.half_area();
-  return cost > 0.f ? cost : infinity;
+
+  return best_cost;
 }
 
 void update_node_bounds(std::span<BVHNode> bvh_nodes,
@@ -53,23 +98,16 @@ void subdivide(std::span<BVHNode> bvh_nodes, std::span<TriangleGeom> tris,
 
   // Detemine the split axis using SAH
   i32 best_axis = -1;
-  f32 best_pos = 0.f, best_cost = infinity;
-  for (i32 axis = 0; axis < 3; ++axis) {
-    for (u32 i = 0; i < node.tri_count; ++i) {
-      u32 tri_id = tri_ids[node.left_first + i];
-      f32 candidate_pos = centroids[tri_id][axis];
-      f32 cost =
-          evaluate_sah(node, tris, centroids, tri_ids, axis, candidate_pos);
-      if (cost < best_cost) {
-        best_cost = cost, best_pos = candidate_pos, best_axis = axis;
-      }
-    }
-  }
+  f32 best_pos = 0.f;
+  f32 best_cost = find_best_split_plane(node, tris, centroids, tri_ids,
+                                        best_axis, best_pos);
+
   glm::vec3 e = node.aabb_max - node.aabb_min;
   f32 parent_area = e.x * e.y + e.y * e.z + e.z * e.x;
   f32 parent_cost = node.tri_count * parent_area;
   if (best_cost >= parent_cost)
     return;
+
   i32 axis = best_axis;
   f32 split_pos = best_pos;
 
