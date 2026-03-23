@@ -83,8 +83,8 @@ typedef float real;
 #endif
 
 // Constants
-const real infinity = std::numeric_limits<real>::infinity();
-const real pi = 3.1415926535897932385f;
+constexpr real infinity = std::numeric_limits<real>::infinity();
+constexpr real pi = 3.1415926535897932385f;
 
 // Utility Functions
 inline real degrees_to_radians(real degrees) { return degrees * pi / 180.f; }
@@ -118,4 +118,3 @@ inline real linear_to_gamma(real linear_component) {
 #else
 #define HLX_API
 #endif
-

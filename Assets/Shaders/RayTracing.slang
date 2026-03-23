@@ -46,11 +46,11 @@ void compute_main(uint3 dispatch_thread_id : SV_DispatchThreadID,
                   ^ pc.frame_index * 26699u;
 
       float2 jitter = float2(rand(seed), rand(seed));
-      float3 pixel_sample = pc.uniform_data_buffer[0].pixel00_loc.xyz +
-                          ((pixel_coord.x + jitter.x) * pc.uniform_data_buffer[0].pixel_delta_u.xyz) +
-                          ((pixel_coord.y + jitter.y) * pc.uniform_data_buffer[0].pixel_delta_v.xyz);
-      float3 ray_direction = normalize(pixel_sample - pc.uniform_data_buffer[0].camera_center);
-      Ray r = Ray(pc.uniform_data_buffer[0].camera_center, ray_direction);
+      float3 pixel_sample = data.pixel00_loc.xyz +
+                          ((pixel_coord.x + jitter.x) * data.pixel_delta_u.xyz) +
+                          ((pixel_coord.y + jitter.y) * data.pixel_delta_v.xyz);
+      float3 ray_direction = normalize(pixel_sample - data.camera_center);
+      Ray r = Ray(data.camera_center, ray_direction);
       float3 attenuation = float3(1.f);
       float3 radiance = float3(0.f);
 
@@ -63,35 +63,37 @@ void compute_main(uint3 dispatch_thread_id : SV_DispatchThreadID,
 
         if (hit_anything) {
           // Set the HitRecord normal to the interpolated normal
-          rec.normal = pc.uniform_data_buffer[0].triangle_shading_buffer[rec.tri_id]
+          rec.normal = data.triangle_shading_buffer[rec.tri_id]
                          .interpolate_normal(rec.u, rec.v);
 
           bool ray_scattered = false;
           Ray r_out;
-          MaterialHandle mat_handle = pc.uniform_data_buffer[0]
-                                        .triangle_mat_ids_buffer[rec.tri_id];
+          MaterialHandle mat_handle = data.triangle_mat_ids_buffer[rec.tri_id];
           float3 material_attenuation = float3(0.f);
           switch (mat_handle.material_type) {
             case MATERIAL_LAMBERT: {
-              pc.uniform_data_buffer[0]
-                .lambert_materials_buffer[mat_handle.material_index]
-                .scatter_ray(seed, rec, material_attenuation, r_out);
-                ray_scattered = true;
-                break;
+              data.lambert_materials_buffer[mat_handle.material_index]
+                  .scatter_ray(seed, rec, material_attenuation, r_out);
+              ray_scattered = true;
+              break;
             }
             case MATERIAL_METALLIC: {
-              pc.uniform_data_buffer[0]
-                .metal_materials_buffer[mat_handle.material_index]
-                .scatter_ray(seed, r, rec, material_attenuation, r_out);
-                ray_scattered = true;
-                break;
+              data.metal_materials_buffer[mat_handle.material_index]
+                  .scatter_ray(seed, r, rec, material_attenuation, r_out);
+              ray_scattered = true;
+              break;
+            }
+            case MATERIAL_DIELECTRIC: {
+              data.dielectric_materials_buffer[mat_handle.material_index]
+                  .scatter_ray(seed, r, rec, material_attenuation, r_out);
+              ray_scattered = true;
+              break;
             }
             case MATERIAL_EMISSIVE: {
-              pc.uniform_data_buffer[0]
-                .emissive_materials_buffer[mat_handle.material_index]
-                .scatter_ray(emission);
-                ray_scattered = false;
-                break;
+              data.emissive_materials_buffer[mat_handle.material_index]
+                  .scatter_ray(emission);
+              ray_scattered = false;
+              break;
             }
             default: break;
           }

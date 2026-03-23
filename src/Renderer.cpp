@@ -79,6 +79,7 @@ void generate_sphere(std::vector<glm::vec3> &out_vertices,
     }
   }
 }
+
 void generate_plane(std::vector<glm::vec3> &out_vertices,
                     std::vector<uint32_t> &out_indices,
                     std::vector<glm::vec3> &out_normals, float width,
@@ -118,6 +119,103 @@ void generate_plane(std::vector<glm::vec3> &out_vertices,
       out_indices.push_back(i1 + 1 + vertex_offset);
     }
   }
+}
+
+void generate_cube(std::vector<glm::vec3> &out_vertices,
+                   std::vector<uint32_t> &out_indices,
+                   std::vector<glm::vec3> &out_normals, const glm::vec3 &center,
+                   float width, float height, float depth) {
+  uint32_t vertex_offset = static_cast<uint32_t>(out_vertices.size());
+
+  float hx = width * 0.5f;
+  float hy = height * 0.5f;
+  float hz = depth * 0.5f;
+
+  // Helper lambda to push a face
+  auto add_face = [&](glm::vec3 v0, glm::vec3 v1, glm::vec3 v2, glm::vec3 v3,
+                      glm::vec3 normal) {
+    uint32_t start = static_cast<uint32_t>(out_vertices.size());
+
+    out_vertices.push_back(v0);
+    out_vertices.push_back(v1);
+    out_vertices.push_back(v2);
+    out_vertices.push_back(v3);
+
+    out_normals.push_back(normal);
+    out_normals.push_back(normal);
+    out_normals.push_back(normal);
+    out_normals.push_back(normal);
+
+    // Two triangles
+    out_indices.push_back(start + 0 + vertex_offset);
+    out_indices.push_back(start + 1 + vertex_offset);
+    out_indices.push_back(start + 2 + vertex_offset);
+
+    out_indices.push_back(start + 0 + vertex_offset);
+    out_indices.push_back(start + 2 + vertex_offset);
+    out_indices.push_back(start + 3 + vertex_offset);
+  };
+
+  // ---- Faces ----
+
+  // Front (+Z)
+  add_face(center + glm::vec3(-hx, -hy, hz), center + glm::vec3(hx, -hy, hz),
+           center + glm::vec3(hx, hy, hz), center + glm::vec3(-hx, hy, hz),
+           glm::vec3(0, 0, 1));
+
+  // Back (-Z)
+  add_face(center + glm::vec3(hx, -hy, -hz), center + glm::vec3(-hx, -hy, -hz),
+           center + glm::vec3(-hx, hy, -hz), center + glm::vec3(hx, hy, -hz),
+           glm::vec3(0, 0, -1));
+
+  // Left (-X)
+  add_face(center + glm::vec3(-hx, -hy, -hz), center + glm::vec3(-hx, -hy, hz),
+           center + glm::vec3(-hx, hy, hz), center + glm::vec3(-hx, hy, -hz),
+           glm::vec3(-1, 0, 0));
+
+  // Right (+X)
+  add_face(center + glm::vec3(hx, -hy, hz), center + glm::vec3(hx, -hy, -hz),
+           center + glm::vec3(hx, hy, -hz), center + glm::vec3(hx, hy, hz),
+           glm::vec3(1, 0, 0));
+
+  // Top (+Y)
+  add_face(center + glm::vec3(-hx, hy, hz), center + glm::vec3(hx, hy, hz),
+           center + glm::vec3(hx, hy, -hz), center + glm::vec3(-hx, hy, -hz),
+           glm::vec3(0, 1, 0));
+
+  // Bottom (-Y)
+  add_face(center + glm::vec3(-hx, -hy, -hz), center + glm::vec3(hx, -hy, -hz),
+           center + glm::vec3(hx, -hy, hz), center + glm::vec3(-hx, -hy, hz),
+           glm::vec3(0, -1, 0));
+}
+
+void add_sphere(std::vector<glm::vec3> &positions, std::vector<u32> &indices,
+                std::vector<glm::vec3> &normals,
+                std::vector<MaterialHandle> &mat_handles, MaterialHandle mat,
+                size_t &index_offset, f32 radius, glm::vec3 center) {
+
+  generate_sphere(positions, indices, normals, radius, 64, 32, center);
+  size_t trig_count = (indices.size() - index_offset) / 3;
+  mat_handles.reserve(trig_count);
+  for (size_t i = 0; i < trig_count; ++i) {
+    mat_handles.push_back(mat);
+  }
+  index_offset = indices.size();
+}
+
+void add_cuboid() {}
+
+void add_plane(std::vector<glm::vec3> &positions, std::vector<u32> &indices,
+               std::vector<glm::vec3> &normals,
+               std::vector<MaterialHandle> &mat_handles, MaterialHandle mat,
+               size_t &index_offset, f32 width, f32 depth, glm::vec3 center) {
+  generate_plane(positions, indices, normals, width, depth, 1, 1, center);
+  size_t trig_count = (indices.size() - index_offset) / 3;
+  mat_handles.reserve(trig_count);
+  for (size_t i = 0; i < trig_count; ++i) {
+    mat_handles.push_back(mat);
+  }
+  index_offset = indices.size();
 }
 
 struct PushConstant {
@@ -225,50 +323,34 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
   std::vector<Lambert> lambert_mats;
   std::vector<Metal> metal_mats;
   std::vector<Emissive> emissive_mats;
-  size_t index_offset = 0;
-  // center
+  std::vector<Dielectric> dielectric_mats;
+  // Init materials
   lambert_mats.push_back({0.1f, 0.2f, 0.5f, 1.f});
-  MaterialHandle center_mat = {0, MATERIAL_LAMBERT};
-  generate_sphere(positions, indices, normals, 0.5f, 16, 8,
-                  glm::vec3(0.f, 0.f, -1.2f));
-  size_t trig_count = (indices.size() - index_offset) / 3;
-  handles.reserve(trig_count);
-  for (size_t i = 0; i < trig_count; ++i) {
-    handles.push_back(center_mat);
-  }
-  index_offset = indices.size();
-  // left
-  metal_mats.push_back({0.8f, 0.8f, 0.8f, 0.3f});
-  MaterialHandle left_mat = {0, MATERIAL_METAL};
-  generate_sphere(positions, indices, normals, 0.5f, 16, 8,
-                  glm::vec3(-1.f, 0.f, -1.f));
-  trig_count = (indices.size() - index_offset) / 3;
-  handles.reserve(trig_count);
-  for (size_t i = 0; i < trig_count; ++i) {
-    handles.push_back(left_mat);
-  }
-  index_offset = indices.size();
-  // right
-  emissive_mats.push_back({5.f, 5.f, 5.f, 1.f});
-  MaterialHandle right_mat = {0, MATERIAL_EMISSIVE};
-  generate_sphere(positions, indices, normals, 0.25f, 16, 8,
-                  glm::vec3(-0.5f, 2.f, -1.f));
-  trig_count = (indices.size() - index_offset) / 3;
-  handles.reserve(trig_count);
-  for (size_t i = 0; i < trig_count; ++i) {
-    handles.push_back(right_mat);
-  }
-  index_offset = indices.size();
-  // ground
   lambert_mats.push_back({0.8f, 0.8f, 0.0f, 1.0f});
+  metal_mats.push_back({0.8f, 0.8f, 0.8f, 0.3f});
+  emissive_mats.push_back({17.f, 12.f, 4.f, 1.f});
+  dielectric_mats.push_back({1.f / 1.5f});
+  MaterialHandle center_mat = {0, MATERIAL_LAMBERT};
+  MaterialHandle left_mat = {0, MATERIAL_METAL};
+  MaterialHandle right_mat = {0, MATERIAL_EMISSIVE};
   MaterialHandle ground_mat = {1, MATERIAL_LAMBERT};
-  generate_plane(positions, indices, normals, 100.f, 100.f, 1, 1,
-                 glm::vec3(0.f, -0.5f, 0.f));
-  trig_count = (indices.size() - index_offset) / 3;
-  handles.reserve(trig_count);
-  for (size_t i = 0; i < trig_count; ++i) {
-    handles.push_back(ground_mat);
-  }
+  MaterialHandle glass_mat = {0, MATERIAL_DIELECTRIC};
+  // center
+  size_t index_offset = 0;
+  add_sphere(positions, indices, normals, handles, center_mat, index_offset,
+             0.5f, glm::vec3(0.f, 0.f, -1.2f));
+  // left
+  add_sphere(positions, indices, normals, handles, left_mat, index_offset, 0.5f,
+             glm::vec3(-1.f, 0.f, -1.1f));
+  // right
+  add_sphere(positions, indices, normals, handles, right_mat, index_offset,
+             0.25f, glm::vec3(-0.5f, 2.f, -1.1f));
+  // ground
+  add_plane(positions, indices, normals, handles, ground_mat, index_offset,
+            100.f, 100.f, glm::vec3(0.f, -0.5f, 0.f));
+  // glass
+  add_sphere(positions, indices, normals, handles, glass_mat, index_offset,
+             0.5f, glm::vec3(-0.5f, 2.f, -1.1f));
 
   std::vector<glm::vec3> triangle_centroids;
   std::vector<TriangleGeom> triangle_positions;
@@ -329,7 +411,9 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
   metal_materials_buffer =
       p_rm->create_buffer("MetalMaterialsBuffer", buffer_info, vma_alloc_info);
 
-  // TODO: Dielectrics
+  buffer_info.size = dielectric_mats.size() * sizeof(Dielectric);
+  dielectric_materials_buffer = p_rm->create_buffer(
+      "DielectricMaterialsBuffer", buffer_info, vma_alloc_info);
 
   buffer_info.size = emissive_mats.size() * sizeof(Emissive);
   emissive_materials_buffer = p_rm->create_buffer("EmissiveMaterialsBuffer",
@@ -337,6 +421,7 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
   buffer_info.size = nodes_used * sizeof(BVHNode);
   bvh_nodes_buffer =
       p_rm->create_buffer("BVHNodesBuffer", buffer_info, vma_alloc_info);
+
   buffer_info.size = triangle_ids.size() * sizeof(u32);
   tri_ids_buffer =
       p_rm->create_buffer("TriangleIDsBuffer", buffer_info, vma_alloc_info);
@@ -348,6 +433,8 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
       p_rm->access_buffer(triangle_mat_ids_buffer);
   VulkanBuffer *vk_lamberts = p_rm->access_buffer(lambert_materials_buffer);
   VulkanBuffer *vk_metals = p_rm->access_buffer(metal_materials_buffer);
+  VulkanBuffer *vk_dielectrics =
+      p_rm->access_buffer(dielectric_materials_buffer);
   VulkanBuffer *vk_emissives = p_rm->access_buffer(emissive_materials_buffer);
   VulkanBuffer *vk_bvh_nodes = p_rm->access_buffer(bvh_nodes_buffer);
   VulkanBuffer *vk_tri_ids = p_rm->access_buffer(tri_ids_buffer);
@@ -362,6 +449,8 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
                        vk_lamberts->vk_device_size);
   staging_buffer.stage(metal_mats.data(), metal_materials_buffer, 0,
                        vk_metals->vk_device_size);
+  staging_buffer.stage(dielectric_mats.data(), dielectric_materials_buffer, 0,
+                       vk_dielectrics->vk_device_size);
   staging_buffer.stage(emissive_mats.data(), emissive_materials_buffer, 0,
                        vk_emissives->vk_device_size);
   staging_buffer.stage(bvh_nodes.data(), bvh_nodes_buffer, 0,
@@ -389,6 +478,7 @@ void Renderer::shutdown() {
   p_rm->queue_destroy({tri_ids_buffer});
   p_rm->queue_destroy({bvh_nodes_buffer});
   p_rm->queue_destroy({emissive_materials_buffer});
+  p_rm->queue_destroy({dielectric_materials_buffer});
   p_rm->queue_destroy({metal_materials_buffer});
   p_rm->queue_destroy({lambert_materials_buffer});
   p_rm->queue_destroy({triangle_mat_ids_buffer});
@@ -483,10 +573,10 @@ void Renderer::render(Camera &camera) {
           p_rm->access_buffer(lambert_materials_buffer)->vk_device_address,
       .metal_materials_buffer =
           p_rm->access_buffer(metal_materials_buffer)->vk_device_address,
+      .dielectric_materials_buffer =
+          p_rm->access_buffer(dielectric_materials_buffer)->vk_device_address,
       .emissive_materials_buffer =
           p_rm->access_buffer(emissive_materials_buffer)->vk_device_address,
-      // TODO:
-      // VkDeviceAddress dielectric_materials_buffer;
   };
   VulkanBuffer *uniform_buffer =
       p_rm->access_buffer(uniform_buffers.at(p_device->current_frame));

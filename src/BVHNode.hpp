@@ -7,7 +7,7 @@ namespace hlx {
 struct alignas(16) BVHNode {
   glm::vec3 aabb_min;
   u32 left_first; // Points to the left node if tri_count is 0, else first
-                  // tri_id
+                  // id in a tri_id array
   glm::vec3 aabb_max;
   u32 tri_count;
 };

@@ -76,13 +76,8 @@ bool intersect_bvh(Ray ray, Interval ray_t, inout HitRecord rec,
 				if (stack_ptr == 0) break;
 				else --stack_ptr;
 			} else {
-        
-        if (dist2 != 1e30f) {
-          node_id_stack[stack_ptr++] = child2_idx;
-          node_id_stack[stack_ptr] = child1_idx;
-        } else {
-          node_id_stack[stack_ptr] = child1_idx;
-        }
+				node_id_stack[stack_ptr] = child1_idx;
+				if (dist2 != 1e30f) node_id_stack[++stack_ptr] = child2_idx;
 			}
 		}
   }
