@@ -330,8 +330,8 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
   // Load plane data
   size_t trig_offset_2 = indices.size() / 3;
   size_t prev_indices_size = indices.size();
-  add_plane(positions, indices, normals, index_offset, 100.f, 100.f,
-            glm::vec3(0.f, -0.5f, 0.f));
+  add_plane(positions, indices, normals, index_offset, 1.f, 1.f,
+            glm::vec3(0.f, 0.f, 0.f));
   size_t trig_count2 = (indices.size() - prev_indices_size) / 3;
 
   std::vector<glm::vec3> triangle_centroids;
@@ -361,30 +361,38 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
   blases[1].build(bvh_nodes, blases[0].nodes_count, triangle_positions,
                   triangle_centroids, triangle_ids, trig_count2, trig_offset_2);
 
-  std::array<BLASInstance, 5> blas_instances;
+  std::array<BLASInstance, 6> blas_instances;
   blas_instances[0].blas_id = 0;
   blas_instances[0].set_transform(
       glm::translate(glm::mat4(1.f), glm::vec3(-3.f, 0.f, -1.f)));
-  blas_instances[0].material_handle = metal_mat;
+  blas_instances[0].material_handle = blue_mat;
 
-  blas_instances[1].blas_id = 1;
-  blas_instances[1].set_transform(glm::mat4(1.f));
-  blas_instances[1].material_handle = ground_mat;
+  blas_instances[1].blas_id = 0;
+  blas_instances[1].set_transform(
+      glm::translate(glm::mat4(1.f), glm::vec3(-2.f, 0.f, -1.f)));
+  blas_instances[1].material_handle = glass_mat;
 
   blas_instances[2].blas_id = 0;
   blas_instances[2].set_transform(
-      glm::translate(glm::mat4(1.f), glm::vec3(0.f, 4.f, 0.f)));
-  blas_instances[2].material_handle = emissive_mat;
+      glm::translate(glm::mat4(1.f), glm::vec3(-1.f, 0.f, -1.f)));
+  blas_instances[2].material_handle = metal_mat;
 
   blas_instances[3].blas_id = 0;
   blas_instances[3].set_transform(
-      glm::translate(glm::mat4(1.f), glm::vec3(2.f, 0.f, -2.f)));
+      glm::translate(glm::mat4(1.f), glm::vec3(0.f, 0.f, -1.f)));
   blas_instances[3].material_handle = blue_mat;
 
-  blas_instances[4].blas_id = 0;
+  blas_instances[4].blas_id = 1;
   blas_instances[4].set_transform(
-      glm::translate(glm::mat4(1.f), glm::vec3(3.f, 0.f, 4.f)));
-  blas_instances[4].material_handle = emissive_mat2;
+      glm::translate(glm::mat4(1.f), glm::vec3(0.f, -0.5f, 0.f)) *
+      glm::scale(glm::mat4(1.f), glm::vec3(10.f, 1.f, 10.f)));
+  blas_instances[4].material_handle = ground_mat;
+
+  blas_instances[5].blas_id = 1;
+  blas_instances[5].set_transform(
+      glm::translate(glm::mat4(1.f), glm::vec3(0.f, 3.f, 0.f)) *
+      glm::scale(glm::mat4(1.f), glm::vec3(2.f, 1.f, 2.f)));
+  blas_instances[5].material_handle = emissive_mat2;
 
   std::vector<TLASNode> tlas_nodes(blas_instances.size() * 2);
   TLAS tlas;

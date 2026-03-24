@@ -96,6 +96,7 @@ bool intersect(Ray ray, Interval ray_t, inout HitRecord rec,
 };
 
 struct BLASInstance {
+  float4x4 transform;
   float4x4 inv_transform;
 
   MaterialHandle material_handle;
@@ -104,10 +105,10 @@ struct BLASInstance {
 
 bool intersect(Ray ray, Interval ray_t, inout HitRecord rec,
                BLAS *blases, BVHNode *bvh_nodes, TriangleGeom *tris, uint *tri_ids) {
+  Ray world_ray = ray;
 
 	ray.origin = mul(inv_transform, float4(ray.origin, 1.f)).xyz;
 	ray.direction = mul(inv_transform, float4(ray.direction, 0.f)).xyz;
-
   return blases[blas_index].intersect(ray, ray_t, rec, bvh_nodes, tris, tri_ids);
 }
 };

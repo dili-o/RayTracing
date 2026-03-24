@@ -42,6 +42,7 @@ public:
   void set_transform(const glm::mat4 &transform);
 
 public:
+  glm::mat4 transform = glm::mat4(1.f);
   glm::mat4 inv_transform = glm::mat4(1.f);
   MaterialHandle material_handle;
   u32 blas_id;

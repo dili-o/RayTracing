@@ -43,6 +43,7 @@ struct TriangleGeom {
   float4 v0;
   float4 v1;
   float4 v2;
+  // TODO: Remove this
   float4 normal;
 };
 

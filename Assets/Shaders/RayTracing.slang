@@ -68,13 +68,20 @@ void compute_main(uint3 dispatch_thread_id : SV_DispatchThreadID,
                                            data.triangle_geom_buffer, data.tri_ids_buffer);
 
         if (hit_anything) {
+          BLASInstance blas_instance = data.blas_instances_buffer[rec.blas_instance_id]; 
+
           // Set the HitRecord normal to the interpolated normal
-          rec.normal = data.triangle_shading_buffer[rec.tri_id]
+          float3 local_normal = data.triangle_shading_buffer[rec.tri_id]
                          .interpolate_normal(rec.u, rec.v);
+          rec.set_face_normal(r, normalize(
+                       mul(transpose(blas_instance.inv_transform), float4(local_normal, 0.f)).xyz));
+
+          // Adjust the position back to normal
+          rec.p = mul(blas_instance.transform, float4(rec.p, 1.f)).xyz;
 
           bool ray_scattered = false;
           Ray r_out;
-          MaterialHandle mat_handle = data.blas_instances_buffer[rec.blas_instance_id].material_handle;
+          MaterialHandle mat_handle = blas_instance.material_handle;
           float3 material_attenuation = float3(0.f);
           switch (mat_handle.material_type) {
             case MATERIAL_LAMBERT: {
