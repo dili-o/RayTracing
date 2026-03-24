@@ -73,9 +73,22 @@ static f32 find_best_split_plane(BVHNode &node, std::span<TriangleGeom> tris,
   return best_cost;
 }
 
-void update_node_bounds(std::span<BVHNode> bvh_nodes,
-                        std::span<TriangleGeom> tris, std::span<u32> tri_ids,
-                        u32 node_idx) {
+void BLAS::build(std::span<BVHNode> bvh_nodes, u32 bvh_nodes_offset,
+                 std::span<TriangleGeom> tris, std::span<glm::vec3> centroids,
+                 std::span<u32> tri_ids, u32 tri_count, u32 tri_id_offset) {
+  this->bvh_node_idx = bvh_nodes_offset;
+  this->nodes_count = 1;
+  this->tri_count = tri_count;
+  BVHNode &root = bvh_nodes[bvh_node_idx];
+  root.left_first = tri_id_offset;
+  root.tri_count = tri_count;
+  update_node_bounds(bvh_nodes, tris, tri_ids, bvh_node_idx);
+  subdivide(bvh_nodes, tris, centroids, tri_ids, bvh_node_idx);
+}
+
+void BLAS::update_node_bounds(std::span<BVHNode> bvh_nodes,
+                              std::span<TriangleGeom> tris,
+                              std::span<u32> tri_ids, u32 node_idx) {
   BVHNode &node = bvh_nodes[node_idx];
   node.aabb_min = glm::vec3(infinity);
   node.aabb_max = glm::vec3(-infinity);
@@ -91,9 +104,9 @@ void update_node_bounds(std::span<BVHNode> bvh_nodes,
   }
 }
 
-void subdivide(std::span<BVHNode> bvh_nodes, std::span<TriangleGeom> tris,
-               std::span<glm::vec3> centroids, std::span<u32> tri_ids,
-               u32 node_idx, u32 &nodes_used) {
+void BLAS::subdivide(std::span<BVHNode> bvh_nodes, std::span<TriangleGeom> tris,
+                     std::span<glm::vec3> centroids, std::span<u32> tri_ids,
+                     u32 node_idx) {
   BVHNode &node = bvh_nodes[node_idx];
 
   // Detemine the split axis using SAH
@@ -127,8 +140,8 @@ void subdivide(std::span<BVHNode> bvh_nodes, std::span<TriangleGeom> tris,
     return;
 
   // Create child nodes
-  u32 left_idx = nodes_used++;
-  u32 right_idx = nodes_used++;
+  u32 left_idx = nodes_count++;
+  u32 right_idx = nodes_count++;
   BVHNode &left = bvh_nodes[left_idx];
   left.left_first = node.left_first;
   left.tri_count = left_count;
@@ -143,7 +156,28 @@ void subdivide(std::span<BVHNode> bvh_nodes, std::span<TriangleGeom> tris,
   update_node_bounds(bvh_nodes, tris, tri_ids, right_idx);
 
   // Recursively partition nodes
-  subdivide(bvh_nodes, tris, centroids, tri_ids, left_idx, nodes_used);
-  subdivide(bvh_nodes, tris, centroids, tri_ids, right_idx, nodes_used);
+  subdivide(bvh_nodes, tris, centroids, tri_ids, left_idx);
+  subdivide(bvh_nodes, tris, centroids, tri_ids, right_idx);
 }
+
+void BLAS::refit(std::span<BVHNode> bvh_nodes, std::span<TriangleGeom> tris,
+                 std::span<u32> tri_ids) {
+  for (u32 i = nodes_count + bvh_node_idx - 1; i >= nodes_count; --i) {
+    BVHNode &node = bvh_nodes[i];
+    // Is leaf?
+    if (node.tri_count) {
+      update_node_bounds(bvh_nodes, tris, tri_ids, i);
+    } else {
+      BVHNode &left_child = bvh_nodes[node.left_first];
+      BVHNode &right_child = bvh_nodes[node.left_first + 1];
+      node.aabb_min = glm::min(left_child.aabb_min, right_child.aabb_min);
+      node.aabb_max = glm::max(left_child.aabb_max, right_child.aabb_max);
+    }
+  }
+}
+
+void BLASInstance::set_transform(const glm::mat4 &transform) {
+  this->inv_transform = glm::inverse(transform);
+}
+
 } // namespace hlx

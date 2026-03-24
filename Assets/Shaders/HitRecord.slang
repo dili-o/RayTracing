@@ -6,6 +6,7 @@ struct HitRecord {
   float3 p;       
   float3 normal; 
   uint tri_id;
+  uint blas_instance_id;
   float t;
   bool front_face;
   float u;

@@ -359,7 +359,7 @@ void PathTracer::run() {
       rm.update(frame_number++);
       Platform::set_title(
           std::format("Path tracer, frame time: {:.3f}s, trig count: {}",
-                      delta_time, renderer.triangle_count)
+                      delta_time, renderer.total_triangle_count)
               .c_str());
     }
   }

@@ -5,6 +5,7 @@
 #include "Core/Defines.hpp"
 #include "Core/Exceptions.hpp"
 #include "Material.hpp"
+#include "TLAS.hpp"
 #include "Triangle.hpp"
 #include "Vulkan/VkDeviceManager.h"
 #include "Vulkan/VkResourceManager.hpp"
@@ -12,6 +13,7 @@
 #include "Vulkan/VkStagingBuffer.h"
 #include "Vulkan/VkUtils.hpp"
 // Vendor
+#include <glm/ext/matrix_transform.hpp>
 #include <glm/gtc/constants.hpp>
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
@@ -19,6 +21,7 @@
 #define SAMPLES_PER_FRAME 1u
 
 static constexpr VkFormat output_image_format = VK_FORMAT_R32G32B32A32_SFLOAT;
+static constexpr size_t MAX_TRIANGLE_COUNT = 1'000'000;
 
 namespace hlx {
 struct alignas(16) UniformData {
@@ -28,9 +31,11 @@ struct alignas(16) UniformData {
   glm::vec4 camera_center;
   VkDeviceAddress triangle_geom_buffer;
   VkDeviceAddress triangle_shading_buffer;
+  VkDeviceAddress tlas_nodes_buffer;
   VkDeviceAddress bvh_nodes_buffer;
+  VkDeviceAddress blas_buffer;
+  VkDeviceAddress blas_instances_buffer;
   VkDeviceAddress tri_ids_buffer;
-  VkDeviceAddress triangle_mat_ids_buffer;
   VkDeviceAddress lambert_materials_buffer;
   VkDeviceAddress metal_materials_buffer;
   VkDeviceAddress dielectric_materials_buffer;
@@ -190,31 +195,19 @@ void generate_cube(std::vector<glm::vec3> &out_vertices,
 }
 
 void add_sphere(std::vector<glm::vec3> &positions, std::vector<u32> &indices,
-                std::vector<glm::vec3> &normals,
-                std::vector<MaterialHandle> &mat_handles, MaterialHandle mat,
-                size_t &index_offset, f32 radius, glm::vec3 center) {
+                std::vector<glm::vec3> &normals, size_t &index_offset,
+                f32 radius, glm::vec3 center) {
 
   generate_sphere(positions, indices, normals, radius, 64, 32, center);
-  size_t trig_count = (indices.size() - index_offset) / 3;
-  mat_handles.reserve(trig_count);
-  for (size_t i = 0; i < trig_count; ++i) {
-    mat_handles.push_back(mat);
-  }
   index_offset = indices.size();
 }
 
 void add_cuboid() {}
 
 void add_plane(std::vector<glm::vec3> &positions, std::vector<u32> &indices,
-               std::vector<glm::vec3> &normals,
-               std::vector<MaterialHandle> &mat_handles, MaterialHandle mat,
-               size_t &index_offset, f32 width, f32 depth, glm::vec3 center) {
+               std::vector<glm::vec3> &normals, size_t &index_offset, f32 width,
+               f32 depth, glm::vec3 center) {
   generate_plane(positions, indices, normals, width, depth, 1, 1, center);
-  size_t trig_count = (indices.size() - index_offset) / 3;
-  mat_handles.reserve(trig_count);
-  for (size_t i = 0; i < trig_count; ++i) {
-    mat_handles.push_back(mat);
-  }
   index_offset = indices.size();
 }
 
@@ -233,6 +226,7 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
   HASSERT(p_rm);
   this->p_device = p_device;
   this->p_rm = p_rm;
+  this->p_staging_buffer = &staging_buffer;
 
   // Create the output image
   create_output_image(output_image_width, output_image_height);
@@ -319,7 +313,6 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
   std::vector<glm::vec3> positions;
   std::vector<glm::vec3> normals;
   std::vector<u32> indices;
-  std::vector<MaterialHandle> handles;
   std::vector<Lambert> lambert_mats;
   std::vector<Metal> metal_mats;
   std::vector<Emissive> emissive_mats;
@@ -328,29 +321,28 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
   lambert_mats.push_back({0.1f, 0.2f, 0.5f, 1.f});
   lambert_mats.push_back({0.8f, 0.8f, 0.0f, 1.0f});
   metal_mats.push_back({0.8f, 0.8f, 0.8f, 0.3f});
-  emissive_mats.push_back({17.f, 12.f, 4.f, 1.f});
-  dielectric_mats.push_back({1.f / 1.5f});
-  MaterialHandle center_mat = {0, MATERIAL_LAMBERT};
-  MaterialHandle left_mat = {0, MATERIAL_METAL};
-  MaterialHandle right_mat = {0, MATERIAL_EMISSIVE};
+  emissive_mats.push_back({1.f, 1.f, 1.f, 1.f});
+  emissive_mats.push_back({5.f, 12.f, 4.f, 1.f});
+  dielectric_mats.push_back({1.5f});
+  MaterialHandle blue_mat = {0, MATERIAL_LAMBERT};
+  MaterialHandle metal_mat = {0, MATERIAL_METAL};
+  MaterialHandle emissive_mat = {0, MATERIAL_EMISSIVE};
+  MaterialHandle emissive_mat2 = {1, MATERIAL_EMISSIVE};
   MaterialHandle ground_mat = {1, MATERIAL_LAMBERT};
   MaterialHandle glass_mat = {0, MATERIAL_DIELECTRIC};
-  // center
+  // Load sphere data
   size_t index_offset = 0;
-  add_sphere(positions, indices, normals, handles, center_mat, index_offset,
-             0.5f, glm::vec3(0.f, 0.f, -1.2f));
-  // left
-  add_sphere(positions, indices, normals, handles, left_mat, index_offset, 0.5f,
-             glm::vec3(-1.f, 0.f, -1.1f));
-  // right
-  add_sphere(positions, indices, normals, handles, right_mat, index_offset,
-             0.25f, glm::vec3(-0.5f, 2.f, -1.1f));
-  // ground
-  add_plane(positions, indices, normals, handles, ground_mat, index_offset,
-            100.f, 100.f, glm::vec3(0.f, -0.5f, 0.f));
-  // glass
-  add_sphere(positions, indices, normals, handles, glass_mat, index_offset,
-             0.5f, glm::vec3(-0.5f, 2.f, -1.1f));
+  size_t temp_i_offset = index_offset;
+  size_t trig_offset = indices.size() / 3;
+  temp_i_offset = index_offset;
+  add_sphere(positions, indices, normals, index_offset, 0.5f, glm::vec3(0.f));
+  size_t trig_count = (indices.size() - temp_i_offset) / 3;
+  // Load plane data
+  size_t trig_offset_2 = indices.size() / 3;
+  size_t prev_indices_size = indices.size();
+  add_plane(positions, indices, normals, index_offset, 100.f, 100.f,
+            glm::vec3(0.f, -0.5f, 0.f));
+  size_t trig_count2 = (indices.size() - prev_indices_size) / 3;
 
   std::vector<glm::vec3> triangle_centroids;
   std::vector<TriangleGeom> triangle_positions;
@@ -368,21 +360,49 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
                                  0.3333f);
     triangle_ids.push_back(triangle_ids.size());
   }
-  triangle_count = triangle_positions.size();
 
-  // BVH
-  u32 root_node_idx = 0, nodes_used = 1;
-  std::vector<BVHNode> bvh_nodes(triangle_count * 2 - 1);
-  BVHNode &root = bvh_nodes[root_node_idx];
-  root.left_first = 0;
-  root.tri_count = triangle_count;
+  // TODO: All data stored on cpu side
+  total_triangle_count = triangle_positions.size();
+  std::vector<BVHNode> bvh_nodes(total_triangle_count * 2 - 1);
+  // BLAS
+  std::array<BLAS, 2> blases;
+  blases[0].build(bvh_nodes, 0, triangle_positions, triangle_centroids,
+                  triangle_ids, trig_count, trig_offset);
+  blases[1].build(bvh_nodes, blases[0].nodes_count, triangle_positions,
+                  triangle_centroids, triangle_ids, trig_count2, trig_offset_2);
+
+  std::array<BLASInstance, 5> blas_instances;
+  blas_instances[0].blas_id = 0;
+  blas_instances[0].set_transform(
+      glm::translate(glm::mat4(1.f), glm::vec3(-3.f, 0.f, -1.f)));
+  blas_instances[0].material_handle = metal_mat;
+
+  blas_instances[1].blas_id = 1;
+  blas_instances[1].set_transform(glm::mat4(1.f));
+  blas_instances[1].material_handle = ground_mat;
+
+  blas_instances[2].blas_id = 0;
+  blas_instances[2].set_transform(
+      glm::translate(glm::mat4(1.f), glm::vec3(0.f, 4.f, 0.f)));
+  blas_instances[2].material_handle = emissive_mat;
+
+  blas_instances[3].blas_id = 0;
+  blas_instances[3].set_transform(
+      glm::translate(glm::mat4(1.f), glm::vec3(2.f, 0.f, -2.f)));
+  blas_instances[3].material_handle = blue_mat;
+
+  blas_instances[4].blas_id = 0;
+  blas_instances[4].set_transform(
+      glm::translate(glm::mat4(1.f), glm::vec3(3.f, 0.f, 4.f)));
+  blas_instances[4].material_handle = emissive_mat2;
+
+  std::vector<TLASNode> tlas_nodes(blas_instances.size() * 2);
+  TLAS tlas;
   Clock clock;
   clock.start();
-  update_node_bounds(bvh_nodes, triangle_positions, triangle_ids,
-                     root_node_idx);
-  subdivide(bvh_nodes, triangle_positions, triangle_centroids, triangle_ids,
-            root_node_idx, nodes_used);
-  HINFO("BVH build time: {}", clock.get_elapsed_time_s());
+  tlas.build(tlas_nodes, blas_instances, blases, blas_instances.size(),
+             bvh_nodes);
+  HINFO("TLAS build time: {}s", clock.get_elapsed_time_s());
 
   // Create the buffers
   VmaAllocationCreateInfo vma_alloc_info{
@@ -400,10 +420,6 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
   triangle_shading_buffer =
       p_rm->create_buffer("TriangleShadingBuffer", buffer_info, vma_alloc_info);
 
-  buffer_info.size = handles.size() * sizeof(MaterialHandle);
-  triangle_mat_ids_buffer =
-      p_rm->create_buffer("TriangleMatIdsBuffer", buffer_info, vma_alloc_info);
-
   buffer_info.size = lambert_mats.size() * sizeof(Lambert);
   lambert_materials_buffer = p_rm->create_buffer("LambertMaterialsBuffer",
                                                  buffer_info, vma_alloc_info);
@@ -418,9 +434,21 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
   buffer_info.size = emissive_mats.size() * sizeof(Emissive);
   emissive_materials_buffer = p_rm->create_buffer("EmissiveMaterialsBuffer",
                                                   buffer_info, vma_alloc_info);
-  buffer_info.size = nodes_used * sizeof(BVHNode);
+  buffer_info.size = tlas.node_count * sizeof(TLASNode);
+  tlas_nodes_buffer =
+      p_rm->create_buffer("TLASNodesBuffer", buffer_info, vma_alloc_info);
+
+  buffer_info.size =
+      (blases[0].nodes_count + blases[1].nodes_count) * sizeof(BVHNode);
   bvh_nodes_buffer =
       p_rm->create_buffer("BVHNodesBuffer", buffer_info, vma_alloc_info);
+
+  buffer_info.size = blases.size() * sizeof(BLAS);
+  blas_buffer = p_rm->create_buffer("BLASBuffer", buffer_info, vma_alloc_info);
+
+  buffer_info.size = blas_instances.size() * sizeof(BLASInstance);
+  blas_instances_buffer =
+      p_rm->create_buffer("BLASInstancesBuffer", buffer_info, vma_alloc_info);
 
   buffer_info.size = triangle_ids.size() * sizeof(u32);
   tri_ids_buffer =
@@ -429,22 +457,21 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
   VulkanBuffer *vk_trig_pos = p_rm->access_buffer(triangle_geom_buffer);
   VulkanBuffer *vk_trig_shad_data =
       p_rm->access_buffer(triangle_shading_buffer);
-  VulkanBuffer *vk_trig_mats_buffer =
-      p_rm->access_buffer(triangle_mat_ids_buffer);
   VulkanBuffer *vk_lamberts = p_rm->access_buffer(lambert_materials_buffer);
   VulkanBuffer *vk_metals = p_rm->access_buffer(metal_materials_buffer);
   VulkanBuffer *vk_dielectrics =
       p_rm->access_buffer(dielectric_materials_buffer);
   VulkanBuffer *vk_emissives = p_rm->access_buffer(emissive_materials_buffer);
+  VulkanBuffer *vk_tlas_nodes = p_rm->access_buffer(tlas_nodes_buffer);
   VulkanBuffer *vk_bvh_nodes = p_rm->access_buffer(bvh_nodes_buffer);
+  VulkanBuffer *vk_blas = p_rm->access_buffer(blas_buffer);
+  VulkanBuffer *vk_blas_instances = p_rm->access_buffer(blas_instances_buffer);
   VulkanBuffer *vk_tri_ids = p_rm->access_buffer(tri_ids_buffer);
 
   staging_buffer.stage(triangle_positions.data(), triangle_geom_buffer, 0,
                        vk_trig_pos->vk_device_size);
   staging_buffer.stage(triangle_surface_data.data(), triangle_shading_buffer, 0,
                        vk_trig_shad_data->vk_device_size);
-  staging_buffer.stage(handles.data(), triangle_mat_ids_buffer, 0,
-                       vk_trig_mats_buffer->vk_device_size);
   staging_buffer.stage(lambert_mats.data(), lambert_materials_buffer, 0,
                        vk_lamberts->vk_device_size);
   staging_buffer.stage(metal_mats.data(), metal_materials_buffer, 0,
@@ -453,8 +480,13 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
                        vk_dielectrics->vk_device_size);
   staging_buffer.stage(emissive_mats.data(), emissive_materials_buffer, 0,
                        vk_emissives->vk_device_size);
+  staging_buffer.stage(tlas_nodes.data(), tlas_nodes_buffer, 0,
+                       vk_tlas_nodes->vk_device_size);
   staging_buffer.stage(bvh_nodes.data(), bvh_nodes_buffer, 0,
                        vk_bvh_nodes->vk_device_size);
+  staging_buffer.stage(blases.data(), blas_buffer, 0, vk_blas->vk_device_size);
+  staging_buffer.stage(blas_instances.data(), blas_instances_buffer, 0,
+                       vk_blas_instances->vk_device_size);
   staging_buffer.stage(triangle_ids.data(), tri_ids_buffer, 0,
                        vk_tri_ids->vk_device_size);
   // Uniform buffers
@@ -476,12 +508,14 @@ void Renderer::shutdown() {
     p_rm->queue_destroy({handle});
   }
   p_rm->queue_destroy({tri_ids_buffer});
+  p_rm->queue_destroy({blas_instances_buffer});
+  p_rm->queue_destroy({blas_buffer});
+  p_rm->queue_destroy({tlas_nodes_buffer});
   p_rm->queue_destroy({bvh_nodes_buffer});
   p_rm->queue_destroy({emissive_materials_buffer});
   p_rm->queue_destroy({dielectric_materials_buffer});
   p_rm->queue_destroy({metal_materials_buffer});
   p_rm->queue_destroy({lambert_materials_buffer});
-  p_rm->queue_destroy({triangle_mat_ids_buffer});
   p_rm->queue_destroy({triangle_shading_buffer});
   p_rm->queue_destroy({triangle_geom_buffer});
   p_rm->queue_destroy({set_layout});
@@ -564,11 +598,14 @@ void Renderer::render(Camera &camera) {
           p_rm->access_buffer(triangle_geom_buffer)->vk_device_address,
       .triangle_shading_buffer =
           p_rm->access_buffer(triangle_shading_buffer)->vk_device_address,
+      .tlas_nodes_buffer =
+          p_rm->access_buffer(tlas_nodes_buffer)->vk_device_address,
       .bvh_nodes_buffer =
           p_rm->access_buffer(bvh_nodes_buffer)->vk_device_address,
+      .blas_buffer = p_rm->access_buffer(blas_buffer)->vk_device_address,
+      .blas_instances_buffer =
+          p_rm->access_buffer(blas_instances_buffer)->vk_device_address,
       .tri_ids_buffer = p_rm->access_buffer(tri_ids_buffer)->vk_device_address,
-      .triangle_mat_ids_buffer =
-          p_rm->access_buffer(triangle_mat_ids_buffer)->vk_device_address,
       .lambert_materials_buffer =
           p_rm->access_buffer(lambert_materials_buffer)->vk_device_address,
       .metal_materials_buffer =
@@ -642,7 +679,7 @@ void Renderer::render(Camera &camera) {
   push_constant.image_width = screen_extents.width;
   push_constant.image_height = screen_extents.height;
   push_constant.frame_index = frame_index;
-  push_constant.triangle_count = triangle_count;
+  push_constant.triangle_count = total_triangle_count;
   push_constant.uniform_data_buffer = uniform_buffer->vk_device_address;
   vkCmdPushConstants(cmd, pipeline->vk_pipeline_layout,
                      VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstant),
@@ -700,4 +737,66 @@ void Renderer::create_output_image(u32 width, u32 height) {
       "OutputImageView", "OutputImage", image_info, vma_alloc_info, view_info);
 }
 
+void Renderer::add_sphere_(f32 radius, const glm::vec3 &center,
+                           MaterialHandle mat) {
+
+  // TODO: Reserve spaces for these
+  std::vector<glm::vec3> positions;
+  std::vector<u32> indices;
+  std::vector<glm::vec3> normals;
+  size_t old_trig_count = total_triangle_count;
+
+  generate_sphere(positions, indices, normals, radius, 64, 32, center);
+
+  total_triangle_count = (indices.size() / 3) + old_trig_count;
+  size_t trig_count = total_triangle_count - old_trig_count;
+
+  std::vector<glm::vec3> triangle_centroids(trig_count);
+  std::vector<u32> triangle_ids(trig_count);
+  std::vector<TriangleShading> triangle_surface_data(trig_count);
+  std::vector<TriangleGeom> triangle_positions(trig_count);
+
+  for (size_t i = 0; i < indices.size(); i += 3) {
+    const size_t idx = i / 3;
+    triangle_positions[idx] =
+        TriangleGeom(positions[indices[i]], positions[indices[i + 1]],
+                     positions[indices[i + 2]]);
+
+    triangle_surface_data[idx] = TriangleShading(
+        normals[indices[i]], normals[indices[i + 1]], normals[indices[i + 2]]);
+
+    triangle_centroids.push_back((positions[indices[i]] +
+                                  positions[indices[i + 1]] +
+                                  positions[indices[i + 2]]) *
+                                 0.3333f);
+
+    triangle_ids.push_back(triangle_ids.size() + old_trig_count);
+  }
+
+  VulkanBuffer *vk_trig_pos = p_rm->access_buffer(triangle_geom_buffer);
+  VulkanBuffer *vk_trig_shad_data =
+      p_rm->access_buffer(triangle_shading_buffer);
+
+  VulkanBuffer *vk_tlas_nodes = p_rm->access_buffer(tlas_nodes_buffer);
+  VulkanBuffer *vk_bvh_nodes = p_rm->access_buffer(bvh_nodes_buffer);
+  VulkanBuffer *vk_blas = p_rm->access_buffer(blas_buffer);
+  VulkanBuffer *vk_tri_ids = p_rm->access_buffer(tri_ids_buffer);
+
+  p_staging_buffer->stage(triangle_positions.data(), triangle_geom_buffer,
+                          old_trig_count * sizeof(TriangleGeom),
+                          vk_trig_pos->vk_device_size);
+  p_staging_buffer->stage(triangle_surface_data.data(), triangle_shading_buffer,
+                          old_trig_count * sizeof(TriangleShading),
+                          vk_trig_shad_data->vk_device_size);
+  // p_staging_buffer->stage(bvh_nodes.data(), bvh_nodes_buffer, 0,
+  //                         vk_bvh_nodes->vk_device_size);
+  // p_staging_buffer->stage(blases.data(), blas_buffer, 0,
+  //                         vk_blas->vk_device_size);
+  p_staging_buffer->stage(triangle_ids.data(), tri_ids_buffer,
+                          old_trig_count * sizeof(u32),
+                          vk_tri_ids->vk_device_size);
+}
+
+void Renderer::add_plane_(f32 width, f32 depth, const glm::vec3 &center,
+                          MaterialHandle mat) {}
 } // namespace hlx

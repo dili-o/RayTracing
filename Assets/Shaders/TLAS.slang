@@ -6,26 +6,29 @@ struct TLASNode {
   float3 aabb_min;
   uint left_right; // 2x16 bit
   float3 aabb_max;
-  uint blas_idx;
+  uint blas_instance_idx;
 
   bool is_leaf() { return left_right == 0; }
 };
 
 bool intersect_tlas(Ray ray, Interval ray_t, inout HitRecord rec,
-									 TLASNode *tlas_nodes, BVH *bvhs, BVHNode *bvh_nodes, Triangle *triangles, uint *tri_ids) {
-	uint node_stack[64];
-	node_stack[0] = 0;
+									  TLASNode *tlas_nodes, BLASInstance *blas_instances,
+                    BLAS *blases, BVHNode *bvh_nodes, TriangleGeom *tris, uint *tri_ids) {
+	uint node_id_stack[64];
+	node_id_stack[0] = 0;
 	uint stack_ptr = 0;
 	float closest_so_far = ray_t.max;
 	bool hit = false;
 
 	while (true) {
-		TLASNode node = tlas_nodes[node_stack[stack_ptr]];
+		TLASNode node = tlas_nodes[node_id_stack[stack_ptr]];
 		if (node.is_leaf()) {
-			if (intersect_bvh(ray, Interval(ray_t.min, closest_so_far), rec, bvhs[node.blas_idx], bvh_nodes, triangles, tri_ids)) {
+      BLASInstance blas_instance = blas_instances[node.blas_instance_idx];
+			if (blas_instance.intersect(ray, Interval(ray_t.min, closest_so_far),
+                                  rec, blases, bvh_nodes, tris, tri_ids)) {
 				hit = true;
 				closest_so_far = rec.t;
-				rec.bvh_id = node.blas_idx;
+        rec.blas_instance_id = node.blas_instance_idx;
 			}
 			if (stack_ptr == 0) break;
 			else --stack_ptr;
@@ -52,12 +55,13 @@ bool intersect_tlas(Ray ray, Interval ray_t, inout HitRecord rec,
 				if (stack_ptr == 0) break;
 				else --stack_ptr;
 			} else {
-				node_stack[stack_ptr] = child1_idx;
-				if (dist2 != 1e30f) node_stack[++stack_ptr] = child2_idx;
+				if (dist2 != 1e30f) {
+          node_id_stack[stack_ptr++] = child2_idx;
+        }
+        node_id_stack[stack_ptr] = child1_idx;
 			}
 		}
   }
 
 	return hit;
 }
-

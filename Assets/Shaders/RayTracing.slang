@@ -1,6 +1,7 @@
 #pragma once
 #include "Material.slang"
 #include "BVHNode.slang"
+#include "TLAS.slang"
 
 struct UniformData {
   float3 pixel00_loc; float pad_0;
@@ -10,9 +11,11 @@ struct UniformData {
 
   TriangleGeom *triangle_geom_buffer;
   TriangleShading *triangle_shading_buffer;
-  BVHNode *bvh_nodes;
-  uint *tri_ids;
-  MaterialHandle *triangle_mat_ids_buffer;
+  TLASNode *tlas_nodes_buffer;
+  BVHNode *bvh_nodes_buffer;
+  BLAS *blas_buffer;
+  BLASInstance *blas_instances_buffer;
+  uint *tri_ids_buffer;
   LambertMaterial *lambert_materials_buffer;
   MetalMaterial *metal_materials_buffer;
   DielectricMaterial *dielectric_materials_buffer;
@@ -57,9 +60,12 @@ void compute_main(uint3 dispatch_thread_id : SV_DispatchThreadID,
       for (uint d = 0; d < max_depth; ++d) {
         Interval ray_t = Interval(0.0001f, 1000.f);
         HitRecord rec;
+        rec.t = 1000.f;
         float3 emission = float3(0.f);
 
-        bool hit_anything = intersect_bvh(r, ray_t, rec, data.bvh_nodes, data.triangle_geom_buffer, data.tri_ids);
+        bool hit_anything = intersect_tlas(r, ray_t, rec, data.tlas_nodes_buffer,
+                                           data.blas_instances_buffer, data.blas_buffer, data.bvh_nodes_buffer,
+                                           data.triangle_geom_buffer, data.tri_ids_buffer);
 
         if (hit_anything) {
           // Set the HitRecord normal to the interpolated normal
@@ -68,7 +74,7 @@ void compute_main(uint3 dispatch_thread_id : SV_DispatchThreadID,
 
           bool ray_scattered = false;
           Ray r_out;
-          MaterialHandle mat_handle = data.triangle_mat_ids_buffer[rec.tri_id];
+          MaterialHandle mat_handle = data.blas_instances_buffer[rec.blas_instance_id].material_handle;
           float3 material_attenuation = float3(0.f);
           switch (mat_handle.material_type) {
             case MATERIAL_LAMBERT: {

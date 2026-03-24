@@ -3,14 +3,7 @@
 #include "Ray.slang"
 #include "HitRecord.slang"
 #include "Triangle.slang"
-
-struct BVHNode {
-  float3 aabb_min; 
-  uint left_first; // Points to the left node or the first prim
-
-	float3 aabb_max;
-  uint tri_count;
-};
+#include "Material.slang"
 
 float intersect_aabb(const Ray ray, const float3 bmin, const float3 bmax, const float t) {
 	float tx1 = (bmin.x - ray.origin.x) / ray.direction.x;
@@ -29,11 +22,25 @@ float intersect_aabb(const Ray ray, const float3 bmin, const float3 bmax, const 
 	else return 1e30f;
 }
 
-bool intersect_bvh(Ray ray, Interval ray_t, inout HitRecord rec,
-									 BVHNode *nodes, TriangleGeom *tris, uint *tri_ids) {
+struct BVHNode {
+  float3 aabb_min; 
+  uint left_first; // Points to the left node or the first prim
+
+	float3 aabb_max;
+  uint tri_count;
+};
+
+struct BLAS {
+  uint bvh_node_idx;
+  uint nodes_count;
+  uint tri_count;
+  uint padding;
+
+bool intersect(Ray ray, Interval ray_t, inout HitRecord rec,
+                    BVHNode *nodes, TriangleGeom *tris, uint *tri_ids) {
 	uint node_id_stack[64];
   // Initialize first item in the stack to the root node
-	node_id_stack[0] = 0;
+	node_id_stack[0] = bvh_node_idx;
 	uint stack_ptr = 0;
 	float closest_so_far = ray_t.max;
 	bool hit = false;
@@ -76,84 +83,31 @@ bool intersect_bvh(Ray ray, Interval ray_t, inout HitRecord rec,
 				if (stack_ptr == 0) break;
 				else --stack_ptr;
 			} else {
-				node_id_stack[stack_ptr] = child1_idx;
-				if (dist2 != 1e30f) node_id_stack[++stack_ptr] = child2_idx;
+				if (dist2 != 1e30f) {
+          node_id_stack[stack_ptr++] = child2_idx;
+        }
+        node_id_stack[stack_ptr] = child1_idx;
 			}
 		}
   }
 
 	return hit;
 }
-
-#if 0
-struct BVH {
-  float4x4 transform;
-  float4x4 inv_transform;
-  uint bvh_nodes_index; uint trig_offset; float2 padding;
 };
 
-bool intersect_bvh(Ray ray, Interval ray_t, inout HitRecord rec,
-									 BVH bvh, BVHNode *nodes, Triangle *triangles, uint *tri_ids) {
-	uint node_stack[64];
-	node_stack[0] = bvh.bvh_nodes_index;
-	uint bvh_node_offset = bvh.bvh_nodes_index;
-	uint stack_ptr = 0;
-	float closest_so_far = ray_t.max;
-	bool hit = false;
+struct BLASInstance {
+  float4x4 inv_transform;
 
-	// Transform ray
-	float3 new_origin = mul(bvh.inv_transform, float4(ray.origin, 1.f)).xyz;
-	float3 new_dir = (mul(bvh.inv_transform, float4(ray.direction, 0.f)).xyz);
-  Ray new_ray = Ray(new_origin, new_dir);
+  MaterialHandle material_handle;
+  uint blas_index;
+  uint padding;
 
-  while (true) {
-		BVHNode node = nodes[node_stack[stack_ptr]];
-		if (node.prim_count > 0) {
-			for (uint i = 0; i < node.prim_count; ++i) {
-				uint tri_index = node.left_first + bvh.trig_offset + i;
-				if (triangle_hit(triangles[tri_ids[tri_index]], new_ray, Interval(ray_t.min, closest_so_far), rec)) {
-					hit = true;
-					rec.tri_id = tri_ids[tri_index];	
-					closest_so_far = rec.t;
-				}
-			}
-			if (stack_ptr == 0) break;
-			else --stack_ptr;
-        } else {
-			uint child1_idx = node.left_first + bvh_node_offset;
-			uint child2_idx = child1_idx + 1;
-			BVHNode child1 = nodes[child1_idx];
-			BVHNode child2 = nodes[child2_idx];
-			float dist1 = intersect_aabb(new_ray, child1.aabb_min, child1.aabb_max, closest_so_far);
-			float dist2 = intersect_aabb(new_ray, child2.aabb_min, child2.aabb_max, closest_so_far);
+bool intersect(Ray ray, Interval ray_t, inout HitRecord rec,
+               BLAS *blases, BVHNode *bvh_nodes, TriangleGeom *tris, uint *tri_ids) {
 
-			if (dist1 > dist2) {
-				// Swap
-				float temp = dist1;
-				dist1 = dist2;
-				dist2 = temp;
-				// Swap
-				uint temp_c = child1_idx;
-				child1_idx = child2_idx;
-				child2_idx = temp_c;
-			}
+	ray.origin = mul(inv_transform, float4(ray.origin, 1.f)).xyz;
+	ray.direction = mul(inv_transform, float4(ray.direction, 0.f)).xyz;
 
-			if (dist1 == 1e30f) {
-				if (stack_ptr == 0) break;
-				else --stack_ptr;
-			} else {
-				node_stack[stack_ptr] = child1_idx;
-				if (dist2 != 1e30f) node_stack[++stack_ptr] = child2_idx;
-			}
-		}
-  }
-
-  if (hit) {
-		float4x4 transform = bvh.transform;
-		float4x4 inv_transform_t = transpose(bvh.inv_transform);
-		rec.p = mul(transform, float4(rec.p, 1.f)).xyz;
-		rec.normal = normalize(mul(inv_transform_t, float4(rec.normal, 0.f)).xyz);
-  }
-	return hit;
+  return blases[blas_index].intersect(ray, ray_t, rec, bvh_nodes, tris, tri_ids);
 }
-#endif
+};
