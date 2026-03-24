@@ -313,23 +313,13 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
   std::vector<glm::vec3> positions;
   std::vector<glm::vec3> normals;
   std::vector<u32> indices;
-  std::vector<Lambert> lambert_mats;
-  std::vector<Metal> metal_mats;
-  std::vector<Emissive> emissive_mats;
-  std::vector<Dielectric> dielectric_mats;
   // Init materials
-  lambert_mats.push_back({0.1f, 0.2f, 0.5f, 1.f});
-  lambert_mats.push_back({0.8f, 0.8f, 0.0f, 1.0f});
-  metal_mats.push_back({0.8f, 0.8f, 0.8f, 0.3f});
-  emissive_mats.push_back({1.f, 1.f, 1.f, 1.f});
-  emissive_mats.push_back({5.f, 12.f, 4.f, 1.f});
-  dielectric_mats.push_back({1.5f});
-  MaterialHandle blue_mat = {0, MATERIAL_LAMBERT};
-  MaterialHandle metal_mat = {0, MATERIAL_METAL};
-  MaterialHandle emissive_mat = {0, MATERIAL_EMISSIVE};
-  MaterialHandle emissive_mat2 = {1, MATERIAL_EMISSIVE};
-  MaterialHandle ground_mat = {1, MATERIAL_LAMBERT};
-  MaterialHandle glass_mat = {0, MATERIAL_DIELECTRIC};
+  MaterialHandle blue_mat = add_lambert_material({0.1f, 0.2f, 0.5f});
+  MaterialHandle metal_mat = add_metal_material({0.8f, 0.8f, 0.8f}, 0.3f);
+  MaterialHandle emissive_mat = add_emissive_material({1.f, 1.f, 1.f});
+  MaterialHandle emissive_mat2 = add_emissive_material({15.f, 12.f, 14.f});
+  MaterialHandle ground_mat = add_lambert_material({0.8f, 0.8f, 0.0f});
+  MaterialHandle glass_mat = add_dielectric_material(1.5f);
   // Load sphere data
   size_t index_offset = 0;
   size_t temp_i_offset = index_offset;
@@ -420,18 +410,18 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
   triangle_shading_buffer =
       p_rm->create_buffer("TriangleShadingBuffer", buffer_info, vma_alloc_info);
 
-  buffer_info.size = lambert_mats.size() * sizeof(Lambert);
+  buffer_info.size = lambert_materials.size() * sizeof(Lambert);
   lambert_materials_buffer = p_rm->create_buffer("LambertMaterialsBuffer",
                                                  buffer_info, vma_alloc_info);
-  buffer_info.size = metal_mats.size() * sizeof(Metal);
+  buffer_info.size = metal_materials.size() * sizeof(Metal);
   metal_materials_buffer =
       p_rm->create_buffer("MetalMaterialsBuffer", buffer_info, vma_alloc_info);
 
-  buffer_info.size = dielectric_mats.size() * sizeof(Dielectric);
+  buffer_info.size = dielectric_materials.size() * sizeof(Dielectric);
   dielectric_materials_buffer = p_rm->create_buffer(
       "DielectricMaterialsBuffer", buffer_info, vma_alloc_info);
 
-  buffer_info.size = emissive_mats.size() * sizeof(Emissive);
+  buffer_info.size = emissive_materials.size() * sizeof(Emissive);
   emissive_materials_buffer = p_rm->create_buffer("EmissiveMaterialsBuffer",
                                                   buffer_info, vma_alloc_info);
   buffer_info.size = tlas.node_count * sizeof(TLASNode);
@@ -472,13 +462,13 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
                        vk_trig_pos->vk_device_size);
   staging_buffer.stage(triangle_surface_data.data(), triangle_shading_buffer, 0,
                        vk_trig_shad_data->vk_device_size);
-  staging_buffer.stage(lambert_mats.data(), lambert_materials_buffer, 0,
+  staging_buffer.stage(lambert_materials.data(), lambert_materials_buffer, 0,
                        vk_lamberts->vk_device_size);
-  staging_buffer.stage(metal_mats.data(), metal_materials_buffer, 0,
+  staging_buffer.stage(metal_materials.data(), metal_materials_buffer, 0,
                        vk_metals->vk_device_size);
-  staging_buffer.stage(dielectric_mats.data(), dielectric_materials_buffer, 0,
-                       vk_dielectrics->vk_device_size);
-  staging_buffer.stage(emissive_mats.data(), emissive_materials_buffer, 0,
+  staging_buffer.stage(dielectric_materials.data(), dielectric_materials_buffer,
+                       0, vk_dielectrics->vk_device_size);
+  staging_buffer.stage(emissive_materials.data(), emissive_materials_buffer, 0,
                        vk_emissives->vk_device_size);
   staging_buffer.stage(tlas_nodes.data(), tlas_nodes_buffer, 0,
                        vk_tlas_nodes->vk_device_size);
@@ -735,6 +725,28 @@ void Renderer::create_output_image(u32 width, u32 height) {
 
   output_image_view = p_rm->create_image_view(
       "OutputImageView", "OutputImage", image_info, vma_alloc_info, view_info);
+}
+
+MaterialHandle Renderer::add_lambert_material(const glm::vec3 &albedo) {
+  lambert_materials.push_back({albedo.x, albedo.y, albedo.z, 1.f});
+  return MaterialHandle(lambert_materials.size() - 1, MaterialType::LAMBERT);
+}
+
+MaterialHandle Renderer::add_metal_material(const glm::vec3 &albedo,
+                                            const f32 fuzz) {
+  metal_materials.push_back({albedo.x, albedo.y, albedo.z, fuzz});
+  return MaterialHandle(metal_materials.size() - 1, MaterialType::METAL);
+}
+
+MaterialHandle Renderer::add_dielectric_material(const f32 refractive_index) {
+  dielectric_materials.push_back({refractive_index});
+  return MaterialHandle(dielectric_materials.size() - 1,
+                        MaterialType::DIELECTRIC);
+}
+
+MaterialHandle Renderer::add_emissive_material(const glm::vec3 &intensity) {
+  emissive_materials.push_back({intensity.x, intensity.y, intensity.z, 1.f});
+  return MaterialHandle(emissive_materials.size() - 1, MaterialType::EMISSIVE);
 }
 
 void Renderer::add_sphere_(f32 radius, const glm::vec3 &center,

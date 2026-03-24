@@ -51,5 +51,15 @@ public:
   BufferHandle emissive_materials_buffer;
   u32 total_triangle_count{0};
   u32 frame_index{0};
+
+private:
+  void load_sphere_data();
+  void load_cube_data();
+
+private:
+  std::vector<Lambert> lambert_materials;
+  std::vector<Metal> metal_materials;
+  std::vector<Emissive> emissive_materials;
+  std::vector<Dielectric> dielectric_materials;
 };
 } // namespace hlx

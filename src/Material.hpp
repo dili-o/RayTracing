@@ -1,11 +1,6 @@
 #pragma once
 
-enum MaterialType {
-  MATERIAL_LAMBERT,
-  MATERIAL_METAL,
-  MATERIAL_DIELECTRIC,
-  MATERIAL_EMISSIVE
-};
+enum MaterialType { LAMBERT, METAL, DIELECTRIC, EMISSIVE };
 
 struct alignas(16) Lambert {
   f32 albedo[4];
