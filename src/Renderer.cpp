@@ -17,9 +17,9 @@
 #include <glm/gtc/constants.hpp>
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
-#include <iostream>
 
-#define SAMPLES_PER_FRAME 1u
+// TODO: Make configurable
+constexpr u32 samples_per_pixel = 3u;
 
 static constexpr VkFormat output_image_format = VK_FORMAT_R32G32B32A32_SFLOAT;
 static constexpr size_t MAX_TRIANGLE_COUNT = 1'000'000;
@@ -41,6 +41,22 @@ struct alignas(16) UniformData {
   VkDeviceAddress metal_materials_buffer;
   VkDeviceAddress dielectric_materials_buffer;
   VkDeviceAddress emissive_materials_buffer;
+};
+
+struct PushConstant {
+  VkDeviceAddress uniform_data_buffer;
+
+  u32 image_width;
+  u32 image_height;
+
+  u32 triangle_count;
+  u32 frame_index;
+
+  f32 pixel_sample_scale;
+  f32 recip_sqrt_spp;
+
+  u32 sqrt_spp;
+  f32 padding;
 };
 
 void generate_sphere(std::vector<glm::vec3> &out_vertices,
@@ -212,14 +228,6 @@ void add_plane(std::vector<glm::vec3> &positions, std::vector<u32> &indices,
   index_offset = indices.size();
 }
 
-struct PushConstant {
-  VkDeviceAddress uniform_data_buffer;
-  u32 image_width;
-  u32 image_height;
-  u32 triangle_count;
-  u32 frame_index;
-};
-
 void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
                     VkStagingBuffer &staging_buffer, u32 output_image_width,
                     u32 output_image_height) {
@@ -389,8 +397,6 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
     }
   };
   // Create Cornell Box
-  // Scene scale
-  float s = 5.0f;
 
   // FLOOR
   {
@@ -758,6 +764,10 @@ void Renderer::render(Camera &camera) {
   push_constant.frame_index = frame_index;
   push_constant.triangle_count = total_triangle_count;
   push_constant.uniform_data_buffer = uniform_buffer->vk_device_address;
+  push_constant.sqrt_spp = u32(std::sqrt(samples_per_pixel));
+  push_constant.pixel_sample_scale =
+      1.f / (push_constant.sqrt_spp * push_constant.sqrt_spp);
+  push_constant.recip_sqrt_spp = 1.f / push_constant.sqrt_spp;
   vkCmdPushConstants(cmd, pipeline->vk_pipeline_layout,
                      VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstant),
                      &push_constant);
