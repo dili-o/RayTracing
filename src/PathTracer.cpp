@@ -248,8 +248,8 @@ void PathTracer::run() {
   f64 last_time = clock.get_elapsed_time_s();
   u64 frame_number = 0;
   Camera cam;
-  cam.position = glm::vec3(0.f);
-  cam.look_at = glm::vec3(0.f, 0.f, -1.f);
+  cam.position = glm::vec3(0.f, 0.75f, 1.5f);
+  cam.look_at = glm::vec3(0.f, 0.75f, -1.f);
   cam.fov = 90.f;
   cam.v_up = glm::vec3(0.f, 1.f, 0.f);
   cam.init();

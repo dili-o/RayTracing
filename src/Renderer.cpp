@@ -414,7 +414,7 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
   // BACK WALL
   {
     Transform t;
-    t.position = glm::vec3(0.0f, 1.0f, -1.04f);
+    t.position = glm::vec3(0.0f, 1.0f, -1.0f);
     t.scale = glm::vec3(2.0f, 1.0f, 2.0f);
     t.rotation = glm::vec4(1, 0, 0, -glm::half_pi<float>());
 
