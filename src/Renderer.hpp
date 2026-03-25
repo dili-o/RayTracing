@@ -55,6 +55,7 @@ public:
 private:
   void load_sphere_data();
   void load_cube_data();
+  void load_plane_data();
 
 private:
   std::vector<Lambert> lambert_materials;

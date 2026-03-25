@@ -17,6 +17,7 @@
 #include <glm/gtc/constants.hpp>
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
+#include <iostream>
 
 #define SAMPLES_PER_FRAME 1u
 
@@ -130,8 +131,6 @@ void generate_cube(std::vector<glm::vec3> &out_vertices,
                    std::vector<uint32_t> &out_indices,
                    std::vector<glm::vec3> &out_normals, const glm::vec3 &center,
                    float width, float height, float depth) {
-  uint32_t vertex_offset = static_cast<uint32_t>(out_vertices.size());
-
   float hx = width * 0.5f;
   float hy = height * 0.5f;
   float hz = depth * 0.5f;
@@ -139,7 +138,7 @@ void generate_cube(std::vector<glm::vec3> &out_vertices,
   // Helper lambda to push a face
   auto add_face = [&](glm::vec3 v0, glm::vec3 v1, glm::vec3 v2, glm::vec3 v3,
                       glm::vec3 normal) {
-    uint32_t start = static_cast<uint32_t>(out_vertices.size());
+    uint32_t base = static_cast<uint32_t>(out_vertices.size());
 
     out_vertices.push_back(v0);
     out_vertices.push_back(v1);
@@ -152,13 +151,13 @@ void generate_cube(std::vector<glm::vec3> &out_vertices,
     out_normals.push_back(normal);
 
     // Two triangles
-    out_indices.push_back(start + 0 + vertex_offset);
-    out_indices.push_back(start + 1 + vertex_offset);
-    out_indices.push_back(start + 2 + vertex_offset);
+    out_indices.push_back(0 + base);
+    out_indices.push_back(1 + base);
+    out_indices.push_back(2 + base);
 
-    out_indices.push_back(start + 0 + vertex_offset);
-    out_indices.push_back(start + 2 + vertex_offset);
-    out_indices.push_back(start + 3 + vertex_offset);
+    out_indices.push_back(0 + base);
+    out_indices.push_back(2 + base);
+    out_indices.push_back(3 + base);
   };
 
   // ---- Faces ----
@@ -195,19 +194,21 @@ void generate_cube(std::vector<glm::vec3> &out_vertices,
 }
 
 void add_sphere(std::vector<glm::vec3> &positions, std::vector<u32> &indices,
-                std::vector<glm::vec3> &normals, size_t &index_offset,
-                f32 radius, glm::vec3 center) {
+                std::vector<glm::vec3> &normals, size_t &index_offset) {
 
-  generate_sphere(positions, indices, normals, radius, 64, 32, center);
+  generate_sphere(positions, indices, normals, 0.5f, 64, 32, glm::vec3(0.f));
   index_offset = indices.size();
 }
 
-void add_cuboid() {}
+void add_cube(std::vector<glm::vec3> &positions, std::vector<u32> &indices,
+              std::vector<glm::vec3> &normals, size_t &index_offset) {
+  generate_cube(positions, indices, normals, glm::vec3(0.f), 1.f, 1.f, 1.f);
+  index_offset = indices.size();
+}
 
 void add_plane(std::vector<glm::vec3> &positions, std::vector<u32> &indices,
-               std::vector<glm::vec3> &normals, size_t &index_offset, f32 width,
-               f32 depth, glm::vec3 center) {
-  generate_plane(positions, indices, normals, width, depth, 1, 1, center);
+               std::vector<glm::vec3> &normals, size_t &index_offset) {
+  generate_plane(positions, indices, normals, 1.f, 1.f, 1, 1, glm::vec3(0.f));
   index_offset = indices.size();
 }
 
@@ -317,22 +318,24 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
   MaterialHandle blue_mat = add_lambert_material({0.1f, 0.2f, 0.5f});
   MaterialHandle metal_mat = add_metal_material({0.8f, 0.8f, 0.8f}, 0.3f);
   MaterialHandle emissive_mat = add_emissive_material({1.f, 1.f, 1.f});
-  MaterialHandle emissive_mat2 = add_emissive_material({15.f, 12.f, 14.f});
   MaterialHandle ground_mat = add_lambert_material({0.8f, 0.8f, 0.0f});
   MaterialHandle glass_mat = add_dielectric_material(1.5f);
+  MaterialHandle red_mat = add_lambert_material({0.65f, 0.05f, 0.05f});
+  MaterialHandle white_mat = add_lambert_material({0.73f, 0.73f, 0.73f});
+  MaterialHandle green_mat = add_lambert_material({0.12f, 0.45f, 0.15f});
+  MaterialHandle emissive_mat2 = add_emissive_material({15.f, 15.f, 15.f});
   // Load sphere data
   size_t index_offset = 0;
-  size_t temp_i_offset = index_offset;
-  size_t trig_offset = indices.size() / 3;
-  temp_i_offset = index_offset;
-  add_sphere(positions, indices, normals, index_offset, 0.5f, glm::vec3(0.f));
-  size_t trig_count = (indices.size() - temp_i_offset) / 3;
+  add_sphere(positions, indices, normals, index_offset);
+  size_t sphere_trig_count = indices.size() / 3;
   // Load plane data
-  size_t trig_offset_2 = indices.size() / 3;
   size_t prev_indices_size = indices.size();
-  add_plane(positions, indices, normals, index_offset, 1.f, 1.f,
-            glm::vec3(0.f, 0.f, 0.f));
-  size_t trig_count2 = (indices.size() - prev_indices_size) / 3;
+  add_plane(positions, indices, normals, index_offset);
+  size_t plane_trig_count = (indices.size() - prev_indices_size) / 3;
+  // // Load cube data
+  prev_indices_size = indices.size();
+  add_cube(positions, indices, normals, index_offset);
+  size_t cube_trig_count = (indices.size() - prev_indices_size) / 3;
 
   std::vector<glm::vec3> triangle_centroids;
   std::vector<TriangleGeom> triangle_positions;
@@ -355,44 +358,117 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
   total_triangle_count = triangle_positions.size();
   std::vector<BVHNode> bvh_nodes(total_triangle_count * 2 - 1);
   // BLAS
-  std::array<BLAS, 2> blases;
+  std::array<BLAS, 3> blases;
   blases[0].build(bvh_nodes, 0, triangle_positions, triangle_centroids,
-                  triangle_ids, trig_count, trig_offset);
+                  triangle_ids, sphere_trig_count, 0);
   blases[1].build(bvh_nodes, blases[0].nodes_count, triangle_positions,
-                  triangle_centroids, triangle_ids, trig_count2, trig_offset_2);
+                  triangle_centroids, triangle_ids, plane_trig_count,
+                  sphere_trig_count);
+  blases[2].build(bvh_nodes, blases[0].nodes_count + blases[1].nodes_count,
+                  triangle_positions, triangle_centroids, triangle_ids,
+                  cube_trig_count, sphere_trig_count + plane_trig_count);
 
-  std::array<BLASInstance, 6> blas_instances;
-  blas_instances[0].blas_id = 0;
-  blas_instances[0].set_transform(
-      glm::translate(glm::mat4(1.f), glm::vec3(-3.f, 0.f, -1.f)));
-  blas_instances[0].material_handle = blue_mat;
+  std::vector<BLASInstance> blas_instances;
+  auto add_instance = [&](u32 id, const glm::mat4 &transform,
+                          MaterialHandle mat_handle) {
+    BLASInstance inst;
+    inst.blas_id = id;
+    inst.set_transform(transform);
+    inst.material_handle = mat_handle;
+    blas_instances.push_back(inst);
+  };
+  struct Transform {
+    glm::vec3 position{0.f};
+    glm::vec4 rotation = glm::vec4(0.f, 1.f, 0.f, 0.f);
+    glm::vec3 scale{1.f};
 
-  blas_instances[1].blas_id = 0;
-  blas_instances[1].set_transform(
-      glm::translate(glm::mat4(1.f), glm::vec3(-2.f, 0.f, -1.f)));
-  blas_instances[1].material_handle = glass_mat;
+    glm::mat4 get_mat4() {
+      return glm::translate(glm::mat4(1.f), position) *
+             glm::rotate(glm::mat4(1.f), rotation.w, glm::vec3(rotation)) *
+             glm::scale(glm::mat4(1.f), scale);
+    }
+  };
+  // Create Cornell Box
+  // Scene scale
+  float s = 5.0f;
 
-  blas_instances[2].blas_id = 0;
-  blas_instances[2].set_transform(
-      glm::translate(glm::mat4(1.f), glm::vec3(-1.f, 0.f, -1.f)));
-  blas_instances[2].material_handle = metal_mat;
+  // FLOOR
+  {
+    Transform t;
+    t.position = glm::vec3(0.0f, 0.0f, -0.025f);
+    t.scale = glm::vec3(2.0f, 1.0f, 2.0f);
 
-  blas_instances[3].blas_id = 0;
-  blas_instances[3].set_transform(
-      glm::translate(glm::mat4(1.f), glm::vec3(0.f, 0.f, -1.f)));
-  blas_instances[3].material_handle = blue_mat;
+    add_instance(1, t.get_mat4(), white_mat);
+  }
 
-  blas_instances[4].blas_id = 1;
-  blas_instances[4].set_transform(
-      glm::translate(glm::mat4(1.f), glm::vec3(0.f, -0.5f, 0.f)) *
-      glm::scale(glm::mat4(1.f), glm::vec3(10.f, 1.f, 10.f)));
-  blas_instances[4].material_handle = ground_mat;
+  // CEILING
+  {
+    Transform t;
+    t.position = glm::vec3(0.0f, 1.99f, -0.025f);
+    t.scale = glm::vec3(2.0f, 1.0f, 2.0f);
+    t.rotation = glm::vec4(1, 0, 0, glm::pi<float>());
 
-  blas_instances[5].blas_id = 1;
-  blas_instances[5].set_transform(
-      glm::translate(glm::mat4(1.f), glm::vec3(0.f, 3.f, 0.f)) *
-      glm::scale(glm::mat4(1.f), glm::vec3(2.f, 1.f, 2.f)));
-  blas_instances[5].material_handle = emissive_mat2;
+    add_instance(1, t.get_mat4(), white_mat);
+  }
+
+  // BACK WALL
+  {
+    Transform t;
+    t.position = glm::vec3(0.0f, 1.0f, -1.04f);
+    t.scale = glm::vec3(2.0f, 1.0f, 2.0f);
+    t.rotation = glm::vec4(1, 0, 0, -glm::half_pi<float>());
+
+    add_instance(1, t.get_mat4(), white_mat);
+  }
+
+  // LEFT WALL (RED)
+  {
+    Transform t;
+    t.position = glm::vec3(-1.0f, 1.0f, -0.025f);
+    t.scale = glm::vec3(2.0f, 1.0f, 2.0f);
+    t.rotation = glm::vec4(0, 0, 1, glm::half_pi<float>());
+
+    add_instance(1, t.get_mat4(), red_mat);
+  }
+
+  // RIGHT WALL (GREEN)
+  {
+    Transform t;
+    t.position = glm::vec3(1.0f, 1.0f, -0.025f);
+    t.scale = glm::vec3(2.0f, 1.0f, 2.0f);
+    t.rotation = glm::vec4(0, 0, 1, -glm::half_pi<float>());
+
+    add_instance(1, t.get_mat4(), green_mat);
+  }
+
+  // LIGHT (small ceiling panel)
+  {
+    Transform t;
+    t.position = glm::vec3(0.0f, 1.98f, -0.03f);
+    t.scale = glm::vec3(0.5f, 1.0f, 0.4f);
+    t.rotation = glm::vec4(1, 0, 0, glm::pi<float>());
+
+    add_instance(1, t.get_mat4(), emissive_mat2);
+  }
+  // short box
+  {
+    Transform t;
+    t.position = glm::vec3(0.3f, 0.3f, 0.35f);
+    t.scale = glm::vec3(0.6f, 0.6f, 0.6f);
+    t.rotation = glm::vec4(0, 1, 0, glm::radians(-18.f));
+
+    add_instance(2, t.get_mat4(), white_mat);
+  }
+
+  // tall box
+  {
+    Transform t;
+    t.position = glm::vec3(-0.4f, 0.6f, -0.3f);
+    t.scale = glm::vec3(0.6f, 1.2f, 0.6f);
+    t.rotation = glm::vec4(0, 1, 0, glm::radians(15.f));
+
+    add_instance(2, t.get_mat4(), white_mat);
+  }
 
   std::vector<TLASNode> tlas_nodes(blas_instances.size() * 2);
   TLAS tlas;
@@ -436,8 +512,11 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
   tlas_nodes_buffer =
       p_rm->create_buffer("TLASNodesBuffer", buffer_info, vma_alloc_info);
 
-  buffer_info.size =
-      (blases[0].nodes_count + blases[1].nodes_count) * sizeof(BVHNode);
+  size_t bvh_node_size = 0;
+  for (const auto &blas : blases) {
+    bvh_node_size += blas.nodes_count;
+  }
+  buffer_info.size = (bvh_node_size) * sizeof(BVHNode);
   bvh_nodes_buffer =
       p_rm->create_buffer("BVHNodesBuffer", buffer_info, vma_alloc_info);
 
@@ -756,67 +835,4 @@ MaterialHandle Renderer::add_emissive_material(const glm::vec3 &intensity) {
   emissive_materials.push_back({intensity.x, intensity.y, intensity.z, 1.f});
   return MaterialHandle(emissive_materials.size() - 1, MaterialType::EMISSIVE);
 }
-
-void Renderer::add_sphere_(f32 radius, const glm::vec3 &center,
-                           MaterialHandle mat) {
-
-  // TODO: Reserve spaces for these
-  std::vector<glm::vec3> positions;
-  std::vector<u32> indices;
-  std::vector<glm::vec3> normals;
-  size_t old_trig_count = total_triangle_count;
-
-  generate_sphere(positions, indices, normals, radius, 64, 32, center);
-
-  total_triangle_count = (indices.size() / 3) + old_trig_count;
-  size_t trig_count = total_triangle_count - old_trig_count;
-
-  std::vector<glm::vec3> triangle_centroids(trig_count);
-  std::vector<u32> triangle_ids(trig_count);
-  std::vector<TriangleShading> triangle_surface_data(trig_count);
-  std::vector<TriangleGeom> triangle_positions(trig_count);
-
-  for (size_t i = 0; i < indices.size(); i += 3) {
-    const size_t idx = i / 3;
-    triangle_positions[idx] =
-        TriangleGeom(positions[indices[i]], positions[indices[i + 1]],
-                     positions[indices[i + 2]]);
-
-    triangle_surface_data[idx] = TriangleShading(
-        normals[indices[i]], normals[indices[i + 1]], normals[indices[i + 2]]);
-
-    triangle_centroids.push_back((positions[indices[i]] +
-                                  positions[indices[i + 1]] +
-                                  positions[indices[i + 2]]) *
-                                 0.3333f);
-
-    triangle_ids.push_back(triangle_ids.size() + old_trig_count);
-  }
-
-  VulkanBuffer *vk_trig_pos = p_rm->access_buffer(triangle_geom_buffer);
-  VulkanBuffer *vk_trig_shad_data =
-      p_rm->access_buffer(triangle_shading_buffer);
-
-  VulkanBuffer *vk_tlas_nodes = p_rm->access_buffer(tlas_nodes_buffer);
-  VulkanBuffer *vk_bvh_nodes = p_rm->access_buffer(bvh_nodes_buffer);
-  VulkanBuffer *vk_blas = p_rm->access_buffer(blas_buffer);
-  VulkanBuffer *vk_tri_ids = p_rm->access_buffer(tri_ids_buffer);
-
-  p_staging_buffer->stage(triangle_positions.data(), triangle_geom_buffer,
-                          old_trig_count * sizeof(TriangleGeom),
-                          vk_trig_pos->vk_device_size);
-  p_staging_buffer->stage(triangle_surface_data.data(), triangle_shading_buffer,
-                          old_trig_count * sizeof(TriangleShading),
-                          vk_trig_shad_data->vk_device_size);
-  // p_staging_buffer->stage(bvh_nodes.data(), bvh_nodes_buffer, 0,
-  //                         vk_bvh_nodes->vk_device_size);
-  // p_staging_buffer->stage(blases.data(), blas_buffer, 0,
-  //                         vk_blas->vk_device_size);
-  p_staging_buffer->stage(triangle_ids.data(), tri_ids_buffer,
-                          old_trig_count * sizeof(u32),
-                          vk_tri_ids->vk_device_size);
-}
-
-void Renderer::add_plane_(f32 width, f32 depth, const glm::vec3 &center,
-                          MaterialHandle mat) {}
 } // namespace hlx

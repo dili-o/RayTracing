@@ -140,8 +140,8 @@ void BLAS::subdivide(std::span<BVHNode> bvh_nodes, std::span<TriangleGeom> tris,
     return;
 
   // Create child nodes
-  u32 left_idx = nodes_count++;
-  u32 right_idx = nodes_count++;
+  u32 left_idx = bvh_node_idx + nodes_count++;
+  u32 right_idx = bvh_node_idx + nodes_count++;
   BVHNode &left = bvh_nodes[left_idx];
   left.left_first = node.left_first;
   left.tri_count = left_count;
@@ -162,7 +162,7 @@ void BLAS::subdivide(std::span<BVHNode> bvh_nodes, std::span<TriangleGeom> tris,
 
 void BLAS::refit(std::span<BVHNode> bvh_nodes, std::span<TriangleGeom> tris,
                  std::span<u32> tri_ids) {
-  for (u32 i = nodes_count + bvh_node_idx - 1; i >= nodes_count; --i) {
+  for (int i = int(bvh_node_idx + nodes_count) - 1; i >= int(bvh_node_idx); --i) {
     BVHNode &node = bvh_nodes[i];
     // Is leaf?
     if (node.tri_count) {
