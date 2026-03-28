@@ -19,7 +19,7 @@
 #include <glm/vec4.hpp>
 
 // TODO: Make configurable
-constexpr u32 samples_per_pixel = 3u;
+constexpr u32 samples_per_pixel = 1u;
 
 static constexpr VkFormat output_image_format = VK_FORMAT_R32G32B32A32_SFLOAT;
 static constexpr size_t MAX_TRIANGLE_COUNT = 1'000'000;
@@ -463,7 +463,7 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
     t.scale = glm::vec3(0.6f, 0.6f, 0.6f);
     t.rotation = glm::vec4(0, 1, 0, glm::radians(-18.f));
 
-    add_instance(2, t.get_mat4(), white_mat);
+    add_instance(0, t.get_mat4(), white_mat);
   }
 
   // tall box

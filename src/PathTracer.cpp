@@ -5,16 +5,23 @@
 #include "Core/Exceptions.hpp"
 #include "Core/Input.hpp"
 #include "Platform/Platform.hpp"
+#include "SceneGraph.hpp"
 #include "Vulkan/VkPipelineStates.hpp"
 #include "Vulkan/VkResources.hpp"
 #include "Vulkan/VkShaderCompilation.h"
 #include "Vulkan/VkUtils.hpp"
-#include "imgui/imgui.h"
 // Vendor
+#include <glm/mat4x4.hpp>
 #include <glm/vec3.hpp>
+#include <imgui/imgui.h>
 
 namespace hlx {
+
+static SceneGraph scene_graph;
+static u32 selected_node_id = invalid_node_id;
+
 bool application_on_resize_event(u16 event_code, void *sender, void *listener,
+
                                  EventContext context) {
   PathTracer *app = (PathTracer *)listener;
   app->resize();
@@ -78,6 +85,14 @@ void PathTracer::init() {
 
   end_application = false;
   staging_buffer.flush();
+
+  u32 root_id = scene_graph.add_node(invalid_node_id, 0, "Parent");
+  for (u32 i = 0; i < 5; ++i) {
+    scene_graph.add_node(root_id, 1, std::string());
+  }
+  for (u32 i = 0; i < 3; ++i) {
+    scene_graph.add_node(2, 1, std::string());
+  }
 }
 
 void PathTracer::run() {
@@ -350,7 +365,9 @@ void PathTracer::run() {
 
       // Imgui
       scene_ui.begin_frame();
-      ImGui::ShowDemoWindow();
+      ImGui::Begin("Scene Graph");
+      selected_node_id = render_scene_graph(scene_graph, 0, selected_node_id);
+      ImGui::End();
       scene_ui.end_frame();
 
       vkCmdEndRendering(cmd);
