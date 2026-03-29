@@ -3,15 +3,16 @@
 // Vendor
 #include <glm/fwd.hpp>
 
-constexpr u32 invalid_node_id = UINT32_MAX;
+constexpr u32 INVALID_NODE_ID = UINT32_MAX;
+constexpr u32 MAX_NODE_LEVEL = 5;
 
 namespace hlx {
 struct SceneNode {
-  u32 parent_node = invalid_node_id;
-  u32 first_child = invalid_node_id;
-  u32 next_sibling = invalid_node_id;
+  u32 parent_node = INVALID_NODE_ID;
+  u32 first_child = INVALID_NODE_ID;
+  u32 next_sibling = INVALID_NODE_ID;
   // This is value is only set for the first_child of a node
-  u32 last_sibling = invalid_node_id;
+  u32 last_sibling = INVALID_NODE_ID;
   i32 level = 0;
 };
 
@@ -19,6 +20,12 @@ struct SceneGraph {
 public:
   i32 add_node(u32 parent, i32 level, std::string name);
   std::string_view get_node_name(u32 node_id) const;
+  void queue_to_update(u32 node_id);
+  void update_transforms();
+  void delete_node(u32 node_id);
+
+  void collect_nodes_to_delete(u32 node_id, std::vector<u32> &node_indices);
+  void delete_scene_nodes(const std::vector<u32> &nodes_to_delete);
 
 public:
   std::vector<SceneNode> nodes;
@@ -26,11 +33,14 @@ public:
   std::vector<glm::mat4> global_transforms;
   // Key: node index, Value: blas_id
   std::unordered_map<u32, u32> node_to_blas;
-  // Key: node index, Value: name (string)
-  std::unordered_map<u32, u32> node_to_name;
   std::vector<std::string> node_names;
+  // List of nodes to update at each level
+  std::vector<u32> nodes_to_update[MAX_NODE_LEVEL];
+  // List of deleted nodes
+  std::queue<u32> free_nodes;
 };
 
-u32 render_scene_graph(const SceneGraph &scene_graph, u32 node_id,
-                       u32 selected_node_id);
+u32 render_scene_graph_nodes(const SceneGraph &scene_graph, u32 node_id,
+                             u32 selected_node_id);
+void render_scene_graph_nodes_property(SceneGraph &scene_graph, u32 node_id);
 } // namespace hlx

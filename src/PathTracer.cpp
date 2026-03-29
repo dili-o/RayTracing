@@ -18,7 +18,7 @@
 namespace hlx {
 
 static SceneGraph scene_graph;
-static u32 selected_node_id = invalid_node_id;
+static u32 selected_node_id = INVALID_NODE_ID;
 
 bool application_on_resize_event(u16 event_code, void *sender, void *listener,
 
@@ -86,7 +86,7 @@ void PathTracer::init() {
   end_application = false;
   staging_buffer.flush();
 
-  u32 root_id = scene_graph.add_node(invalid_node_id, 0, "Parent");
+  u32 root_id = scene_graph.add_node(INVALID_NODE_ID, 0, "Parent");
   for (u32 i = 0; i < 5; ++i) {
     scene_graph.add_node(root_id, 1, std::string());
   }
@@ -276,6 +276,7 @@ void PathTracer::run() {
 
     if (!Platform::is_suspended()) {
       cam.update(delta_time);
+      scene_graph.update_transforms();
       device.begin_frame();
       VkCommandBuffer cmd = device.get_current_cmd_buffer();
 
@@ -366,7 +367,10 @@ void PathTracer::run() {
       // Imgui
       scene_ui.begin_frame();
       ImGui::Begin("Scene Graph");
-      selected_node_id = render_scene_graph(scene_graph, 0, selected_node_id);
+      selected_node_id =
+          render_scene_graph_nodes(scene_graph, 0, selected_node_id);
+      ImGui::SeparatorText("Scene Node Property");
+      render_scene_graph_nodes_property(scene_graph, selected_node_id);
       ImGui::End();
       scene_ui.end_frame();
 
