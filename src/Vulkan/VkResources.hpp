@@ -24,6 +24,7 @@ using SetLayoutHandle = ResourceHandle<SetLayoutTag>;
 struct VulkanBuffer {
 public:
   VkBuffer vk_handle{VK_NULL_HANDLE};
+  VkDeviceSize current_size{0};
   VkDeviceSize vk_device_size{0};
   VmaAllocation vma_allocation{VK_NULL_HANDLE};
   VkDeviceAddress vk_device_address{0};

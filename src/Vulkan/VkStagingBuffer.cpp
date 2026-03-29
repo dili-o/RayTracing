@@ -20,8 +20,6 @@ void VkStagingBuffer::shutdown() {
   p_resource_manager = nullptr;
   vk_command_pool = VK_NULL_HANDLE;
   vk_command_buffer = VK_NULL_HANDLE;
-  capacity = 0;
-  current_size = 0;
   is_recording = false;
 }
 
@@ -86,8 +84,6 @@ void VkStagingBuffer::init(VkDeviceManager *p_device,
   cb_alloc_info.commandBufferCount = 1;
   VK_CHECK(vkAllocateCommandBuffers(p_device->vk_device, &cb_alloc_info,
                                     &vk_command_buffer));
-
-  capacity = size;
 }
 
 void VkStagingBuffer::stage(const void *p_data, BufferHandle dst_buffer_handle,
@@ -97,9 +93,10 @@ void VkStagingBuffer::stage(const void *p_data, BufferHandle dst_buffer_handle,
 
   begin();
 
+  VulkanBuffer *buffer = p_resource_manager->access_buffer(buffer_handle);
   // Data to transfer cannot fit inside the staging buffer
-  if ((current_size + size) > capacity) {
-    const size_t remaining_size = capacity - current_size;
+  if ((buffer->current_size + size) > buffer->vk_device_size) {
+    const size_t remaining_size = buffer->vk_device_size - buffer->current_size;
     stage(p_data, dst_buffer_handle, dst_offset, remaining_size);
     flush();
     dst_offset += remaining_size;
@@ -108,13 +105,13 @@ void VkStagingBuffer::stage(const void *p_data, BufferHandle dst_buffer_handle,
         static_cast<const u8 *>(p_data) + remaining_size;
     stage(p_remaining_data, dst_buffer_handle, dst_offset, size);
   } else {
-    VulkanBuffer *buffer = p_resource_manager->access_buffer(buffer_handle);
     VulkanBuffer *dst_buffer =
         p_resource_manager->access_buffer(dst_buffer_handle);
-    std::memcpy(static_cast<u8 *>(buffer->p_data) + current_size, p_data, size);
+    std::memcpy(static_cast<u8 *>(buffer->p_data) + buffer->current_size,
+                p_data, size);
 
     VkBufferCopy2 region{VK_STRUCTURE_TYPE_BUFFER_COPY_2};
-    region.srcOffset = current_size;
+    region.srcOffset = buffer->current_size;
     region.dstOffset = dst_offset;
     region.size = size;
 
@@ -126,7 +123,7 @@ void VkStagingBuffer::stage(const void *p_data, BufferHandle dst_buffer_handle,
 
     vkCmdCopyBuffer2(vk_command_buffer, &buffer_info);
 
-    current_size += size;
+    buffer->current_size += size;
   }
 }
 
@@ -135,14 +132,17 @@ void VkStagingBuffer::stage(const void *p_data,
                             size_t alignment) {
   begin();
 
+  VulkanBuffer *buffer = p_resource_manager->access_buffer(buffer_handle);
   // Align Up
-  current_size = (current_size + alignment - 1) & ~(alignment - 1);
+  buffer->current_size =
+      (buffer->current_size + alignment - 1) & ~(alignment - 1);
 
-  if ((current_size + size) > capacity) {
-    if (size > capacity) {
-      throw std::out_of_range(
-          "VkStagingBuffer::Stage - Data size (" + std::to_string(size) +
-          ") exceeds buffer capacity (" + std::to_string(capacity) + ")");
+  if ((buffer->current_size + size) > buffer->vk_device_size) {
+    if (size > buffer->vk_device_size) {
+      throw std::out_of_range("VkStagingBuffer::Stage - Data size (" +
+                              std::to_string(size) +
+                              ") exceeds buffer buffer->vk_device_size (" +
+                              std::to_string(buffer->vk_device_size) + ")");
     } else {
       flush();
       stage(p_data, image_view_handle, size);
@@ -150,8 +150,8 @@ void VkStagingBuffer::stage(const void *p_data,
     }
   }
 
-  VulkanBuffer *buffer = p_resource_manager->access_buffer(buffer_handle);
-  std::memcpy(static_cast<u8 *>(buffer->p_data) + current_size, p_data, size);
+  std::memcpy(static_cast<u8 *>(buffer->p_data) + buffer->current_size, p_data,
+              size);
 
   // Transition image to transfer dst
   VulkanImageView *image_view =
@@ -180,7 +180,7 @@ void VkStagingBuffer::stage(const void *p_data,
   vkCmdPipelineBarrier2(vk_command_buffer, &dependency_info);
 
   VkBufferImageCopy2 region{VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2};
-  region.bufferOffset = current_size;
+  region.bufferOffset = buffer->current_size;
   region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
   region.imageSubresource.mipLevel = 0;
   region.imageSubresource.baseArrayLayer = 0;
@@ -206,19 +206,22 @@ void VkStagingBuffer::stage(const void *p_data,
   image_barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
   vkCmdPipelineBarrier2(vk_command_buffer, &dependency_info);
 
-  current_size += size;
+  buffer->current_size += size;
 }
 
 void VkStagingBuffer::copy_data(const void *p_data, size_t size,
                                 size_t alignment) {
+  VulkanBuffer *buffer = p_resource_manager->access_buffer(buffer_handle);
   // Align Up
-  current_size = (current_size + alignment - 1) & ~(alignment - 1);
+  buffer->current_size =
+      (buffer->current_size + alignment - 1) & ~(alignment - 1);
 
-  if ((current_size + size) > capacity) {
-    if (size > capacity) {
-      throw std::out_of_range(
-          "VkStagingBuffer::Stage - Data size (" + std::to_string(size) +
-          ") exceeds buffer capacity (" + std::to_string(capacity) + ")");
+  if ((buffer->current_size + size) > buffer->vk_device_size) {
+    if (size > buffer->vk_device_size) {
+      throw std::out_of_range("VkStagingBuffer::Stage - Data size (" +
+                              std::to_string(size) +
+                              ") exceeds buffer buffer->vk_device_size (" +
+                              std::to_string(buffer->vk_device_size) + ")");
     } else {
       flush();
     }
@@ -226,10 +229,10 @@ void VkStagingBuffer::copy_data(const void *p_data, size_t size,
 
   begin();
 
-  VulkanBuffer *buffer = p_resource_manager->access_buffer(buffer_handle);
-  std::memcpy(static_cast<u8 *>(buffer->p_data) + current_size, p_data, size);
+  std::memcpy(static_cast<u8 *>(buffer->p_data) + buffer->current_size, p_data,
+              size);
 
-  current_size += size;
+  buffer->current_size += size;
 }
 
 void VkStagingBuffer::flush() {
@@ -246,6 +249,7 @@ void VkStagingBuffer::flush() {
   vkQueueSubmit2(vk_queue, 1, &submit_info, VK_NULL_HANDLE);
   vkQueueWaitIdle(vk_queue);
 
-  current_size = 0;
+  VulkanBuffer *buffer = p_resource_manager->access_buffer(buffer_handle);
+  buffer->current_size = 0;
 }
 } // namespace hlx

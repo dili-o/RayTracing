@@ -31,8 +31,6 @@ public:
   VkCommandPool vk_command_pool{VK_NULL_HANDLE};
   VkCommandBuffer vk_command_buffer{VK_NULL_HANDLE};
   VkQueue vk_queue{VK_NULL_HANDLE};
-  size_t current_size{0};
-  size_t capacity{0};
   bool is_recording{false};
 
 private:
