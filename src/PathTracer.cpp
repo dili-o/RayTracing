@@ -86,7 +86,7 @@ void PathTracer::init() {
   end_application = false;
   staging_buffer.flush();
 
-  u32 root_id = scene_graph.add_node(INVALID_NODE_ID, 0, "Parent");
+  u32 root_id = scene_graph.add_node(INVALID_NODE_ID, 0, "Root");
   for (u32 i = 0; i < 5; ++i) {
     scene_graph.add_node(root_id, 1, std::string());
   }

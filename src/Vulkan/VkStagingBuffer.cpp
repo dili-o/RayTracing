@@ -107,6 +107,10 @@ void VkStagingBuffer::stage(const void *p_data, BufferHandle dst_buffer_handle,
   } else {
     VulkanBuffer *dst_buffer =
         p_resource_manager->access_buffer(dst_buffer_handle);
+    if (dst_buffer->vk_device_size < (dst_offset + size)) {
+      HASSERT_MSG(false, "VkStagingBuffer::stage() - Destination buffer size "
+                         "is less than the size of the data to copy");
+    }
     std::memcpy(static_cast<u8 *>(buffer->p_data) + buffer->current_size,
                 p_data, size);
 
@@ -124,6 +128,8 @@ void VkStagingBuffer::stage(const void *p_data, BufferHandle dst_buffer_handle,
     vkCmdCopyBuffer2(vk_command_buffer, &buffer_info);
 
     buffer->current_size += size;
+    dst_buffer->current_size =
+        std::max(dst_buffer->current_size, (dst_offset + size));
   }
 }
 

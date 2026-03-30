@@ -4,6 +4,7 @@
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
 
+namespace hlx {
 struct alignas(16) TriangleGeom {
   TriangleGeom() = default;
   TriangleGeom(const glm::vec3 &v0, const glm::vec3 &v1, const glm::vec3 &v2)
@@ -30,3 +31,4 @@ struct alignas(16) TriangleShading {
   glm::vec4 n1;
   glm::vec4 n2;
 };
+} // namespace hlx

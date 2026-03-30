@@ -1,12 +1,9 @@
 #include "Renderer.hpp"
-#include "BVHNode.hpp"
 #include "Core/Assert.hpp"
 #include "Core/Clock.hpp"
 #include "Core/Defines.hpp"
 #include "Core/Exceptions.hpp"
 #include "Material.hpp"
-#include "TLAS.hpp"
-#include "Triangle.hpp"
 #include "Vulkan/VkDeviceManager.h"
 #include "Vulkan/VkResourceManager.hpp"
 #include "Vulkan/VkShaderCompilation.h"
@@ -209,25 +206,6 @@ void generate_cube(std::vector<glm::vec3> &out_vertices,
            glm::vec3(0, -1, 0));
 }
 
-void add_sphere(std::vector<glm::vec3> &positions, std::vector<u32> &indices,
-                std::vector<glm::vec3> &normals, size_t &index_offset) {
-
-  generate_sphere(positions, indices, normals, 0.5f, 64, 32, glm::vec3(0.f));
-  index_offset = indices.size();
-}
-
-void add_cube(std::vector<glm::vec3> &positions, std::vector<u32> &indices,
-              std::vector<glm::vec3> &normals, size_t &index_offset) {
-  generate_cube(positions, indices, normals, glm::vec3(0.f), 1.f, 1.f, 1.f);
-  index_offset = indices.size();
-}
-
-void add_plane(std::vector<glm::vec3> &positions, std::vector<u32> &indices,
-               std::vector<glm::vec3> &normals, size_t &index_offset) {
-  generate_plane(positions, indices, normals, 1.f, 1.f, 1, 1, glm::vec3(0.f));
-  index_offset = indices.size();
-}
-
 void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
                     VkStagingBuffer &staging_buffer, u32 output_image_width,
                     u32 output_image_height) {
@@ -318,10 +296,6 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
 
   vkUpdateDescriptorSets(p_device->vk_device, 1, &write_info, 0, nullptr);
 
-  // Create circles
-  std::vector<glm::vec3> positions;
-  std::vector<glm::vec3> normals;
-  std::vector<u32> indices;
   // Init materials
   MaterialHandle blue_mat = add_lambert_material({0.1f, 0.2f, 0.5f});
   MaterialHandle metal_mat = add_metal_material({0.8f, 0.8f, 0.8f}, 0.3f);
@@ -332,51 +306,46 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
   MaterialHandle white_mat = add_lambert_material({0.73f, 0.73f, 0.73f});
   MaterialHandle green_mat = add_lambert_material({0.12f, 0.45f, 0.15f});
   MaterialHandle emissive_mat2 = add_emissive_material({15.f, 15.f, 15.f});
-  // Load sphere data
-  size_t index_offset = 0;
-  add_sphere(positions, indices, normals, index_offset);
-  size_t sphere_trig_count = indices.size() / 3;
-  // Load plane data
-  size_t prev_indices_size = indices.size();
-  add_plane(positions, indices, normals, index_offset);
-  size_t plane_trig_count = (indices.size() - prev_indices_size) / 3;
-  // // Load cube data
-  prev_indices_size = indices.size();
-  add_cube(positions, indices, normals, index_offset);
-  size_t cube_trig_count = (indices.size() - prev_indices_size) / 3;
 
-  std::vector<glm::vec3> triangle_centroids;
-  std::vector<TriangleGeom> triangle_positions;
-  std::vector<TriangleShading> triangle_surface_data;
-  std::vector<u32> triangle_ids;
-  for (size_t i = 0; i < indices.size(); i += 3) {
-    triangle_positions.push_back(TriangleGeom(positions[indices[i]],
-                                              positions[indices[i + 1]],
-                                              positions[indices[i + 2]]));
-    triangle_surface_data.push_back(TriangleShading(
-        normals[indices[i]], normals[indices[i + 1]], normals[indices[i + 2]]));
-    triangle_centroids.push_back((positions[indices[i]] +
-                                  positions[indices[i + 1]] +
-                                  positions[indices[i + 2]]) *
-                                 0.3333f);
-    triangle_ids.push_back(triangle_ids.size());
-  }
+  // Load primitive data
+  load_sphere_data();
+  load_plane_data();
+  load_cube_data();
 
-  // TODO: All data stored on cpu side
-  total_triangle_count = triangle_positions.size();
-  std::vector<BVHNode> bvh_nodes(total_triangle_count * 2 - 1);
-  // BLAS
-  std::array<BLAS, 3> blases;
-  blases[0].build(bvh_nodes, 0, triangle_positions, triangle_centroids,
-                  triangle_ids, sphere_trig_count, 0);
-  blases[1].build(bvh_nodes, blases[0].nodes_count, triangle_positions,
-                  triangle_centroids, triangle_ids, plane_trig_count,
-                  sphere_trig_count);
-  blases[2].build(bvh_nodes, blases[0].nodes_count + blases[1].nodes_count,
-                  triangle_positions, triangle_centroids, triangle_ids,
-                  cube_trig_count, sphere_trig_count + plane_trig_count);
+  // for (size_t i = 0; i < indices.size(); i += 3) {
+  //   triangle_positions.push_back(TriangleGeom(positions[indices[i]],
+  //                                             positions[indices[i + 1]],
+  //                                             positions[indices[i + 2]]));
+  //   triangle_surface_data.push_back(TriangleShading(
+  //       normals[indices[i]], normals[indices[i + 1]], normals[indices[i +
+  //       2]]));
+  //   triangle_centroids.push_back((positions[indices[i]] +
+  //                                 positions[indices[i + 1]] +
+  //                                 positions[indices[i + 2]]) *
+  //                                0.3333f);
+  //   triangle_ids.push_back(triangle_ids.size());
+  // }
+  //
+  // // TODO: All data stored on cpu side
+  // total_triangle_count = triangle_positions.size();
+  // bvh_nodes.resize(total_triangle_count * 2 - 1);
+  // // BLAS
+  // BLAS blas;
+  // blas.build(bvh_nodes, 0, triangle_positions, triangle_centroids,
+  // triangle_ids,
+  //            sphere_trig_count, 0);
+  // blases.push_back(blas);
+  //
+  // blas.build(bvh_nodes, blases[0].nodes_count, triangle_positions,
+  //            triangle_centroids, triangle_ids, plane_trig_count,
+  //            sphere_trig_count);
+  // blases.push_back(blas);
+  //
+  // blas.build(bvh_nodes, blases[0].nodes_count + blases[1].nodes_count,
+  //            triangle_positions, triangle_centroids, triangle_ids,
+  //            cube_trig_count, sphere_trig_count + plane_trig_count);
+  // blases.push_back(blas);
 
-  std::vector<BLASInstance> blas_instances;
   auto add_instance = [&](u32 id, const glm::mat4 &transform,
                           MaterialHandle mat_handle) {
     BLASInstance inst;
@@ -476,8 +445,7 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
     add_instance(2, t.get_mat4(), white_mat);
   }
 
-  std::vector<TLASNode> tlas_nodes(blas_instances.size() * 2);
-  TLAS tlas;
+  tlas_nodes.resize(blas_instances.size() * 2);
   Clock clock;
   clock.start();
   tlas.build(tlas_nodes, blas_instances, blases, blas_instances.size(),
@@ -635,6 +603,13 @@ void Renderer::resize(u32 output_image_width, u32 output_image_height) {
 }
 
 void Renderer::render(Camera &camera) {
+  // TODO: Rebuilding TLAS
+  // Clock clock;
+  // clock.start();
+  // tlas.build(tlas_nodes, blas_instances, blases, blas_instances.size(),
+  //            bvh_nodes);
+  // HINFO("TLAS build time: {}s", clock.get_elapsed_time_s());
+
   // Reset frame number if cam has moved
   if (camera.changed) {
     frame_index = 0;
@@ -844,5 +819,73 @@ MaterialHandle Renderer::add_dielectric_material(const f32 refractive_index) {
 MaterialHandle Renderer::add_emissive_material(const glm::vec3 &intensity) {
   emissive_materials.push_back({intensity.x, intensity.y, intensity.z, 1.f});
   return MaterialHandle(emissive_materials.size() - 1, MaterialType::EMISSIVE);
+}
+
+u32 Renderer::add_blas(u32 prev_indices_size) {
+  u32 trig_count = (indices.size() - prev_indices_size) / 3;
+
+  u32 prev_trig_count = static_cast<u32>(triangle_positions.size());
+  // Load the triangle data
+  for (size_t i = prev_indices_size; i < indices.size(); i += 3) {
+    triangle_positions.push_back(TriangleGeom(positions[indices[i]],
+                                              positions[indices[i + 1]],
+                                              positions[indices[i + 2]]));
+    triangle_surface_data.push_back(TriangleShading(
+        normals[indices[i]], normals[indices[i + 1]], normals[indices[i + 2]]));
+    triangle_centroids.push_back((positions[indices[i]] +
+                                  positions[indices[i + 1]] +
+                                  positions[indices[i + 2]]) *
+                                 0.3333f);
+    triangle_ids.push_back(triangle_ids.size());
+  }
+  // Update total triangle count
+  total_triangle_count = triangle_positions.size();
+
+  // Create blas
+  u32 prev_blas_nodes_count = bvh_nodes_size;
+  // Resize to upper bound
+  bvh_nodes.resize(total_triangle_count * 2 - 1);
+
+  BLAS blas;
+  blas.build(bvh_nodes, prev_blas_nodes_count, triangle_positions,
+             triangle_centroids, triangle_ids, trig_count, prev_trig_count);
+  blases.push_back(blas);
+  bvh_nodes_size += blas.nodes_count;
+
+  // Resize to fit the actual count
+  // bvh_nodes.resize(blas.tri_count + prev_blas_nodes_count);
+
+  return static_cast<u32>(blases.size() - 1);
+}
+
+void Renderer::load_sphere_data() {
+  HASSERT_MSG(sphere_blas_index == UINT32_MAX,
+              "Renderer::load_sphere_data() should only be called once");
+  size_t prev_indices_size = indices.size();
+  generate_sphere(positions, indices, normals, 0.5f, 64, 32, glm::vec3(0.f));
+  index_offset = indices.size();
+  sphere_trig_count = (indices.size() - prev_indices_size) / 3;
+
+  sphere_blas_index = add_blas(prev_indices_size);
+}
+
+void Renderer::load_cube_data() {
+  HASSERT_MSG(cube_blas_index == UINT32_MAX,
+              "Renderer::load_cube_data() should only be called once");
+  size_t prev_indices_size = indices.size();
+  generate_cube(positions, indices, normals, glm::vec3(0.f), 1.f, 1.f, 1.f);
+  index_offset = indices.size();
+  cube_trig_count = (indices.size() - prev_indices_size) / 3;
+  cube_blas_index = add_blas(prev_indices_size);
+}
+
+void Renderer::load_plane_data() {
+  HASSERT_MSG(plane_blas_index == UINT32_MAX,
+              "Renderer::load_plane_data() should only be called once");
+  size_t prev_indices_size = indices.size();
+  generate_plane(positions, indices, normals, 1.f, 1.f, 1, 1, glm::vec3(0.f));
+  index_offset = indices.size();
+  plane_trig_count = (indices.size() - prev_indices_size) / 3;
+  plane_blas_index = add_blas(prev_indices_size);
 }
 } // namespace hlx

@@ -1,6 +1,9 @@
 #pragma once
+#include "BVHNode.hpp"
 #include "Camera.hpp"
 #include "Material.hpp"
+#include "TLAS.hpp"
+#include "Triangle.hpp"
 #include "Vulkan/VkResources.hpp"
 // Vendor
 #include <glm/fwd.hpp>
@@ -24,6 +27,9 @@ public:
   MaterialHandle add_metal_material(const glm::vec3 &albedo, const f32 fuzz);
   MaterialHandle add_dielectric_material(const f32 refractive_index);
   MaterialHandle add_emissive_material(const glm::vec3 &intensity);
+
+  // Returns the index into the blases array
+  u32 add_blas(u32 prev_indices_size);
 
   void add_sphere_(f32 radius, const glm::vec3 &center, MaterialHandle mat);
   void add_plane_(f32 width, f32 depth, const glm::vec3 &center,
@@ -56,11 +62,45 @@ private:
   void load_sphere_data();
   void load_cube_data();
   void load_plane_data();
+  void add_blas();
 
 private:
   std::vector<Lambert> lambert_materials;
   std::vector<Metal> metal_materials;
   std::vector<Emissive> emissive_materials;
   std::vector<Dielectric> dielectric_materials;
+
+  // NOTE: These are only used to create the TriangleGeom and TriangleShading
+  // data
+  std::vector<glm::vec3> positions;
+  std::vector<glm::vec3> normals;
+  std::vector<u32> indices;
+
+  // NOTE: This is used for creating bvh_nodes
+  std::vector<glm::vec3> triangle_centroids;
+
+  // Triangle data uploaded to the gpu
+  std::vector<TriangleGeom> triangle_positions;
+  std::vector<TriangleShading> triangle_surface_data;
+  std::vector<u32> triangle_ids;
+
+  // Acceleration structure data uploaded to the gpu
+  std::vector<BVHNode> bvh_nodes;
+  std::vector<BLAS> blases;
+  std::vector<BLASInstance> blas_instances;
+  std::vector<TLASNode> tlas_nodes;
+  u32 bvh_nodes_size{0};
+
+  TLAS tlas;
+
+  u32 sphere_blas_index{UINT32_MAX};
+  u32 cube_blas_index{UINT32_MAX};
+  u32 plane_blas_index{UINT32_MAX};
+  // TODO: Remove these
+  u32 sphere_trig_count;
+  u32 cube_trig_count;
+  u32 plane_trig_count;
+
+  size_t index_offset;
 };
 } // namespace hlx
