@@ -20,6 +20,8 @@ constexpr u32 samples_per_pixel = 1u;
 
 static constexpr VkFormat output_image_format = VK_FORMAT_R32G32B32A32_SFLOAT;
 static constexpr size_t MAX_TRIANGLE_COUNT = 1'000'000;
+static constexpr size_t MAX_MATERIAL_COUNT = 1'000;
+static constexpr size_t MAX_BLAS_COUNT = 1'000;
 
 namespace hlx {
 struct alignas(16) UniformData {
@@ -207,13 +209,17 @@ void generate_cube(std::vector<glm::vec3> &out_vertices,
 }
 
 void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
-                    VkStagingBuffer &staging_buffer, u32 output_image_width,
-                    u32 output_image_height) {
+                    u32 output_image_width, u32 output_image_height) {
   HASSERT(p_device);
   HASSERT(p_rm);
   this->p_device = p_device;
   this->p_rm = p_rm;
-  this->p_staging_buffer = &staging_buffer;
+  // Create staging buffer
+
+  staging_buffer.init(
+      p_device, p_rm,
+      p_device->queue_family_indices.transfer_family_index.value(),
+      p_device->vk_transfer_queue, 1'000'000);
 
   // Create the output image
   create_output_image(output_image_width, output_image_height);
@@ -296,55 +302,58 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
 
   vkUpdateDescriptorSets(p_device->vk_device, 1, &write_info, 0, nullptr);
 
+  // Create buffers
+  VmaAllocationCreateInfo vma_alloc_info{
+      .requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT};
+  VkBufferCreateInfo buffer_info{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+  buffer_info.size = MAX_TRIANGLE_COUNT * sizeof(TriangleGeom);
+  buffer_info.usage = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+                      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                      VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+  buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+  triangle_geom_buffer =
+      p_rm->create_buffer("TriangleGeomBuffer", buffer_info, vma_alloc_info);
+  buffer_info.size = MAX_TRIANGLE_COUNT * sizeof(TriangleShading);
+  triangle_shading_buffer =
+      p_rm->create_buffer("TriangleShadingBuffer", buffer_info, vma_alloc_info);
+  buffer_info.size = MAX_TRIANGLE_COUNT * sizeof(u32);
+  tri_ids_buffer =
+      p_rm->create_buffer("TriangleIDsBuffer", buffer_info, vma_alloc_info);
+
+  // Material buffers
+  buffer_info.size = MAX_MATERIAL_COUNT * sizeof(Lambert);
+  lambert_materials_buffer = p_rm->create_buffer("LambertMaterialsBuffer",
+                                                 buffer_info, vma_alloc_info);
+  buffer_info.size = MAX_MATERIAL_COUNT * sizeof(Metal);
+  metal_materials_buffer =
+      p_rm->create_buffer("MetalMaterialsBuffer", buffer_info, vma_alloc_info);
+
+  buffer_info.size = MAX_MATERIAL_COUNT * sizeof(Dielectric);
+  dielectric_materials_buffer = p_rm->create_buffer(
+      "DielectricMaterialsBuffer", buffer_info, vma_alloc_info);
+
+  buffer_info.size = MAX_MATERIAL_COUNT * sizeof(Emissive);
+  emissive_materials_buffer = p_rm->create_buffer("EmissiveMaterialsBuffer",
+                                                  buffer_info, vma_alloc_info);
+
+  // Create with upper bound limit
+  buffer_info.size = (MAX_TRIANGLE_COUNT * 2 - 1) * sizeof(BVHNode);
+  bvh_nodes_buffer =
+      p_rm->create_buffer("BVHNodesBuffer", buffer_info, vma_alloc_info);
+
+  buffer_info.size = MAX_BLAS_COUNT * sizeof(BLAS);
+  blas_buffer = p_rm->create_buffer("BLASBuffer", buffer_info, vma_alloc_info);
+
   // Init materials
-  MaterialHandle blue_mat = add_lambert_material({0.1f, 0.2f, 0.5f});
-  MaterialHandle metal_mat = add_metal_material({0.8f, 0.8f, 0.8f}, 0.3f);
-  MaterialHandle emissive_mat = add_emissive_material({1.f, 1.f, 1.f});
-  MaterialHandle ground_mat = add_lambert_material({0.8f, 0.8f, 0.0f});
-  MaterialHandle glass_mat = add_dielectric_material(1.5f);
   MaterialHandle red_mat = add_lambert_material({0.65f, 0.05f, 0.05f});
   MaterialHandle white_mat = add_lambert_material({0.73f, 0.73f, 0.73f});
   MaterialHandle green_mat = add_lambert_material({0.12f, 0.45f, 0.15f});
-  MaterialHandle emissive_mat2 = add_emissive_material({15.f, 15.f, 15.f});
+  MaterialHandle emissive_mat = add_emissive_material({15.f, 15.f, 15.f});
 
   // Load primitive data
-  load_sphere_data();
   load_plane_data();
   load_cube_data();
-
-  // for (size_t i = 0; i < indices.size(); i += 3) {
-  //   triangle_positions.push_back(TriangleGeom(positions[indices[i]],
-  //                                             positions[indices[i + 1]],
-  //                                             positions[indices[i + 2]]));
-  //   triangle_surface_data.push_back(TriangleShading(
-  //       normals[indices[i]], normals[indices[i + 1]], normals[indices[i +
-  //       2]]));
-  //   triangle_centroids.push_back((positions[indices[i]] +
-  //                                 positions[indices[i + 1]] +
-  //                                 positions[indices[i + 2]]) *
-  //                                0.3333f);
-  //   triangle_ids.push_back(triangle_ids.size());
-  // }
-  //
-  // // TODO: All data stored on cpu side
-  // total_triangle_count = triangle_positions.size();
-  // bvh_nodes.resize(total_triangle_count * 2 - 1);
-  // // BLAS
-  // BLAS blas;
-  // blas.build(bvh_nodes, 0, triangle_positions, triangle_centroids,
-  // triangle_ids,
-  //            sphere_trig_count, 0);
-  // blases.push_back(blas);
-  //
-  // blas.build(bvh_nodes, blases[0].nodes_count, triangle_positions,
-  //            triangle_centroids, triangle_ids, plane_trig_count,
-  //            sphere_trig_count);
-  // blases.push_back(blas);
-  //
-  // blas.build(bvh_nodes, blases[0].nodes_count + blases[1].nodes_count,
-  //            triangle_positions, triangle_centroids, triangle_ids,
-  //            cube_trig_count, sphere_trig_count + plane_trig_count);
-  // blases.push_back(blas);
+  load_sphere_data();
 
   auto add_instance = [&](u32 id, const glm::mat4 &transform,
                           MaterialHandle mat_handle) {
@@ -373,7 +382,7 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
     t.position = glm::vec3(0.0f, 0.0f, -0.025f);
     t.scale = glm::vec3(2.0f, 1.0f, 2.0f);
 
-    add_instance(1, t.get_mat4(), white_mat);
+    add_instance(plane_blas_index, t.get_mat4(), white_mat);
   }
 
   // CEILING
@@ -383,7 +392,7 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
     t.scale = glm::vec3(2.0f, 1.0f, 2.0f);
     t.rotation = glm::vec4(1, 0, 0, glm::pi<float>());
 
-    add_instance(1, t.get_mat4(), white_mat);
+    add_instance(plane_blas_index, t.get_mat4(), white_mat);
   }
 
   // BACK WALL
@@ -393,7 +402,7 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
     t.scale = glm::vec3(2.0f, 1.0f, 2.0f);
     t.rotation = glm::vec4(1, 0, 0, -glm::half_pi<float>());
 
-    add_instance(1, t.get_mat4(), white_mat);
+    add_instance(plane_blas_index, t.get_mat4(), white_mat);
   }
 
   // LEFT WALL (RED)
@@ -403,7 +412,7 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
     t.scale = glm::vec3(2.0f, 1.0f, 2.0f);
     t.rotation = glm::vec4(0, 0, 1, glm::half_pi<float>());
 
-    add_instance(1, t.get_mat4(), red_mat);
+    add_instance(plane_blas_index, t.get_mat4(), red_mat);
   }
 
   // RIGHT WALL (GREEN)
@@ -413,7 +422,7 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
     t.scale = glm::vec3(2.0f, 1.0f, 2.0f);
     t.rotation = glm::vec4(0, 0, 1, -glm::half_pi<float>());
 
-    add_instance(1, t.get_mat4(), green_mat);
+    add_instance(plane_blas_index, t.get_mat4(), green_mat);
   }
 
   // LIGHT (small ceiling panel)
@@ -423,7 +432,7 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
     t.scale = glm::vec3(0.5f, 1.0f, 0.4f);
     t.rotation = glm::vec4(1, 0, 0, glm::pi<float>());
 
-    add_instance(1, t.get_mat4(), emissive_mat2);
+    add_instance(plane_blas_index, t.get_mat4(), emissive_mat);
   }
   // short box
   {
@@ -432,7 +441,7 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
     t.scale = glm::vec3(0.6f, 0.6f, 0.6f);
     t.rotation = glm::vec4(0, 1, 0, glm::radians(-18.f));
 
-    add_instance(0, t.get_mat4(), white_mat);
+    add_instance(cube_blas_index, t.get_mat4(), white_mat);
   }
 
   // tall box
@@ -442,7 +451,7 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
     t.scale = glm::vec3(0.6f, 1.2f, 0.6f);
     t.rotation = glm::vec4(0, 1, 0, glm::radians(15.f));
 
-    add_instance(2, t.get_mat4(), white_mat);
+    add_instance(cube_blas_index, t.get_mat4(), white_mat);
   }
 
   tlas_nodes.resize(blas_instances.size() * 2);
@@ -452,94 +461,21 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
              bvh_nodes);
   HINFO("TLAS build time: {}s", clock.get_elapsed_time_s());
 
-  // Create the buffers
-  VmaAllocationCreateInfo vma_alloc_info{
-      .requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT};
-  VkBufferCreateInfo buffer_info{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
-  buffer_info.size = triangle_positions.size() * sizeof(TriangleGeom);
-  buffer_info.usage = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
-                      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-                      VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-  buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-  triangle_geom_buffer =
-      p_rm->create_buffer("TriangleGeomBuffer", buffer_info, vma_alloc_info);
-
-  buffer_info.size = triangle_positions.size() * sizeof(TriangleShading);
-  triangle_shading_buffer =
-      p_rm->create_buffer("TriangleShadingBuffer", buffer_info, vma_alloc_info);
-
-  buffer_info.size = lambert_materials.size() * sizeof(Lambert);
-  lambert_materials_buffer = p_rm->create_buffer("LambertMaterialsBuffer",
-                                                 buffer_info, vma_alloc_info);
-  buffer_info.size = metal_materials.size() * sizeof(Metal);
-  metal_materials_buffer =
-      p_rm->create_buffer("MetalMaterialsBuffer", buffer_info, vma_alloc_info);
-
-  buffer_info.size = dielectric_materials.size() * sizeof(Dielectric);
-  dielectric_materials_buffer = p_rm->create_buffer(
-      "DielectricMaterialsBuffer", buffer_info, vma_alloc_info);
-
-  buffer_info.size = emissive_materials.size() * sizeof(Emissive);
-  emissive_materials_buffer = p_rm->create_buffer("EmissiveMaterialsBuffer",
-                                                  buffer_info, vma_alloc_info);
   buffer_info.size = tlas.node_count * sizeof(TLASNode);
   tlas_nodes_buffer =
       p_rm->create_buffer("TLASNodesBuffer", buffer_info, vma_alloc_info);
-
-  size_t bvh_node_size = 0;
-  for (const auto &blas : blases) {
-    bvh_node_size += blas.nodes_count;
-  }
-  buffer_info.size = (bvh_node_size) * sizeof(BVHNode);
-  bvh_nodes_buffer =
-      p_rm->create_buffer("BVHNodesBuffer", buffer_info, vma_alloc_info);
-
-  buffer_info.size = blases.size() * sizeof(BLAS);
-  blas_buffer = p_rm->create_buffer("BLASBuffer", buffer_info, vma_alloc_info);
 
   buffer_info.size = blas_instances.size() * sizeof(BLASInstance);
   blas_instances_buffer =
       p_rm->create_buffer("BLASInstancesBuffer", buffer_info, vma_alloc_info);
 
-  buffer_info.size = triangle_ids.size() * sizeof(u32);
-  tri_ids_buffer =
-      p_rm->create_buffer("TriangleIDsBuffer", buffer_info, vma_alloc_info);
-
-  VulkanBuffer *vk_trig_pos = p_rm->access_buffer(triangle_geom_buffer);
-  VulkanBuffer *vk_trig_shad_data =
-      p_rm->access_buffer(triangle_shading_buffer);
-  VulkanBuffer *vk_lamberts = p_rm->access_buffer(lambert_materials_buffer);
-  VulkanBuffer *vk_metals = p_rm->access_buffer(metal_materials_buffer);
-  VulkanBuffer *vk_dielectrics =
-      p_rm->access_buffer(dielectric_materials_buffer);
-  VulkanBuffer *vk_emissives = p_rm->access_buffer(emissive_materials_buffer);
   VulkanBuffer *vk_tlas_nodes = p_rm->access_buffer(tlas_nodes_buffer);
-  VulkanBuffer *vk_bvh_nodes = p_rm->access_buffer(bvh_nodes_buffer);
-  VulkanBuffer *vk_blas = p_rm->access_buffer(blas_buffer);
   VulkanBuffer *vk_blas_instances = p_rm->access_buffer(blas_instances_buffer);
-  VulkanBuffer *vk_tri_ids = p_rm->access_buffer(tri_ids_buffer);
 
-  staging_buffer.stage(triangle_positions.data(), triangle_geom_buffer, 0,
-                       vk_trig_pos->vk_device_size);
-  staging_buffer.stage(triangle_surface_data.data(), triangle_shading_buffer, 0,
-                       vk_trig_shad_data->vk_device_size);
-  staging_buffer.stage(lambert_materials.data(), lambert_materials_buffer, 0,
-                       vk_lamberts->vk_device_size);
-  staging_buffer.stage(metal_materials.data(), metal_materials_buffer, 0,
-                       vk_metals->vk_device_size);
-  staging_buffer.stage(dielectric_materials.data(), dielectric_materials_buffer,
-                       0, vk_dielectrics->vk_device_size);
-  staging_buffer.stage(emissive_materials.data(), emissive_materials_buffer, 0,
-                       vk_emissives->vk_device_size);
   staging_buffer.stage(tlas_nodes.data(), tlas_nodes_buffer, 0,
                        vk_tlas_nodes->vk_device_size);
-  staging_buffer.stage(bvh_nodes.data(), bvh_nodes_buffer, 0,
-                       vk_bvh_nodes->vk_device_size);
-  staging_buffer.stage(blases.data(), blas_buffer, 0, vk_blas->vk_device_size);
   staging_buffer.stage(blas_instances.data(), blas_instances_buffer, 0,
                        vk_blas_instances->vk_device_size);
-  staging_buffer.stage(triangle_ids.data(), tri_ids_buffer, 0,
-                       vk_tri_ids->vk_device_size);
   // Uniform buffers
   buffer_info.size = sizeof(UniformData);
   buffer_info.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
@@ -550,6 +486,9 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
   for (BufferHandle &handle : uniform_buffers) {
     handle = p_rm->create_buffer("UniformBuffer", buffer_info, vma_alloc_info);
   }
+
+  // TODO: Remove
+  staging_buffer.flush();
 }
 
 void Renderer::shutdown() {
@@ -572,6 +511,7 @@ void Renderer::shutdown() {
   p_rm->queue_destroy({set_layout});
   p_rm->queue_destroy({output_image_view});
   p_rm->queue_destroy({path_tracing_pipeline});
+  staging_buffer.shutdown();
   p_rm = nullptr;
   p_device = nullptr;
 }
@@ -603,6 +543,7 @@ void Renderer::resize(u32 output_image_width, u32 output_image_height) {
 }
 
 void Renderer::render(Camera &camera) {
+  // TODO: Some sort of signal for when the staging buffer has data
   // TODO: Rebuilding TLAS
   // Clock clock;
   // clock.start();
@@ -800,24 +741,53 @@ void Renderer::create_output_image(u32 width, u32 height) {
 }
 
 MaterialHandle Renderer::add_lambert_material(const glm::vec3 &albedo) {
+  HASSERT(lambert_materials.size() < MAX_MATERIAL_COUNT);
   lambert_materials.push_back({albedo.x, albedo.y, albedo.z, 1.f});
+  // Stage addition
+  VulkanBuffer *vk_lamberts = p_rm->access_buffer(lambert_materials_buffer);
+  std::span<Lambert> data_view =
+      std::span(lambert_materials).subspan(lambert_materials.size() - 1);
+  staging_buffer.stage(data_view.data(), lambert_materials_buffer,
+                       vk_lamberts->current_size, sizeof(Lambert));
   return MaterialHandle(lambert_materials.size() - 1, MaterialType::LAMBERT);
 }
 
 MaterialHandle Renderer::add_metal_material(const glm::vec3 &albedo,
                                             const f32 fuzz) {
+  HASSERT(metal_materials.size() < MAX_MATERIAL_COUNT);
   metal_materials.push_back({albedo.x, albedo.y, albedo.z, fuzz});
+  // Stage addition
+  VulkanBuffer *vk_metals = p_rm->access_buffer(metal_materials_buffer);
+  std::span<Metal> data_view =
+      std::span(metal_materials).subspan(metal_materials.size() - 1);
+  staging_buffer.stage(data_view.data(), metal_materials_buffer,
+                       vk_metals->current_size, sizeof(Metal));
   return MaterialHandle(metal_materials.size() - 1, MaterialType::METAL);
 }
 
 MaterialHandle Renderer::add_dielectric_material(const f32 refractive_index) {
+  HASSERT(dielectric_materials.size() < MAX_MATERIAL_COUNT);
   dielectric_materials.push_back({refractive_index});
+  // Stage addition
+  VulkanBuffer *vk_dielectrics =
+      p_rm->access_buffer(dielectric_materials_buffer);
+  std::span<Dielectric> data_view =
+      std::span(dielectric_materials).subspan(dielectric_materials.size() - 1);
+  staging_buffer.stage(data_view.data(), dielectric_materials_buffer,
+                       vk_dielectrics->current_size, sizeof(Dielectric));
   return MaterialHandle(dielectric_materials.size() - 1,
                         MaterialType::DIELECTRIC);
 }
 
 MaterialHandle Renderer::add_emissive_material(const glm::vec3 &intensity) {
+  HASSERT(emissive_materials.size() < MAX_MATERIAL_COUNT);
   emissive_materials.push_back({intensity.x, intensity.y, intensity.z, 1.f});
+  // Stage addition
+  VulkanBuffer *vk_emissives = p_rm->access_buffer(emissive_materials_buffer);
+  std::span<Emissive> data_view =
+      std::span(emissive_materials).subspan(emissive_materials.size() - 1);
+  staging_buffer.stage(data_view.data(), emissive_materials_buffer,
+                       vk_emissives->current_size, sizeof(Emissive));
   return MaterialHandle(emissive_materials.size() - 1, MaterialType::EMISSIVE);
 }
 
@@ -841,6 +811,26 @@ u32 Renderer::add_blas(u32 prev_indices_size) {
   // Update total triangle count
   total_triangle_count = triangle_positions.size();
 
+  // Stage triangle data
+  {
+    VulkanBuffer *vk_triangle_geom_buffer =
+        p_rm->access_buffer(triangle_geom_buffer);
+    std::span<TriangleGeom> data_view =
+        std::span(triangle_positions).subspan(prev_trig_count);
+    staging_buffer.stage(data_view.data(), triangle_geom_buffer,
+                         vk_triangle_geom_buffer->current_size,
+                         trig_count * sizeof(TriangleGeom));
+  }
+  {
+    VulkanBuffer *vk_triangle_shad_data =
+        p_rm->access_buffer(triangle_shading_buffer);
+    std::span<TriangleShading> data_view =
+        std::span(triangle_surface_data).subspan(prev_trig_count);
+    staging_buffer.stage(data_view.data(), triangle_shading_buffer,
+                         vk_triangle_shad_data->current_size,
+                         trig_count * sizeof(TriangleShading));
+  }
+
   // Create blas
   u32 prev_blas_nodes_count = bvh_nodes_size;
   // Resize to upper bound
@@ -852,11 +842,39 @@ u32 Renderer::add_blas(u32 prev_indices_size) {
   blases.push_back(blas);
   bvh_nodes_size += blas.nodes_count;
 
-  // Resize to fit the actual count
-  // bvh_nodes.resize(blas.tri_count + prev_blas_nodes_count);
+  bvh_nodes.resize(blas.tri_count + prev_blas_nodes_count);
+
+  // Stage ids data
+  {
+    VulkanBuffer *vk_tri_ids = p_rm->access_buffer(tri_ids_buffer);
+    std::span<u32> data_view = std::span(triangle_ids).subspan(prev_trig_count);
+    staging_buffer.stage(data_view.data(), tri_ids_buffer,
+                         vk_tri_ids->current_size, trig_count * sizeof(u32));
+  }
+  // Stage bvh data
+  {
+    VulkanBuffer *vk_bvh_nodes = p_rm->access_buffer(bvh_nodes_buffer);
+    std::span<BVHNode> data_view =
+        std::span(bvh_nodes).subspan(prev_blas_nodes_count);
+    staging_buffer.stage(data_view.data(), bvh_nodes_buffer,
+                         vk_bvh_nodes->current_size,
+                         blas.nodes_count * sizeof(BVHNode));
+  }
+  {
+    VulkanBuffer *vk_blas = p_rm->access_buffer(blas_buffer);
+    std::span<BLAS> data_view = std::span(blases).subspan(blases.size() - 1);
+    staging_buffer.stage(data_view.data(), blas_buffer, vk_blas->current_size,
+                         sizeof(BLAS));
+  }
 
   return static_cast<u32>(blases.size() - 1);
 }
+
+void Renderer::add_sphere(f32 radius, const glm::vec3 &center,
+                          MaterialHandle mat) {}
+
+void Renderer::add_plane(f32 width, f32 depth, const glm::vec3 &center,
+                         MaterialHandle mat) {}
 
 void Renderer::load_sphere_data() {
   HASSERT_MSG(sphere_blas_index == UINT32_MAX,

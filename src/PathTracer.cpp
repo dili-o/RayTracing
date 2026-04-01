@@ -77,9 +77,9 @@ void PathTracer::init() {
   rm.init(&device);
   staging_buffer.init(&device, &rm,
                       device.queue_family_indices.transfer_family_index.value(),
-                      device.vk_transfer_queue, 1'000'000);
+                      device.vk_transfer_queue, 500'000);
   SlangCompiler::init();
-  renderer.init(&device, &rm, staging_buffer, config.width, config.height);
+  renderer.init(&device, &rm, config.width, config.height);
 
   scene_ui.init(&device, &rm, staging_buffer);
 

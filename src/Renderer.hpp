@@ -5,19 +5,18 @@
 #include "TLAS.hpp"
 #include "Triangle.hpp"
 #include "Vulkan/VkResources.hpp"
+#include "Vulkan/VkStagingBuffer.h"
 // Vendor
 #include <glm/fwd.hpp>
 
 namespace hlx {
 struct VkDeviceManager;
 struct VkResourceManager;
-struct VkStagingBuffer;
 
 struct Renderer {
 public:
   void init(VkDeviceManager *p_device, VkResourceManager *p_rm,
-            VkStagingBuffer &staging_buffer, u32 output_image_width,
-            u32 output_image_height);
+            u32 output_image_width, u32 output_image_height);
   void shutdown();
   void resize(u32 output_image_width, u32 output_image_height);
   void render(Camera &camera);
@@ -31,14 +30,14 @@ public:
   // Returns the index into the blases array
   u32 add_blas(u32 prev_indices_size);
 
-  void add_sphere_(f32 radius, const glm::vec3 &center, MaterialHandle mat);
-  void add_plane_(f32 width, f32 depth, const glm::vec3 &center,
-                  MaterialHandle mat);
+  void add_sphere(f32 radius, const glm::vec3 &center, MaterialHandle mat);
+  void add_plane(f32 width, f32 depth, const glm::vec3 &center,
+                 MaterialHandle mat);
 
 public:
   VkDeviceManager *p_device{nullptr};
   VkResourceManager *p_rm{nullptr};
-  VkStagingBuffer *p_staging_buffer{nullptr};
+  VkStagingBuffer staging_buffer;
   ImageViewHandle output_image_view;
   PipelineHandle path_tracing_pipeline;
   SetLayoutHandle set_layout;
