@@ -340,6 +340,7 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
   buffer_info.size = (MAX_TRIANGLE_COUNT * 2 - 1) * sizeof(BVHNode);
   bvh_nodes_buffer =
       p_rm->create_buffer("BVHNodesBuffer", buffer_info, vma_alloc_info);
+  bvh_nodes_allocator.init(buffer_info.size, sizeof(BVHNode));
 
   buffer_info.size = MAX_BLAS_COUNT * sizeof(BLAS);
   blas_buffer = p_rm->create_buffer("BLASBuffer", buffer_info, vma_alloc_info);
@@ -441,7 +442,7 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
     t.scale = glm::vec3(0.6f, 0.6f, 0.6f);
     t.rotation = glm::vec4(0, 1, 0, glm::radians(-18.f));
 
-    add_instance(cube_blas_index, t.get_mat4(), white_mat);
+    add_instance(sphere_blas_index, t.get_mat4(), white_mat);
   }
 
   // tall box
@@ -458,7 +459,9 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
   Clock clock;
   clock.start();
   tlas.build(tlas_nodes, blas_instances, blases, blas_instances.size(),
-             bvh_nodes);
+             std::span<BVHNode>(
+                 reinterpret_cast<BVHNode *>(bvh_nodes_allocator.memory),
+                 bvh_nodes_allocator.max_size / sizeof(BVHNode)));
   HINFO("TLAS build time: {}s", clock.get_elapsed_time_s());
 
   buffer_info.size = tlas.node_count * sizeof(TLASNode);
@@ -512,6 +515,11 @@ void Renderer::shutdown() {
   p_rm->queue_destroy({output_image_view});
   p_rm->queue_destroy({path_tracing_pipeline});
   staging_buffer.shutdown();
+
+  for (const auto &[key, value] : blas_to_bvh_nodes_allocation) {
+    bvh_nodes_allocator.deallocate(value);
+  }
+  bvh_nodes_allocator.shutdown();
   p_rm = nullptr;
   p_device = nullptr;
 }
@@ -833,16 +841,33 @@ u32 Renderer::add_blas(u32 prev_indices_size) {
 
   // Create blas
   u32 prev_blas_nodes_count = bvh_nodes_size;
-  // Resize to upper bound
-  bvh_nodes.resize(total_triangle_count * 2 - 1);
+  // Create vector of bvh_nodes at the upper bound
+  std::vector<BVHNode> bvh_nodes(total_triangle_count * 2 - 1);
 
   BLAS blas;
-  blas.build(bvh_nodes, prev_blas_nodes_count, triangle_positions,
-             triangle_centroids, triangle_ids, trig_count, prev_trig_count);
+  // TODO: Right now we create a separate bvh_nodes vector that is used to build
+  // the blas.
+  // We then allocate the fitted size from the bvh_nodes_allocator and update
+  // the blas' bvh_nodes_offset. This means we don't need to pass in a
+  // bvh_nodes_offset parameter
+  blas.build(bvh_nodes, /*This is irrelevant*/ prev_blas_nodes_count,
+             triangle_positions, triangle_centroids, triangle_ids, trig_count,
+             prev_trig_count);
+  // Allocate from the bvh_nodes_allocator and copy the data
+  void *bvh_nodes_data = bvh_nodes_allocator.allocate(
+      sizeof(BVHNode) * blas.nodes_count, sizeof(BVHNode));
+  std::memcpy(bvh_nodes_data, bvh_nodes.data(),
+              sizeof(BVHNode) * blas.nodes_count);
+  std::ptrdiff_t byte_offset = static_cast<char *>(bvh_nodes_data) -
+                               static_cast<char *>(bvh_nodes_allocator.memory);
+  blas.bvh_nodes_offset = byte_offset / sizeof(BVHNode);
+
   blases.push_back(blas);
   bvh_nodes_size += blas.nodes_count;
 
-  bvh_nodes.resize(blas.tri_count + prev_blas_nodes_count);
+  u32 blas_index = static_cast<u32>(blases.size() - 1);
+  // Update map
+  blas_to_bvh_nodes_allocation[blas_index] = bvh_nodes_data;
 
   // Stage ids data
   {
@@ -853,11 +878,7 @@ u32 Renderer::add_blas(u32 prev_indices_size) {
   }
   // Stage bvh data
   {
-    VulkanBuffer *vk_bvh_nodes = p_rm->access_buffer(bvh_nodes_buffer);
-    std::span<BVHNode> data_view =
-        std::span(bvh_nodes).subspan(prev_blas_nodes_count);
-    staging_buffer.stage(data_view.data(), bvh_nodes_buffer,
-                         vk_bvh_nodes->current_size,
+    staging_buffer.stage(bvh_nodes_data, bvh_nodes_buffer, byte_offset,
                          blas.nodes_count * sizeof(BVHNode));
   }
   {
@@ -867,7 +888,7 @@ u32 Renderer::add_blas(u32 prev_indices_size) {
                          sizeof(BLAS));
   }
 
-  return static_cast<u32>(blases.size() - 1);
+  return blas_index;
 }
 
 void Renderer::add_sphere(f32 radius, const glm::vec3 &center,

@@ -1,6 +1,7 @@
 #pragma once
 #include "BVHNode.hpp"
 #include "Camera.hpp"
+#include "Core/TlsfAllocator.hpp"
 #include "Material.hpp"
 #include "TLAS.hpp"
 #include "Triangle.hpp"
@@ -84,7 +85,8 @@ private:
   std::vector<u32> triangle_ids;
 
   // Acceleration structure data uploaded to the gpu
-  std::vector<BVHNode> bvh_nodes;
+  TlsfAllocator bvh_nodes_allocator;
+  std::unordered_map<u32, void *> blas_to_bvh_nodes_allocation;
   std::vector<BLAS> blases;
   std::vector<BLASInstance> blas_instances;
   std::vector<TLASNode> tlas_nodes;

@@ -24,23 +24,23 @@ float intersect_aabb(const Ray ray, const float3 bmin, const float3 bmax, const 
 
 struct BVHNode {
   float3 aabb_min; 
-  uint left_first; // Points to the left node or the first prim
+  uint local_left_first; // Points to the left node or the first prim
 
 	float3 aabb_max;
   uint tri_count;
 };
 
 struct BLAS {
-  uint bvh_node_idx;
+  uint bvh_nodes_offset;
   uint nodes_count;
-  uint tri_count;
+  uint tri_count_;
   uint padding;
 
 bool intersect(Ray ray, Interval ray_t, inout HitRecord rec,
                     BVHNode *nodes, TriangleGeom *tris, uint *tri_ids) {
 	uint node_id_stack[64];
   // Initialize first item in the stack to the root node
-	node_id_stack[0] = bvh_node_idx;
+	node_id_stack[0] = bvh_nodes_offset;
 	uint stack_ptr = 0;
 	float closest_so_far = ray_t.max;
 	bool hit = false;
@@ -49,7 +49,7 @@ bool intersect(Ray ray, Interval ray_t, inout HitRecord rec,
 		BVHNode node = nodes[node_id_stack[stack_ptr]];
 		if (node.tri_count > 0) { // The node is a leaf
 			for (uint i = 0; i < node.tri_count; ++i) {
-				uint tri_id_index = node.left_first + i;
+				uint tri_id_index = node.local_left_first + i;
 				if ((tris[tri_ids[tri_id_index]].hit(ray, Interval(ray_t.min, closest_so_far), rec))) {
 					hit = true;
 					rec.tri_id = tri_ids[tri_id_index];	
@@ -61,7 +61,7 @@ bool intersect(Ray ray, Interval ray_t, inout HitRecord rec,
 			if (stack_ptr == 0) break;
 			else --stack_ptr;
     } else { // The node has children
-			uint child1_idx = node.left_first;
+			uint child1_idx = bvh_nodes_offset + node.local_left_first;
 			uint child2_idx = child1_idx + 1;
 			BVHNode child1 = nodes[child1_idx];
 			BVHNode child2 = nodes[child2_idx];

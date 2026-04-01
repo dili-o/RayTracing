@@ -16,8 +16,8 @@ void TLAS::build(std::span<TLASNode> tlas_nodes,
   for (u32 i = 0; i < blas_instance_count; ++i) {
     // Find the bounds (in world space)
     u32 blas_idx = blas_instances[i].blas_id;
-    glm::vec3 bmin = bvh_nodes[blas[blas_idx].bvh_node_idx].aabb_min,
-              bmax = bvh_nodes[blas[blas_idx].bvh_node_idx].aabb_max;
+    glm::vec3 bmin = bvh_nodes[blas[blas_idx].bvh_nodes_offset].aabb_min,
+              bmax = bvh_nodes[blas[blas_idx].bvh_nodes_offset].aabb_max;
     AABB bounds = AABB();
     glm::mat4 transform = glm::inverse(blas_instances[i].inv_transform);
     for (int i = 0; i < 8; i++) {

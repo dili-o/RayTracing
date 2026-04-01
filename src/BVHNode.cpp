@@ -21,7 +21,7 @@ static f32 find_best_split_plane(BVHNode &node, std::span<TriangleGeom> tris,
     f32 bounds_min = infinity;
     f32 bounds_max = -infinity;
     for (u32 i = 0; i < node.tri_count; ++i) {
-      f32 &centroid_pos = centroids[tri_ids[node.left_first + i]][a];
+      f32 &centroid_pos = centroids[tri_ids[node.local_left_first + i]][a];
       bounds_min = std::min(bounds_min, centroid_pos);
       bounds_max = std::max(bounds_max, centroid_pos);
     }
@@ -31,8 +31,8 @@ static f32 find_best_split_plane(BVHNode &node, std::span<TriangleGeom> tris,
     Bin bins[BIN_COUNT];
     f32 scale = BIN_COUNT / (bounds_max - bounds_min);
     for (u32 i = 0; i < node.tri_count; ++i) {
-      TriangleGeom &triangle = tris[tri_ids[node.left_first + i]];
-      f32 &centroid_pos = centroids[tri_ids[node.left_first + i]][a];
+      TriangleGeom &triangle = tris[tri_ids[node.local_left_first + i]];
+      f32 &centroid_pos = centroids[tri_ids[node.local_left_first + i]][a];
 
       u32 bin_idx =
           std::min(BIN_COUNT - 1, u32((centroid_pos - bounds_min) * scale));
@@ -76,14 +76,14 @@ static f32 find_best_split_plane(BVHNode &node, std::span<TriangleGeom> tris,
 void BLAS::build(std::span<BVHNode> bvh_nodes, u32 bvh_nodes_offset,
                  std::span<TriangleGeom> tris, std::span<glm::vec3> centroids,
                  std::span<u32> tri_ids, u32 tri_count, u32 tri_id_offset) {
-  this->bvh_node_idx = bvh_nodes_offset;
+  this->bvh_nodes_offset = bvh_nodes_offset;
   this->nodes_count = 1;
-  this->tri_count = tri_count;
-  BVHNode &root = bvh_nodes[bvh_node_idx];
-  root.left_first = tri_id_offset;
+  this->tri_count_ = tri_count;
+  BVHNode &root = bvh_nodes[0];
+  root.local_left_first = tri_id_offset;
   root.tri_count = tri_count;
-  update_node_bounds(bvh_nodes, tris, tri_ids, bvh_node_idx);
-  subdivide(bvh_nodes, tris, centroids, tri_ids, bvh_node_idx);
+  update_node_bounds(bvh_nodes, tris, tri_ids, 0);
+  subdivide(bvh_nodes, tris, centroids, tri_ids, 0);
 }
 
 void BLAS::update_node_bounds(std::span<BVHNode> bvh_nodes,
@@ -93,7 +93,7 @@ void BLAS::update_node_bounds(std::span<BVHNode> bvh_nodes,
   node.aabb_min = glm::vec3(infinity);
   node.aabb_max = glm::vec3(-infinity);
   for (u32 i = 0; i < node.tri_count; ++i) {
-    u32 tri_id = tri_ids[node.left_first + i];
+    u32 tri_id = tri_ids[node.local_left_first + i];
     node.aabb_min = glm::min(node.aabb_min, glm::vec3(tris[tri_id].v0));
     node.aabb_min = glm::min(node.aabb_min, glm::vec3(tris[tri_id].v1));
     node.aabb_min = glm::min(node.aabb_min, glm::vec3(tris[tri_id].v2));
@@ -125,7 +125,7 @@ void BLAS::subdivide(std::span<BVHNode> bvh_nodes, std::span<TriangleGeom> tris,
   f32 split_pos = best_pos;
 
   // Split triangles
-  u32 l = node.left_first;
+  u32 l = node.local_left_first;
   u32 r = l + node.tri_count - 1;
   while (l <= r) {
     if (centroids[tri_ids[l]][axis] < split_pos) {
@@ -135,22 +135,22 @@ void BLAS::subdivide(std::span<BVHNode> bvh_nodes, std::span<TriangleGeom> tris,
     }
   }
   // abort split if one of the sides is empty
-  u32 left_count = l - node.left_first;
+  u32 left_count = l - node.local_left_first;
   if (left_count == 0 || left_count == node.tri_count)
     return;
 
   // Create child nodes
-  u32 left_idx = bvh_node_idx + nodes_count++;
-  u32 right_idx = bvh_node_idx + nodes_count++;
+  u32 left_idx = nodes_count++;
+  u32 right_idx = nodes_count++;
   BVHNode &left = bvh_nodes[left_idx];
-  left.left_first = node.left_first;
+  left.local_left_first = node.local_left_first;
   left.tri_count = left_count;
 
   BVHNode &right = bvh_nodes[right_idx];
-  right.left_first = l;
+  right.local_left_first = l;
   right.tri_count = node.tri_count - left_count;
 
-  node.left_first = left_idx;
+  node.local_left_first = left_idx;
   node.tri_count = 0;
   update_node_bounds(bvh_nodes, tris, tri_ids, left_idx);
   update_node_bounds(bvh_nodes, tris, tri_ids, right_idx);
@@ -162,14 +162,14 @@ void BLAS::subdivide(std::span<BVHNode> bvh_nodes, std::span<TriangleGeom> tris,
 
 void BLAS::refit(std::span<BVHNode> bvh_nodes, std::span<TriangleGeom> tris,
                  std::span<u32> tri_ids) {
-  for (int i = int(bvh_node_idx + nodes_count) - 1; i >= int(bvh_node_idx); --i) {
+  for (int i = int(nodes_count) - 1; i >= 0; --i) {
     BVHNode &node = bvh_nodes[i];
     // Is leaf?
     if (node.tri_count) {
       update_node_bounds(bvh_nodes, tris, tri_ids, i);
     } else {
-      BVHNode &left_child = bvh_nodes[node.left_first];
-      BVHNode &right_child = bvh_nodes[node.left_first + 1];
+      BVHNode &left_child = bvh_nodes[node.local_left_first];
+      BVHNode &right_child = bvh_nodes[node.local_left_first + 1];
       node.aabb_min = glm::min(left_child.aabb_min, right_child.aabb_min);
       node.aabb_max = glm::max(left_child.aabb_max, right_child.aabb_max);
     }

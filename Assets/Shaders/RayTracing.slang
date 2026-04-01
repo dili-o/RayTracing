@@ -75,7 +75,6 @@ void compute_main(uint3 dispatch_thread_id: SV_DispatchThreadID,
 
     for (uint s_j = 0; s_j < pc.sqrt_spp; ++s_j)
       for (uint s_i = 0; s_i < pc.sqrt_spp; ++s_i) {
-        // float2 jitter = float2(rand(seed), rand(seed));
         float2 jitter =
             sample_square_stratified(seed, pc.recip_sqrt_spp, s_i, s_j);
 

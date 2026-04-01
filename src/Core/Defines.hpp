@@ -104,7 +104,7 @@ inline real linear_to_gamma(real linear_component) {
   return 0.f;
 }
 
-inline std::size_t align_up(std::size_t n, std::size_t alignment) {
+inline size_t align_up(size_t n, size_t alignment) {
   return (n + alignment - 1) & ~(alignment - 1);
 }
 

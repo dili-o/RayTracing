@@ -8,14 +8,22 @@
 namespace hlx {
 struct alignas(16) BVHNode {
   glm::vec3 aabb_min;
-  u32 left_first; // Points to the left node if tri_count is 0, else first
-                  // id in a tri_id array
+  u32 local_left_first; // Points to the left node if tri_count is 0, else first
+                        // id in a tri_id array.
   glm::vec3 aabb_max;
   u32 tri_count;
 };
 
 struct alignas(16) BLAS {
 public:
+  /**
+   * @brief Builds a BLAS.
+   *
+   * @param bvh_nodes A pre-allocated span of BVHNodes. This is a local view of
+   * a global BVHNode buffer
+   * @param bvh_nodes_offset The offset into the global BVHNode buffer. This
+   * offset is not used to index into bvh_nodes
+   */
   void build(std::span<BVHNode> bvh_nodes, u32 bvh_nodes_offset,
              std::span<TriangleGeom> tris, std::span<glm::vec3> centroids,
              std::span<u32> tri_ids, u32 tri_count, u32 tri_id_offset);
@@ -23,9 +31,10 @@ public:
              std::span<u32> tri_ids);
 
 public:
-  u32 bvh_node_idx = 0;
+  // Offset into global BVHNode buffer
+  u32 bvh_nodes_offset = 0;
   u32 nodes_count = 0;
-  u32 tri_count = 0;
+  u32 tri_count_ = 0;
   u32 padding;
 
 private:

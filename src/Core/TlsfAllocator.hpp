@@ -17,10 +17,10 @@ public:
 public:
   size_t allocated_size{0};
   size_t max_size{0};
+  void *memory{nullptr};
 
 private:
   void *tlsf_handle{nullptr};
-  void *memory{nullptr};
   bool is_aligned{false};
 };
 } // namespace hlx
