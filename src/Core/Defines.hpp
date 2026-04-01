@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cstdlib>
 #include <limits>
 #include <random>
 #include <stdint.h>
@@ -103,6 +102,10 @@ inline real linear_to_gamma(real linear_component) {
   if (linear_component > 0.f)
     return std::sqrt(linear_component);
   return 0.f;
+}
+
+inline std::size_t align_up(std::size_t n, std::size_t alignment) {
+  return (n + alignment - 1) & ~(alignment - 1);
 }
 
 #if defined(_WIN32)

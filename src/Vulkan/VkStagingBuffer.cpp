@@ -140,8 +140,7 @@ void VkStagingBuffer::stage(const void *p_data,
 
   VulkanBuffer *buffer = p_resource_manager->access_buffer(buffer_handle);
   // Align Up
-  buffer->current_size =
-      (buffer->current_size + alignment - 1) & ~(alignment - 1);
+  buffer->current_size = align_up(buffer->current_size, alignment);
 
   if ((buffer->current_size + size) > buffer->vk_device_size) {
     if (size > buffer->vk_device_size) {

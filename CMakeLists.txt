@@ -21,7 +21,7 @@ file(GLOB IMGUI_SOURCE_LIST
   "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/imgui/*.cpp"
 )
 
-add_executable (${PROJECT_NAME} ${SOURCE_LIST} ${IMGUI_SOURCE_LIST} "Src/Scene.cpp" "Src/BVHNode.cpp" "Src/TLAS.cpp")
+add_executable (${PROJECT_NAME} ${SOURCE_LIST} ${IMGUI_SOURCE_LIST} "Src/Scene.cpp" "Src/BVHNode.cpp" "Src/TLAS.cpp" "Vendor/tlsf/tlsf.c")
 
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/Assets/Shaders/Spirv")
 target_compile_definitions(${PROJECT_NAME} PRIVATE HOME_PATH="${CMAKE_CURRENT_SOURCE_DIR}")
