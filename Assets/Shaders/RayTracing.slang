@@ -105,7 +105,7 @@ void compute_main(uint3 dispatch_thread_id: SV_DispatchThreadID,
                 data.blas_instances_buffer[rec.blas_instance_id];
 
             float3 local_normal =
-                data.triangle_shading_buffer[rec.tri_id].interpolate_normal(
+                data.triangle_shading_buffer[rec.tri_surface_id].interpolate_normal(
                     rec.u, rec.v);
 
             rec.set_face_normal(

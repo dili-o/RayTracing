@@ -77,12 +77,12 @@ private:
   std::vector<u32> indices;
 
   // NOTE: This is used for creating bvh_nodes
-  std::vector<glm::vec3> triangle_centroids;
+  glm::vec3 *triangle_centroids_data;
 
   // Triangle data uploaded to the gpu
-  std::vector<TriangleGeom> triangle_positions;
-  std::vector<TriangleShading> triangle_surface_data;
-  std::vector<u32> triangle_ids;
+  TriangleGeom *tri_geom_data;
+  TriangleShading *tri_surface_data;
+  TlsfAllocator tri_id_allocator;
 
   // Acceleration structure data uploaded to the gpu
   TlsfAllocator bvh_nodes_allocator;

@@ -313,12 +313,19 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
   buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
   triangle_geom_buffer =
       p_rm->create_buffer("TriangleGeomBuffer", buffer_info, vma_alloc_info);
+  tri_geom_data = static_cast<TriangleGeom *>(malloc(buffer_info.size));
+
   buffer_info.size = MAX_TRIANGLE_COUNT * sizeof(TriangleShading);
   triangle_shading_buffer =
       p_rm->create_buffer("TriangleShadingBuffer", buffer_info, vma_alloc_info);
+  tri_surface_data = static_cast<TriangleShading *>(malloc(buffer_info.size));
+  triangle_centroids_data =
+      static_cast<glm::vec3 *>(malloc(sizeof(glm::vec3) * MAX_TRIANGLE_COUNT));
+
   buffer_info.size = MAX_TRIANGLE_COUNT * sizeof(u32);
   tri_ids_buffer =
       p_rm->create_buffer("TriangleIDsBuffer", buffer_info, vma_alloc_info);
+  tri_id_allocator.init(buffer_info.size, alignof(u32));
 
   // Material buffers
   buffer_info.size = MAX_MATERIAL_COUNT * sizeof(Lambert);
@@ -340,7 +347,7 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
   buffer_info.size = (MAX_TRIANGLE_COUNT * 2 - 1) * sizeof(BVHNode);
   bvh_nodes_buffer =
       p_rm->create_buffer("BVHNodesBuffer", buffer_info, vma_alloc_info);
-  bvh_nodes_allocator.init(buffer_info.size, sizeof(BVHNode));
+  bvh_nodes_allocator.init(buffer_info.size, alignof(BVHNode));
 
   buffer_info.size = MAX_BLAS_COUNT * sizeof(BLAS);
   blas_buffer = p_rm->create_buffer("BLASBuffer", buffer_info, vma_alloc_info);
@@ -520,6 +527,10 @@ void Renderer::shutdown() {
     bvh_nodes_allocator.deallocate(value);
   }
   bvh_nodes_allocator.shutdown();
+  tri_id_allocator.shutdown();
+  free(tri_geom_data);
+  free(tri_surface_data);
+  free(triangle_centroids_data);
   p_rm = nullptr;
   p_device = nullptr;
 }
@@ -802,47 +813,50 @@ MaterialHandle Renderer::add_emissive_material(const glm::vec3 &intensity) {
 u32 Renderer::add_blas(u32 prev_indices_size) {
   u32 trig_count = (indices.size() - prev_indices_size) / 3;
 
-  u32 prev_trig_count = static_cast<u32>(triangle_positions.size());
+  // Allocate tri data
+  void *data = tri_id_allocator.allocate(sizeof(u32) * trig_count, sizeof(u32));
+  std::ptrdiff_t byte_offset =
+      static_cast<char *>(data) - static_cast<char *>(tri_id_allocator.memory);
+  u32 offset = byte_offset / sizeof(u32);
   // Load the triangle data
+  u32 *tri_id_data = static_cast<u32 *>(data);
+  u32 tri_index = offset;
+  u32 index = 0;
   for (size_t i = prev_indices_size; i < indices.size(); i += 3) {
-    triangle_positions.push_back(TriangleGeom(positions[indices[i]],
-                                              positions[indices[i + 1]],
-                                              positions[indices[i + 2]]));
-    triangle_surface_data.push_back(TriangleShading(
+    tri_geom_data[tri_index] =
+        (TriangleGeom(positions[indices[i]], positions[indices[i + 1]],
+                      positions[indices[i + 2]]));
+    tri_surface_data[tri_index] = (TriangleShading(
         normals[indices[i]], normals[indices[i + 1]], normals[indices[i + 2]]));
-    triangle_centroids.push_back((positions[indices[i]] +
-                                  positions[indices[i + 1]] +
-                                  positions[indices[i + 2]]) *
-                                 0.3333f);
-    triangle_ids.push_back(triangle_ids.size());
+    triangle_centroids_data[tri_index] =
+        ((positions[indices[i]] + positions[indices[i + 1]] +
+          positions[indices[i + 2]]) *
+         0.3333f);
+    tri_id_data[index] = (offset + index);
+    ++tri_index;
+    ++index;
   }
-  // Update total triangle count
-  total_triangle_count = triangle_positions.size();
 
   // Stage triangle data
   {
-    VulkanBuffer *vk_triangle_geom_buffer =
-        p_rm->access_buffer(triangle_geom_buffer);
     std::span<TriangleGeom> data_view =
-        std::span(triangle_positions).subspan(prev_trig_count);
+        std::span(tri_geom_data + offset, trig_count);
     staging_buffer.stage(data_view.data(), triangle_geom_buffer,
-                         vk_triangle_geom_buffer->current_size,
+                         offset * sizeof(TriangleGeom),
                          trig_count * sizeof(TriangleGeom));
   }
   {
-    VulkanBuffer *vk_triangle_shad_data =
-        p_rm->access_buffer(triangle_shading_buffer);
     std::span<TriangleShading> data_view =
-        std::span(triangle_surface_data).subspan(prev_trig_count);
+        std::span(tri_surface_data + offset, trig_count);
     staging_buffer.stage(data_view.data(), triangle_shading_buffer,
-                         vk_triangle_shad_data->current_size,
+                         offset * sizeof(TriangleShading),
                          trig_count * sizeof(TriangleShading));
   }
 
   // Create blas
   u32 prev_blas_nodes_count = bvh_nodes_size;
   // Create vector of bvh_nodes at the upper bound
-  std::vector<BVHNode> bvh_nodes(total_triangle_count * 2 - 1);
+  std::vector<BVHNode> bvh_nodes(trig_count * 2 - 1);
 
   BLAS blas;
   // TODO: Right now we create a separate bvh_nodes vector that is used to build
@@ -850,16 +864,19 @@ u32 Renderer::add_blas(u32 prev_indices_size) {
   // We then allocate the fitted size from the bvh_nodes_allocator and update
   // the blas' bvh_nodes_offset. This means we don't need to pass in a
   // bvh_nodes_offset parameter
-  blas.build(bvh_nodes, /*This is irrelevant*/ prev_blas_nodes_count,
-             triangle_positions, triangle_centroids, triangle_ids, trig_count,
-             prev_trig_count);
+  blas.build(bvh_nodes, /*This is redundant*/ prev_blas_nodes_count,
+             std::span(tri_geom_data, MAX_TRIANGLE_COUNT),
+             std::span(triangle_centroids_data, MAX_TRIANGLE_COUNT),
+             std::span(static_cast<u32 *>(tri_id_allocator.memory),
+                       MAX_TRIANGLE_COUNT),
+             trig_count, offset);
   // Allocate from the bvh_nodes_allocator and copy the data
   void *bvh_nodes_data = bvh_nodes_allocator.allocate(
       sizeof(BVHNode) * blas.nodes_count, sizeof(BVHNode));
   std::memcpy(bvh_nodes_data, bvh_nodes.data(),
               sizeof(BVHNode) * blas.nodes_count);
-  std::ptrdiff_t byte_offset = static_cast<char *>(bvh_nodes_data) -
-                               static_cast<char *>(bvh_nodes_allocator.memory);
+  byte_offset = static_cast<char *>(bvh_nodes_data) -
+                static_cast<char *>(bvh_nodes_allocator.memory);
   blas.bvh_nodes_offset = byte_offset / sizeof(BVHNode);
 
   blases.push_back(blas);
@@ -871,10 +888,9 @@ u32 Renderer::add_blas(u32 prev_indices_size) {
 
   // Stage ids data
   {
-    VulkanBuffer *vk_tri_ids = p_rm->access_buffer(tri_ids_buffer);
-    std::span<u32> data_view = std::span(triangle_ids).subspan(prev_trig_count);
-    staging_buffer.stage(data_view.data(), tri_ids_buffer,
-                         vk_tri_ids->current_size, trig_count * sizeof(u32));
+    std::span<u32> data_view = std::span(tri_id_data, trig_count);
+    staging_buffer.stage(data_view.data(), tri_ids_buffer, offset * sizeof(u32),
+                         trig_count * sizeof(u32));
   }
   // Stage bvh data
   {
