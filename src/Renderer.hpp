@@ -87,6 +87,7 @@ private:
   // Acceleration structure data uploaded to the gpu
   TlsfAllocator bvh_nodes_allocator;
   std::unordered_map<u32, void *> blas_to_bvh_nodes_allocation;
+  std::vector<void *> tri_id_allocations;
   std::vector<BLAS> blases;
   std::vector<BLASInstance> blas_instances;
   std::vector<TLASNode> tlas_nodes;
@@ -97,11 +98,5 @@ private:
   u32 sphere_blas_index{UINT32_MAX};
   u32 cube_blas_index{UINT32_MAX};
   u32 plane_blas_index{UINT32_MAX};
-  // TODO: Remove these
-  u32 sphere_trig_count;
-  u32 cube_trig_count;
-  u32 plane_trig_count;
-
-  size_t index_offset;
 };
 } // namespace hlx

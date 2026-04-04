@@ -347,7 +347,7 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
   buffer_info.size = (MAX_TRIANGLE_COUNT * 2 - 1) * sizeof(BVHNode);
   bvh_nodes_buffer =
       p_rm->create_buffer("BVHNodesBuffer", buffer_info, vma_alloc_info);
-  bvh_nodes_allocator.init(buffer_info.size, alignof(BVHNode));
+  bvh_nodes_allocator.init(buffer_info.size, sizeof(BVHNode));
 
   buffer_info.size = MAX_BLAS_COUNT * sizeof(BLAS);
   blas_buffer = p_rm->create_buffer("BLASBuffer", buffer_info, vma_alloc_info);
@@ -527,6 +527,9 @@ void Renderer::shutdown() {
     bvh_nodes_allocator.deallocate(value);
   }
   bvh_nodes_allocator.shutdown();
+  for (const auto allocation : tri_id_allocations) {
+    tri_id_allocator.deallocate(allocation);
+  }
   tri_id_allocator.shutdown();
   free(tri_geom_data);
   free(tri_surface_data);
@@ -817,10 +820,11 @@ u32 Renderer::add_blas(u32 prev_indices_size) {
   void *data = tri_id_allocator.allocate(sizeof(u32) * trig_count, sizeof(u32));
   std::ptrdiff_t byte_offset =
       static_cast<char *>(data) - static_cast<char *>(tri_id_allocator.memory);
-  u32 offset = byte_offset / sizeof(u32);
+  tri_id_allocations.push_back(data);
+  u32 tri_id_index = byte_offset / sizeof(u32);
   // Load the triangle data
   u32 *tri_id_data = static_cast<u32 *>(data);
-  u32 tri_index = offset;
+  u32 tri_index = tri_id_index;
   u32 index = 0;
   for (size_t i = prev_indices_size; i < indices.size(); i += 3) {
     tri_geom_data[tri_index] =
@@ -832,7 +836,7 @@ u32 Renderer::add_blas(u32 prev_indices_size) {
         ((positions[indices[i]] + positions[indices[i + 1]] +
           positions[indices[i + 2]]) *
          0.3333f);
-    tri_id_data[index] = (offset + index);
+    tri_id_data[index] = (tri_id_index + index);
     ++tri_index;
     ++index;
   }
@@ -840,16 +844,16 @@ u32 Renderer::add_blas(u32 prev_indices_size) {
   // Stage triangle data
   {
     std::span<TriangleGeom> data_view =
-        std::span(tri_geom_data + offset, trig_count);
+        std::span(tri_geom_data + tri_id_index, trig_count);
     staging_buffer.stage(data_view.data(), triangle_geom_buffer,
-                         offset * sizeof(TriangleGeom),
+                         tri_id_index * sizeof(TriangleGeom),
                          trig_count * sizeof(TriangleGeom));
   }
   {
     std::span<TriangleShading> data_view =
-        std::span(tri_surface_data + offset, trig_count);
+        std::span(tri_surface_data + tri_id_index, trig_count);
     staging_buffer.stage(data_view.data(), triangle_shading_buffer,
-                         offset * sizeof(TriangleShading),
+                         tri_id_index * sizeof(TriangleShading),
                          trig_count * sizeof(TriangleShading));
   }
 
@@ -869,7 +873,8 @@ u32 Renderer::add_blas(u32 prev_indices_size) {
              std::span(triangle_centroids_data, MAX_TRIANGLE_COUNT),
              std::span(static_cast<u32 *>(tri_id_allocator.memory),
                        MAX_TRIANGLE_COUNT),
-             trig_count, offset);
+             trig_count, tri_id_index);
+
   // Allocate from the bvh_nodes_allocator and copy the data
   void *bvh_nodes_data = bvh_nodes_allocator.allocate(
       sizeof(BVHNode) * blas.nodes_count, sizeof(BVHNode));
@@ -877,6 +882,7 @@ u32 Renderer::add_blas(u32 prev_indices_size) {
               sizeof(BVHNode) * blas.nodes_count);
   byte_offset = static_cast<char *>(bvh_nodes_data) -
                 static_cast<char *>(bvh_nodes_allocator.memory);
+  HASSERT((byte_offset % sizeof(BVHNode)) == 0);
   blas.bvh_nodes_offset = byte_offset / sizeof(BVHNode);
 
   blases.push_back(blas);
@@ -889,8 +895,8 @@ u32 Renderer::add_blas(u32 prev_indices_size) {
   // Stage ids data
   {
     std::span<u32> data_view = std::span(tri_id_data, trig_count);
-    staging_buffer.stage(data_view.data(), tri_ids_buffer, offset * sizeof(u32),
-                         trig_count * sizeof(u32));
+    staging_buffer.stage(data_view.data(), tri_ids_buffer,
+                         tri_id_index * sizeof(u32), trig_count * sizeof(u32));
   }
   // Stage bvh data
   {
@@ -918,8 +924,6 @@ void Renderer::load_sphere_data() {
               "Renderer::load_sphere_data() should only be called once");
   size_t prev_indices_size = indices.size();
   generate_sphere(positions, indices, normals, 0.5f, 64, 32, glm::vec3(0.f));
-  index_offset = indices.size();
-  sphere_trig_count = (indices.size() - prev_indices_size) / 3;
 
   sphere_blas_index = add_blas(prev_indices_size);
 }
@@ -929,8 +933,6 @@ void Renderer::load_cube_data() {
               "Renderer::load_cube_data() should only be called once");
   size_t prev_indices_size = indices.size();
   generate_cube(positions, indices, normals, glm::vec3(0.f), 1.f, 1.f, 1.f);
-  index_offset = indices.size();
-  cube_trig_count = (indices.size() - prev_indices_size) / 3;
   cube_blas_index = add_blas(prev_indices_size);
 }
 
@@ -939,8 +941,6 @@ void Renderer::load_plane_data() {
               "Renderer::load_plane_data() should only be called once");
   size_t prev_indices_size = indices.size();
   generate_plane(positions, indices, normals, 1.f, 1.f, 1, 1, glm::vec3(0.f));
-  index_offset = indices.size();
-  plane_trig_count = (indices.size() - prev_indices_size) / 3;
   plane_blas_index = add_blas(prev_indices_size);
 }
 } // namespace hlx

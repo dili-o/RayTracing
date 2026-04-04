@@ -146,6 +146,7 @@ void compute_main(uint3 dispatch_thread_id: SV_DispatchThreadID,
               break;
             }
 
+            // attenuation += float3(1.f);
             sample_radiance += attenuation * emission;
 
             if (!ray_scattered)

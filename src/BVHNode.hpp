@@ -55,6 +55,6 @@ public:
   glm::mat4 inv_transform = glm::mat4(1.f);
   MaterialHandle material_handle;
   u32 blas_id;
-  u32 padding;
+  u32 padding{0u};
 };
 } // namespace hlx
