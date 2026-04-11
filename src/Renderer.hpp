@@ -29,7 +29,8 @@ public:
   MaterialHandle add_emissive_material(const glm::vec3 &intensity);
 
   // Returns the index into the blases array
-  u32 add_blas(u32 prev_indices_size);
+  u32 add_blas(std::span<glm::vec3> positions, std::span<glm::vec3> normals,
+               std::span<u32> indices);
 
   void add_sphere(f32 radius, const glm::vec3 &center, MaterialHandle mat);
   void add_plane(f32 width, f32 depth, const glm::vec3 &center,
@@ -62,7 +63,6 @@ private:
   void load_sphere_data();
   void load_cube_data();
   void load_plane_data();
-  void add_blas();
 
 private:
   std::vector<Lambert> lambert_materials;
@@ -70,29 +70,23 @@ private:
   std::vector<Emissive> emissive_materials;
   std::vector<Dielectric> dielectric_materials;
 
-  // NOTE: These are only used to create the TriangleGeom and TriangleShading
-  // data
-  std::vector<glm::vec3> positions;
-  std::vector<glm::vec3> normals;
-  std::vector<u32> indices;
-
-  // NOTE: This is used for creating bvh_nodes
+  // NOTE: This is only used for creating bvh_nodes
   glm::vec3 *triangle_centroids_data;
 
-  // Triangle data uploaded to the gpu
+  // CPU-side triangle data uploaded to the gpu
   TriangleGeom *tri_geom_data;
   TriangleShading *tri_surface_data;
   TlsfAllocator tri_id_allocator;
 
-  // Acceleration structure data uploaded to the gpu
+  // CPU-side acceleration structure data uploaded to the gpu
   TlsfAllocator bvh_nodes_allocator;
   std::unordered_map<u32, void *> blas_to_bvh_nodes_allocation;
   std::vector<void *> tri_id_allocations;
   std::vector<BLAS> blases;
   std::vector<BLASInstance> blas_instances;
   std::vector<TLASNode> tlas_nodes;
-  u32 bvh_nodes_size{0};
 
+  u32 bvh_nodes_size{0};
   TLAS tlas;
 
   u32 sphere_blas_index{UINT32_MAX};

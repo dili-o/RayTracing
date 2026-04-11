@@ -813,8 +813,9 @@ MaterialHandle Renderer::add_emissive_material(const glm::vec3 &intensity) {
   return MaterialHandle(emissive_materials.size() - 1, MaterialType::EMISSIVE);
 }
 
-u32 Renderer::add_blas(u32 prev_indices_size) {
-  u32 trig_count = (indices.size() - prev_indices_size) / 3;
+u32 Renderer::add_blas(std::span<glm::vec3> positions,
+                       std::span<glm::vec3> normals, std::span<u32> indices) {
+  u32 trig_count = indices.size() / 3;
 
   // Allocate tri data
   void *data = tri_id_allocator.allocate(sizeof(u32) * trig_count, sizeof(u32));
@@ -826,7 +827,7 @@ u32 Renderer::add_blas(u32 prev_indices_size) {
   u32 *tri_id_data = static_cast<u32 *>(data);
   u32 tri_index = tri_id_index;
   u32 index = 0;
-  for (size_t i = prev_indices_size; i < indices.size(); i += 3) {
+  for (size_t i = 0; i < indices.size(); i += 3) {
     tri_geom_data[tri_index] =
         (TriangleGeom(positions[indices[i]], positions[indices[i + 1]],
                       positions[indices[i + 2]]));
@@ -922,25 +923,31 @@ void Renderer::add_plane(f32 width, f32 depth, const glm::vec3 &center,
 void Renderer::load_sphere_data() {
   HASSERT_MSG(sphere_blas_index == UINT32_MAX,
               "Renderer::load_sphere_data() should only be called once");
-  size_t prev_indices_size = indices.size();
+  std::vector<glm::vec3> positions;
+  std::vector<glm::vec3> normals;
+  std::vector<u32> indices;
   generate_sphere(positions, indices, normals, 0.5f, 64, 32, glm::vec3(0.f));
 
-  sphere_blas_index = add_blas(prev_indices_size);
+  sphere_blas_index = add_blas(positions, normals, indices);
 }
 
 void Renderer::load_cube_data() {
   HASSERT_MSG(cube_blas_index == UINT32_MAX,
               "Renderer::load_cube_data() should only be called once");
-  size_t prev_indices_size = indices.size();
+  std::vector<glm::vec3> positions;
+  std::vector<glm::vec3> normals;
+  std::vector<u32> indices;
   generate_cube(positions, indices, normals, glm::vec3(0.f), 1.f, 1.f, 1.f);
-  cube_blas_index = add_blas(prev_indices_size);
+  cube_blas_index = add_blas(positions, normals, indices);
 }
 
 void Renderer::load_plane_data() {
   HASSERT_MSG(plane_blas_index == UINT32_MAX,
               "Renderer::load_plane_data() should only be called once");
-  size_t prev_indices_size = indices.size();
+  std::vector<glm::vec3> positions;
+  std::vector<glm::vec3> normals;
+  std::vector<u32> indices;
   generate_plane(positions, indices, normals, 1.f, 1.f, 1, 1, glm::vec3(0.f));
-  plane_blas_index = add_blas(prev_indices_size);
+  plane_blas_index = add_blas(positions, normals, indices);
 }
 } // namespace hlx
