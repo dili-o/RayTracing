@@ -914,11 +914,11 @@ u32 Renderer::add_blas(std::span<glm::vec3> positions,
   return blas_index;
 }
 
-void Renderer::add_sphere(f32 radius, const glm::vec3 &center,
-                          MaterialHandle mat) {}
+void Renderer::add_sphere_instance(f32 radius, const glm::vec3 &center,
+                                   MaterialHandle mat) {}
 
-void Renderer::add_plane(f32 width, f32 depth, const glm::vec3 &center,
-                         MaterialHandle mat) {}
+void Renderer::add_plane_instance(f32 width, f32 depth, const glm::vec3 &center,
+                                  MaterialHandle mat) {}
 
 void Renderer::load_sphere_data() {
   HASSERT_MSG(sphere_blas_index == UINT32_MAX,

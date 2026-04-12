@@ -1,5 +1,5 @@
 #pragma once
-
+#include "Core/FreeIndexPool.hpp"
 // Vendor
 #include <glm/fwd.hpp>
 
@@ -18,7 +18,10 @@ struct SceneNode {
 
 struct SceneGraph {
 public:
-  i32 add_node(u32 parent, i32 level, std::string name);
+  SceneGraph(u32 max_node_capacity = 10);
+  ~SceneGraph();
+
+  u32 add_node(u32 parent, i32 level, std::string name);
   std::string_view get_node_name(u32 node_id) const;
   void queue_to_update(u32 node_id);
   void update_transforms();
@@ -37,7 +40,7 @@ public:
   // List of nodes to update at each level
   std::vector<u32> nodes_to_update[MAX_NODE_LEVEL];
   // List of deleted nodes
-  std::queue<u32> free_nodes;
+  FreeIndexPool node_index_pool;
 };
 
 u32 render_scene_graph_nodes(const SceneGraph &scene_graph, u32 node_id,

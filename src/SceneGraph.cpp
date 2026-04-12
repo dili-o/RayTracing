@@ -25,34 +25,33 @@ void add_unique_idx(std::vector<uint32_t> &v, uint32_t index) {
     v.push_back(index);
 }
 
-i32 SceneGraph::add_node(u32 parent, i32 level, std::string name) {
+SceneGraph::SceneGraph(u32 max_node_capacity) {
+  node_index_pool.init(max_node_capacity);
+  nodes.resize(max_node_capacity);
+  local_transforms.resize(max_node_capacity);
+  global_transforms.resize(max_node_capacity);
+  node_names.resize(max_node_capacity);
+}
+
+SceneGraph::~SceneGraph() {
+  if (node_index_pool.size) {
+    node_index_pool.release_all();
+    node_index_pool.shutdown();
+  }
+}
+
+u32 SceneGraph::add_node(u32 parent, i32 level, std::string name) {
   HASSERT_MSG(level < MAX_NODE_LEVEL,
               "SceneGraph::add_node(): level exceeds MAX_NODE_LEVEL");
-  u32 node_id;
-  if (free_nodes.size()) {
-    node_id = free_nodes.front();
-    free_nodes.pop();
-    local_transforms[node_id] = glm::mat4(1.f);
-    global_transforms[node_id] = glm::mat4(1.f);
-    if (name.empty()) {
-      node_names[node_id] = std::string("Node") + std::to_string(node_id);
-    } else {
-      node_names[node_id] = name;
-    }
-    nodes[node_id] = {.parent_node = parent, .level = level};
+  u32 node_id = node_index_pool.obtain_new();
+  local_transforms[node_id] = glm::mat4(1.f);
+  global_transforms[node_id] = glm::mat4(1.f);
+  if (name.empty()) {
+    node_names[node_id] = std::string("Node") + std::to_string(node_id);
   } else {
-    node_id = static_cast<u32>(nodes.size());
-    local_transforms.push_back(glm::mat4(1.f));
-    global_transforms.push_back(glm::mat4(1.f));
-    // Check if a name was given
-    if (name.empty()) {
-      node_names.push_back(std::string("Node") + std::to_string(node_id));
-    } else {
-      node_names.push_back(name);
-    }
-
-    nodes.push_back({.parent_node = parent, .level = level});
+    node_names[node_id] = name;
   }
+  nodes[node_id] = {.parent_node = parent, .level = level};
 
   SceneNode &node = nodes[node_id];
   if (parent != INVALID_NODE_ID) {
@@ -174,12 +173,13 @@ void SceneGraph::delete_node(u32 node_id) {
       }
     }
   }
-  free_nodes.push(node_id);
+
   // Delete children aswell
   for (u32 c = node.first_child; c != INVALID_NODE_ID;
        c = nodes[c].next_sibling) {
     delete_node(c);
   }
+  node_index_pool.release(node_id);
 }
 
 u32 render_scene_graph_nodes(const SceneGraph &scene_graph, u32 node_id,

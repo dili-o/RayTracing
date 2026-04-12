@@ -17,7 +17,7 @@
 
 namespace hlx {
 
-static SceneGraph scene_graph;
+static SceneGraph scene_graph = SceneGraph(100);
 static u32 selected_node_id = INVALID_NODE_ID;
 
 bool application_on_resize_event(u16 event_code, void *sender, void *listener,

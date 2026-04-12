@@ -32,9 +32,10 @@ public:
   u32 add_blas(std::span<glm::vec3> positions, std::span<glm::vec3> normals,
                std::span<u32> indices);
 
-  void add_sphere(f32 radius, const glm::vec3 &center, MaterialHandle mat);
-  void add_plane(f32 width, f32 depth, const glm::vec3 &center,
-                 MaterialHandle mat);
+  void add_sphere_instance(f32 radius, const glm::vec3 &center,
+                           MaterialHandle mat);
+  void add_plane_instance(f32 width, f32 depth, const glm::vec3 &center,
+                          MaterialHandle mat);
 
 public:
   VkDeviceManager *p_device{nullptr};
