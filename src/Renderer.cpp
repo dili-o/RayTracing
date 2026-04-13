@@ -410,13 +410,12 @@ void Renderer::shutdown() {
   p_rm->queue_destroy({path_tracing_pipeline});
   staging_buffer.shutdown();
 
-  for (const auto &[key, value] : blas_to_bvh_nodes_allocation) {
-    bvh_nodes_allocator.deallocate(value);
+  for (const auto &[blas_id, allocation] : blas_allocations_map) {
+    tri_id_allocator.deallocate(allocation.tri_id_allocation);
+    bvh_nodes_allocator.deallocate(allocation.bvh_nodes_allocation);
   }
+
   bvh_nodes_allocator.shutdown();
-  for (const auto allocation : tri_id_allocations) {
-    tri_id_allocator.deallocate(allocation);
-  }
   tri_id_allocator.shutdown();
   free(tri_geom_data);
   free(tri_surface_data);
@@ -711,14 +710,16 @@ u32 Renderer::add_blas(std::span<glm::vec3> positions,
                        std::span<glm::vec3> normals, std::span<u32> indices) {
   u32 trig_count = indices.size() / 3;
 
-  // Allocate tri data
-  void *data = tri_id_allocator.allocate(sizeof(u32) * trig_count, sizeof(u32));
-  std::ptrdiff_t byte_offset =
-      static_cast<char *>(data) - static_cast<char *>(tri_id_allocator.memory);
-  tri_id_allocations.push_back(data);
+  // Allocate tri ids data
+  void *p_tri_ids =
+      tri_id_allocator.allocate(sizeof(u32) * trig_count, sizeof(u32));
+  std::ptrdiff_t byte_offset = static_cast<char *>(p_tri_ids) -
+                               static_cast<char *>(tri_id_allocator.memory);
+  // Get the index into the tri ids pool
   u32 tri_id_index = byte_offset / sizeof(u32);
+
   // Load the triangle data
-  u32 *tri_id_data = static_cast<u32 *>(data);
+  u32 *tri_ids_data = static_cast<u32 *>(p_tri_ids);
   u32 tri_index = tri_id_index;
   u32 index = 0;
   for (size_t i = 0; i < indices.size(); i += 3) {
@@ -731,7 +732,7 @@ u32 Renderer::add_blas(std::span<glm::vec3> positions,
         ((positions[indices[i]] + positions[indices[i + 1]] +
           positions[indices[i + 2]]) *
          0.3333f);
-    tri_id_data[index] = (tri_id_index + index);
+    tri_ids_data[index] = (tri_id_index + index);
     ++tri_index;
     ++index;
   }
@@ -772,11 +773,11 @@ u32 Renderer::add_blas(std::span<glm::vec3> positions,
              trig_count, tri_id_index);
 
   // Allocate from the bvh_nodes_allocator and copy the data
-  void *bvh_nodes_data = bvh_nodes_allocator.allocate(
+  void *p_bvh_nodes = bvh_nodes_allocator.allocate(
       sizeof(BVHNode) * blas.nodes_count, sizeof(BVHNode));
-  std::memcpy(bvh_nodes_data, bvh_nodes.data(),
+  std::memcpy(p_bvh_nodes, bvh_nodes.data(),
               sizeof(BVHNode) * blas.nodes_count);
-  byte_offset = static_cast<char *>(bvh_nodes_data) -
+  byte_offset = static_cast<char *>(p_bvh_nodes) -
                 static_cast<char *>(bvh_nodes_allocator.memory);
   HASSERT((byte_offset % sizeof(BVHNode)) == 0);
   blas.bvh_nodes_offset = byte_offset / sizeof(BVHNode);
@@ -784,17 +785,18 @@ u32 Renderer::add_blas(std::span<glm::vec3> positions,
   bvh_nodes_size += blas.nodes_count;
 
   // Update map
-  blas_to_bvh_nodes_allocation[blas_index] = bvh_nodes_data;
+  blas_allocations_map[blas_index] = {.tri_id_allocation = p_tri_ids,
+                                      .bvh_nodes_allocation = p_bvh_nodes};
 
   // Stage ids data
   {
-    std::span<u32> data_view = std::span(tri_id_data, trig_count);
+    std::span<u32> data_view = std::span(tri_ids_data, trig_count);
     staging_buffer.stage(data_view.data(), tri_ids_buffer,
                          tri_id_index * sizeof(u32), trig_count * sizeof(u32));
   }
   // Stage bvh data
   {
-    staging_buffer.stage(bvh_nodes_data, bvh_nodes_buffer, byte_offset,
+    staging_buffer.stage(p_bvh_nodes, bvh_nodes_buffer, byte_offset,
                          blas.nodes_count * sizeof(BVHNode));
   }
   {
@@ -817,6 +819,10 @@ u32 Renderer::add_blas_instance(u32 blas_index, const glm::mat4 &transform,
   rebuild_tlas = true;
   return index;
 }
+
+void Renderer::remove_blas(u32 blas_id) {}
+
+void Renderer::remove_blas_instance(u32 blas_instance_id) {}
 
 void Renderer::load_sphere_data() {
   HASSERT_MSG(sphere_blas_index == UINT32_MAX,

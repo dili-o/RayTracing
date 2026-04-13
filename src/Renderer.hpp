@@ -29,12 +29,13 @@ public:
   MaterialHandle add_dielectric_material(const f32 refractive_index);
   MaterialHandle add_emissive_material(const glm::vec3 &intensity);
 
-  // Returns the index into the blases array
   u32 add_blas(std::span<glm::vec3> positions, std::span<glm::vec3> normals,
                std::span<u32> indices);
-
   u32 add_blas_instance(u32 blas_index, const glm::mat4 &transform,
                         const MaterialHandle material);
+
+  void remove_blas(u32 blas_id);
+  void remove_blas_instance(u32 blas_instance_id);
 
 public:
   VkDeviceManager *p_device{nullptr};
@@ -70,6 +71,10 @@ private:
   void build_tlas();
 
 private:
+  struct BLAS_Allocation {
+    void *tri_id_allocation;
+    void *bvh_nodes_allocation;
+  };
   std::vector<Lambert> lambert_materials;
   std::vector<Metal> metal_materials;
   std::vector<Emissive> emissive_materials;
@@ -85,8 +90,7 @@ private:
 
   // CPU-side acceleration structure data uploaded to the gpu
   TlsfAllocator bvh_nodes_allocator;
-  std::unordered_map<u32, void *> blas_to_bvh_nodes_allocation;
-  std::vector<void *> tri_id_allocations;
+  std::unordered_map<u32, BLAS_Allocation> blas_allocations_map;
   FreeIndexPool blases_index_pool;
   std::vector<BLAS> blases;
   FreeIndexPool blas_inst_index_pool;
