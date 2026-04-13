@@ -207,7 +207,7 @@ void PathTracer::init() {
     t.rotation = glm::vec4(0, 1, 0, glm::radians(-18.f));
 
     scene_graph.set_node_blas_instance(
-        node_id, renderer.add_blas_instance(renderer.sphere_blas_index,
+        node_id, renderer.add_blas_instance(renderer.cube_blas_index,
                                             t.get_mat4(), white_mat));
     scene_graph.update_node_local_transform(node_id, t.get_mat4());
   }

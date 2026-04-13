@@ -28,6 +28,7 @@ public:
   MaterialHandle add_metal_material(const glm::vec3 &albedo, const f32 fuzz);
   MaterialHandle add_dielectric_material(const f32 refractive_index);
   MaterialHandle add_emissive_material(const glm::vec3 &intensity);
+  void remove_material(const MaterialHandle &material_handle);
 
   u32 add_blas(std::span<glm::vec3> positions, std::span<glm::vec3> normals,
                std::span<u32> indices);
@@ -77,9 +78,17 @@ private:
     void *tri_id_allocation;
     void *bvh_nodes_allocation;
   };
+
+  FreeIndexPool lambert_mats_index_pool;
   std::vector<Lambert> lambert_materials;
+
+  FreeIndexPool metal_mats_index_pool;
   std::vector<Metal> metal_materials;
+
+  FreeIndexPool emissive_mats_index_pool;
   std::vector<Emissive> emissive_materials;
+
+  FreeIndexPool dielectric_mats_index_pool;
   std::vector<Dielectric> dielectric_materials;
 
   // NOTE: This is only used for creating bvh_nodes

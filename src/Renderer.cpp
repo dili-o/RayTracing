@@ -328,17 +328,26 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
   tri_id_allocator.init(buffer_info.size, alignof(u32));
 
   // Material buffers
+  lambert_mats_index_pool.init(MAX_MATERIAL_COUNT);
+  lambert_materials.resize(MAX_MATERIAL_COUNT);
   buffer_info.size = MAX_MATERIAL_COUNT * sizeof(Lambert);
   lambert_materials_buffer = p_rm->create_buffer("LambertMaterialsBuffer",
                                                  buffer_info, vma_alloc_info);
+
+  metal_mats_index_pool.init(MAX_MATERIAL_COUNT);
+  metal_materials.resize(MAX_MATERIAL_COUNT);
   buffer_info.size = MAX_MATERIAL_COUNT * sizeof(Metal);
   metal_materials_buffer =
       p_rm->create_buffer("MetalMaterialsBuffer", buffer_info, vma_alloc_info);
 
+  dielectric_mats_index_pool.init(MAX_MATERIAL_COUNT);
+  dielectric_materials.resize(MAX_MATERIAL_COUNT);
   buffer_info.size = MAX_MATERIAL_COUNT * sizeof(Dielectric);
   dielectric_materials_buffer = p_rm->create_buffer(
       "DielectricMaterialsBuffer", buffer_info, vma_alloc_info);
 
+  emissive_mats_index_pool.init(MAX_MATERIAL_COUNT);
+  emissive_materials.resize(MAX_MATERIAL_COUNT);
   buffer_info.size = MAX_MATERIAL_COUNT * sizeof(Emissive);
   emissive_materials_buffer = p_rm->create_buffer("EmissiveMaterialsBuffer",
                                                   buffer_info, vma_alloc_info);
@@ -430,6 +439,17 @@ void Renderer::shutdown() {
   // blas_instance_index, rather than doing a release_all() here
   blas_inst_index_pool.release_all();
   blas_inst_index_pool.shutdown();
+
+  // TODO: Users of add_<material> should be responsible for releasing each
+  // material, rather than doing a release_all() here
+  lambert_mats_index_pool.release_all();
+  lambert_mats_index_pool.shutdown();
+  metal_mats_index_pool.release_all();
+  metal_mats_index_pool.shutdown();
+  emissive_mats_index_pool.release_all();
+  emissive_mats_index_pool.shutdown();
+  dielectric_mats_index_pool.release_all();
+  dielectric_mats_index_pool.shutdown();
 
   p_rm = nullptr;
   p_device = nullptr;
@@ -656,54 +676,66 @@ void Renderer::create_output_image(u32 width, u32 height) {
 }
 
 MaterialHandle Renderer::add_lambert_material(const glm::vec3 &albedo) {
-  HASSERT(lambert_materials.size() < MAX_MATERIAL_COUNT);
-  lambert_materials.push_back({albedo.x, albedo.y, albedo.z, 1.f});
+  u32 index = lambert_mats_index_pool.obtain_new();
+  lambert_materials[index] = {albedo.x, albedo.y, albedo.z, 1.f};
   // Stage addition
-  VulkanBuffer *vk_lamberts = p_rm->access_buffer(lambert_materials_buffer);
-  std::span<Lambert> data_view =
-      std::span(lambert_materials).subspan(lambert_materials.size() - 1);
-  staging_buffer.stage(data_view.data(), lambert_materials_buffer,
-                       vk_lamberts->current_size, sizeof(Lambert));
-  return MaterialHandle(lambert_materials.size() - 1, MaterialType::LAMBERT);
+  staging_buffer.stage(&lambert_materials[index], lambert_materials_buffer,
+                       index * sizeof(Lambert), sizeof(Lambert));
+  return MaterialHandle(index, MaterialType::LAMBERT);
 }
 
 MaterialHandle Renderer::add_metal_material(const glm::vec3 &albedo,
                                             const f32 fuzz) {
-  HASSERT(metal_materials.size() < MAX_MATERIAL_COUNT);
-  metal_materials.push_back({albedo.x, albedo.y, albedo.z, fuzz});
+  u32 index = metal_mats_index_pool.obtain_new();
+  metal_materials[index] = {albedo.x, albedo.y, albedo.z, fuzz};
   // Stage addition
-  VulkanBuffer *vk_metals = p_rm->access_buffer(metal_materials_buffer);
-  std::span<Metal> data_view =
-      std::span(metal_materials).subspan(metal_materials.size() - 1);
-  staging_buffer.stage(data_view.data(), metal_materials_buffer,
-                       vk_metals->current_size, sizeof(Metal));
-  return MaterialHandle(metal_materials.size() - 1, MaterialType::METAL);
+  staging_buffer.stage(&metal_materials[index], metal_materials_buffer,
+                       index * sizeof(Metal), sizeof(Metal));
+  return MaterialHandle(index, MaterialType::METAL);
 }
 
 MaterialHandle Renderer::add_dielectric_material(const f32 refractive_index) {
-  HASSERT(dielectric_materials.size() < MAX_MATERIAL_COUNT);
-  dielectric_materials.push_back({refractive_index});
+  u32 index = dielectric_mats_index_pool.obtain_new();
+  dielectric_materials[index] = {refractive_index};
   // Stage addition
-  VulkanBuffer *vk_dielectrics =
-      p_rm->access_buffer(dielectric_materials_buffer);
-  std::span<Dielectric> data_view =
-      std::span(dielectric_materials).subspan(dielectric_materials.size() - 1);
-  staging_buffer.stage(data_view.data(), dielectric_materials_buffer,
-                       vk_dielectrics->current_size, sizeof(Dielectric));
-  return MaterialHandle(dielectric_materials.size() - 1,
-                        MaterialType::DIELECTRIC);
+  staging_buffer.stage(&dielectric_materials[index],
+                       dielectric_materials_buffer, index * sizeof(Dielectric),
+                       sizeof(Dielectric));
+  return MaterialHandle(index, MaterialType::DIELECTRIC);
 }
 
 MaterialHandle Renderer::add_emissive_material(const glm::vec3 &intensity) {
-  HASSERT(emissive_materials.size() < MAX_MATERIAL_COUNT);
-  emissive_materials.push_back({intensity.x, intensity.y, intensity.z, 1.f});
+  u32 index = emissive_mats_index_pool.obtain_new();
+  emissive_materials[index] = {intensity.x, intensity.y, intensity.z, 1.f};
   // Stage addition
-  VulkanBuffer *vk_emissives = p_rm->access_buffer(emissive_materials_buffer);
-  std::span<Emissive> data_view =
-      std::span(emissive_materials).subspan(emissive_materials.size() - 1);
-  staging_buffer.stage(data_view.data(), emissive_materials_buffer,
-                       vk_emissives->current_size, sizeof(Emissive));
-  return MaterialHandle(emissive_materials.size() - 1, MaterialType::EMISSIVE);
+  staging_buffer.stage(&emissive_materials[index], emissive_materials_buffer,
+                       index * sizeof(Emissive), sizeof(Emissive));
+  return MaterialHandle(index, MaterialType::EMISSIVE);
+}
+
+void Renderer::remove_material(const MaterialHandle &material_handle) {
+  // TODO: Check if any blas instance uses the material
+  switch (material_handle.type) {
+  case MaterialType::LAMBERT: {
+    lambert_mats_index_pool.release(material_handle.index);
+    break;
+  }
+  case MaterialType::METAL: {
+    metal_mats_index_pool.release(material_handle.index);
+    break;
+  }
+  case MaterialType::EMISSIVE: {
+    emissive_mats_index_pool.release(material_handle.index);
+    break;
+  }
+  case MaterialType::DIELECTRIC: {
+    dielectric_mats_index_pool.release(material_handle.index);
+    break;
+  }
+  default:
+    HASSERT_MSG(false, "Renderer::remove_material() - Unknown MaterialType!.");
+    break;
+  }
 }
 
 u32 Renderer::add_blas(std::span<glm::vec3> positions,
@@ -810,6 +842,7 @@ u32 Renderer::add_blas(std::span<glm::vec3> positions,
 // TODO: Remove the transform parameter
 u32 Renderer::add_blas_instance(u32 blas_index, const glm::mat4 &transform,
                                 const MaterialHandle material) {
+  // TODO: Check if material handle is valid
   u32 index = blas_inst_index_pool.obtain_new();
   BLASInstance &inst = blas_instances[index];
   inst.blas_id = blas_index;
