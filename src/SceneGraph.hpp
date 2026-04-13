@@ -29,7 +29,7 @@ public:
   void queue_to_update(u32 node_id);
   void update_node_local_transform(u32 node_id, const glm::mat4 &transform);
   void update_transforms(Renderer *renderer);
-  void delete_node(u32 node_id);
+  void delete_node(u32 node_id, Renderer *renderer);
 
   void collect_nodes_to_delete(u32 node_id, std::vector<u32> &node_indices);
   void delete_scene_nodes(const std::vector<u32> &nodes_to_delete);
@@ -49,5 +49,6 @@ public:
 
 u32 render_scene_graph_nodes(const SceneGraph &scene_graph, u32 node_id,
                              u32 selected_node_id);
-void render_scene_graph_nodes_property(SceneGraph &scene_graph, u32 node_id);
+void render_scene_graph_nodes_property(SceneGraph &scene_graph, u32 node_id,
+                                       Renderer *renderer);
 } // namespace hlx

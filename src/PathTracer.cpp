@@ -503,7 +503,8 @@ void PathTracer::run() {
       selected_node_id =
           render_scene_graph_nodes(scene_graph, 0, selected_node_id);
       ImGui::SeparatorText("Scene Node Property");
-      render_scene_graph_nodes_property(scene_graph, selected_node_id);
+      render_scene_graph_nodes_property(scene_graph, selected_node_id,
+                                        &renderer);
       ImGui::End();
       scene_ui.end_frame();
 

@@ -164,7 +164,7 @@ void SceneGraph::update_transforms(Renderer *renderer) {
   }
 }
 
-void SceneGraph::delete_node(u32 node_id) {
+void SceneGraph::delete_node(u32 node_id, Renderer *renderer) {
   // Do not delete the root
   if (node_id == 0)
     return;
@@ -203,10 +203,16 @@ void SceneGraph::delete_node(u32 node_id) {
     }
   }
 
+  // Delete the blas instance if it has one
+  u32 blas_instance_id = node_to_blas_instance[node_id];
+  if (blas_instance_id != UINT32_MAX) {
+    renderer->remove_blas_instance(blas_instance_id);
+  }
+
   // Delete children aswell
   for (u32 c = node.first_child; c != INVALID_NODE_ID;
        c = nodes[c].next_sibling) {
-    delete_node(c);
+    delete_node(c, renderer);
   }
   node_index_pool.release(node_id);
 }
@@ -249,7 +255,8 @@ u32 render_scene_graph_nodes(const SceneGraph &scene_graph, u32 node_id,
   return selected_node_id;
 }
 
-void render_scene_graph_nodes_property(SceneGraph &scene_graph, u32 node_id) {
+void render_scene_graph_nodes_property(SceneGraph &scene_graph, u32 node_id,
+                                       Renderer *renderer) {
   if (node_id == INVALID_NODE_ID) {
     ImGui::Text("No node selected");
     return;
@@ -308,7 +315,7 @@ void render_scene_graph_nodes_property(SceneGraph &scene_graph, u32 node_id) {
   }
 
   if (ImGui::Button("Delete Node")) {
-    scene_graph.delete_node(node_id);
+    scene_graph.delete_node(node_id, renderer);
   }
 
   if (modified) {
