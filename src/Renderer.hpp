@@ -36,11 +36,6 @@ public:
   u32 add_blas_instance(u32 blas_index, const glm::mat4 &transform,
                         const MaterialHandle material);
 
-  void add_sphere_instance(f32 radius, const glm::vec3 &center,
-                           MaterialHandle mat);
-  void add_plane_instance(f32 width, f32 depth, const glm::vec3 &center,
-                          MaterialHandle mat);
-
 public:
   VkDeviceManager *p_device{nullptr};
   VkResourceManager *p_rm{nullptr};
@@ -64,10 +59,15 @@ public:
   u32 total_triangle_count{0};
   u32 frame_index{0};
 
+  u32 sphere_blas_index{UINT32_MAX};
+  u32 cube_blas_index{UINT32_MAX};
+  u32 plane_blas_index{UINT32_MAX};
+
 private:
   void load_sphere_data();
   void load_cube_data();
   void load_plane_data();
+  void build_tlas();
 
 private:
   std::vector<Lambert> lambert_materials;
@@ -96,8 +96,6 @@ private:
   u32 bvh_nodes_size{0};
   TLAS tlas;
 
-  u32 sphere_blas_index{UINT32_MAX};
-  u32 cube_blas_index{UINT32_MAX};
-  u32 plane_blas_index{UINT32_MAX};
+  bool rebuild_tlas{false};
 };
 } // namespace hlx

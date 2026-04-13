@@ -11,6 +11,7 @@
 #include "Vulkan/VkShaderCompilation.h"
 #include "Vulkan/VkUtils.hpp"
 // Vendor
+#include <glm/ext/matrix_transform.hpp>
 #include <glm/mat4x4.hpp>
 #include <glm/vec3.hpp>
 #include <imgui/imgui.h>
@@ -93,6 +94,112 @@ void PathTracer::init() {
 
   for (u32 i = 0; i < 3; ++i) {
     scene_graph.add_node(2, 1, std::string());
+  }
+  struct Transform {
+    glm::vec3 position{0.f};
+    glm::vec4 rotation = glm::vec4(0.f, 1.f, 0.f, 0.f);
+    glm::vec3 scale{1.f};
+
+    glm::mat4 get_mat4() {
+      return glm::translate(glm::mat4(1.f), position) *
+             glm::rotate(glm::mat4(1.f), rotation.w, glm::vec3(rotation)) *
+             glm::scale(glm::mat4(1.f), scale);
+    }
+  };
+  // Create Cornell Box
+  // Materials
+  MaterialHandle red_mat = renderer.add_lambert_material({0.65f, 0.05f, 0.05f});
+  MaterialHandle white_mat =
+      renderer.add_lambert_material({0.73f, 0.73f, 0.73f});
+  MaterialHandle green_mat =
+      renderer.add_lambert_material({0.12f, 0.45f, 0.15f});
+  MaterialHandle emissive_mat =
+      renderer.add_emissive_material({15.f, 15.f, 15.f});
+
+  // FLOOR
+  {
+    Transform t;
+    t.position = glm::vec3(0.0f, 0.0f, -0.025f);
+    t.scale = glm::vec3(2.0f, 1.0f, 2.0f);
+
+    renderer.add_blas_instance(renderer.plane_blas_index, t.get_mat4(),
+                               white_mat);
+  }
+
+  // CEILING
+  {
+    Transform t;
+    t.position = glm::vec3(0.0f, 1.99f, -0.025f);
+    t.scale = glm::vec3(2.0f, 1.0f, 2.0f);
+    t.rotation = glm::vec4(1, 0, 0, glm::pi<float>());
+
+    renderer.add_blas_instance(renderer.plane_blas_index, t.get_mat4(),
+                               white_mat);
+  }
+
+  // BACK WALL
+  {
+    Transform t;
+    t.position = glm::vec3(0.0f, 1.0f, -1.0f);
+    t.scale = glm::vec3(2.0f, 1.0f, 2.0f);
+    t.rotation = glm::vec4(1, 0, 0, -glm::half_pi<float>());
+
+    renderer.add_blas_instance(renderer.plane_blas_index, t.get_mat4(),
+                               white_mat);
+  }
+
+  // LEFT WALL (RED)
+  {
+    Transform t;
+    t.position = glm::vec3(-1.0f, 1.0f, -0.025f);
+    t.scale = glm::vec3(2.0f, 1.0f, 2.0f);
+    t.rotation = glm::vec4(0, 0, 1, glm::half_pi<float>());
+
+    renderer.add_blas_instance(renderer.plane_blas_index, t.get_mat4(),
+                               red_mat);
+  }
+
+  // RIGHT WALL (GREEN)
+  {
+    Transform t;
+    t.position = glm::vec3(1.0f, 1.0f, -0.025f);
+    t.scale = glm::vec3(2.0f, 1.0f, 2.0f);
+    t.rotation = glm::vec4(0, 0, 1, -glm::half_pi<float>());
+
+    renderer.add_blas_instance(renderer.plane_blas_index, t.get_mat4(),
+                               green_mat);
+  }
+
+  // LIGHT (small ceiling panel)
+  {
+    Transform t;
+    t.position = glm::vec3(0.0f, 1.98f, -0.03f);
+    t.scale = glm::vec3(0.5f, 1.0f, 0.4f);
+    t.rotation = glm::vec4(1, 0, 0, glm::pi<float>());
+
+    renderer.add_blas_instance(renderer.plane_blas_index, t.get_mat4(),
+                               emissive_mat);
+  }
+  // short box
+  {
+    Transform t;
+    t.position = glm::vec3(0.3f, 0.3f, 0.35f);
+    t.scale = glm::vec3(0.6f, 0.6f, 0.6f);
+    t.rotation = glm::vec4(0, 1, 0, glm::radians(-18.f));
+
+    renderer.add_blas_instance(renderer.sphere_blas_index, t.get_mat4(),
+                               white_mat);
+  }
+
+  // tall box
+  {
+    Transform t;
+    t.position = glm::vec3(-0.4f, 0.6f, -0.3f);
+    t.scale = glm::vec3(0.6f, 1.2f, 0.6f);
+    t.rotation = glm::vec4(0, 1, 0, glm::radians(15.f));
+
+    renderer.add_blas_instance(renderer.cube_blas_index, t.get_mat4(),
+                               white_mat);
   }
 }
 

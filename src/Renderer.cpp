@@ -363,130 +363,15 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
       p_rm->create_buffer("BLASInstancesBuffer", buffer_info, vma_alloc_info);
   blas_instances.resize(MAX_BLAS_COUNT);
 
-  // Init materials
-  MaterialHandle red_mat = add_lambert_material({0.65f, 0.05f, 0.05f});
-  MaterialHandle white_mat = add_lambert_material({0.73f, 0.73f, 0.73f});
-  MaterialHandle green_mat = add_lambert_material({0.12f, 0.45f, 0.15f});
-  MaterialHandle emissive_mat = add_emissive_material({15.f, 15.f, 15.f});
+  // TLAS buffer
+  buffer_info.size = MAX_BLAS_COUNT * sizeof(TLASNode);
+  tlas_nodes_buffer =
+      p_rm->create_buffer("TLASNodesBuffer", buffer_info, vma_alloc_info);
 
   // Load primitive data
   load_plane_data();
   load_cube_data();
   load_sphere_data();
-
-  struct Transform {
-    glm::vec3 position{0.f};
-    glm::vec4 rotation = glm::vec4(0.f, 1.f, 0.f, 0.f);
-    glm::vec3 scale{1.f};
-
-    glm::mat4 get_mat4() {
-      return glm::translate(glm::mat4(1.f), position) *
-             glm::rotate(glm::mat4(1.f), rotation.w, glm::vec3(rotation)) *
-             glm::scale(glm::mat4(1.f), scale);
-    }
-  };
-  // Create Cornell Box
-
-  // FLOOR
-  {
-    Transform t;
-    t.position = glm::vec3(0.0f, 0.0f, -0.025f);
-    t.scale = glm::vec3(2.0f, 1.0f, 2.0f);
-
-    add_blas_instance(plane_blas_index, t.get_mat4(), white_mat);
-  }
-
-  // CEILING
-  {
-    Transform t;
-    t.position = glm::vec3(0.0f, 1.99f, -0.025f);
-    t.scale = glm::vec3(2.0f, 1.0f, 2.0f);
-    t.rotation = glm::vec4(1, 0, 0, glm::pi<float>());
-
-    add_blas_instance(plane_blas_index, t.get_mat4(), white_mat);
-  }
-
-  // BACK WALL
-  {
-    Transform t;
-    t.position = glm::vec3(0.0f, 1.0f, -1.0f);
-    t.scale = glm::vec3(2.0f, 1.0f, 2.0f);
-    t.rotation = glm::vec4(1, 0, 0, -glm::half_pi<float>());
-
-    add_blas_instance(plane_blas_index, t.get_mat4(), white_mat);
-  }
-
-  // LEFT WALL (RED)
-  {
-    Transform t;
-    t.position = glm::vec3(-1.0f, 1.0f, -0.025f);
-    t.scale = glm::vec3(2.0f, 1.0f, 2.0f);
-    t.rotation = glm::vec4(0, 0, 1, glm::half_pi<float>());
-
-    add_blas_instance(plane_blas_index, t.get_mat4(), red_mat);
-  }
-
-  // RIGHT WALL (GREEN)
-  {
-    Transform t;
-    t.position = glm::vec3(1.0f, 1.0f, -0.025f);
-    t.scale = glm::vec3(2.0f, 1.0f, 2.0f);
-    t.rotation = glm::vec4(0, 0, 1, -glm::half_pi<float>());
-
-    add_blas_instance(plane_blas_index, t.get_mat4(), green_mat);
-  }
-
-  // LIGHT (small ceiling panel)
-  {
-    Transform t;
-    t.position = glm::vec3(0.0f, 1.98f, -0.03f);
-    t.scale = glm::vec3(0.5f, 1.0f, 0.4f);
-    t.rotation = glm::vec4(1, 0, 0, glm::pi<float>());
-
-    add_blas_instance(plane_blas_index, t.get_mat4(), emissive_mat);
-  }
-  // short box
-  {
-    Transform t;
-    t.position = glm::vec3(0.3f, 0.3f, 0.35f);
-    t.scale = glm::vec3(0.6f, 0.6f, 0.6f);
-    t.rotation = glm::vec4(0, 1, 0, glm::radians(-18.f));
-
-    add_blas_instance(sphere_blas_index, t.get_mat4(), white_mat);
-  }
-
-  // tall box
-  {
-    Transform t;
-    t.position = glm::vec3(-0.4f, 0.6f, -0.3f);
-    t.scale = glm::vec3(0.6f, 1.2f, 0.6f);
-    t.rotation = glm::vec4(0, 1, 0, glm::radians(15.f));
-
-    add_blas_instance(cube_blas_index, t.get_mat4(), white_mat);
-  }
-
-  // TODO: MAke into a function
-  tlas_nodes.resize(blas_instances.size() * 2);
-  Clock clock;
-  clock.start();
-  tlas.build(tlas_nodes, blas_instances,
-             std::span<u32>(blas_inst_index_pool.free_indices,
-                            blas_inst_index_pool.size),
-             blases,
-             std::span<BVHNode>(
-                 reinterpret_cast<BVHNode *>(bvh_nodes_allocator.memory),
-                 bvh_nodes_allocator.max_size / sizeof(BVHNode)));
-  HINFO("TLAS build time: {}s", clock.get_elapsed_time_s());
-
-  buffer_info.size = tlas.node_count * sizeof(TLASNode);
-  tlas_nodes_buffer =
-      p_rm->create_buffer("TLASNodesBuffer", buffer_info, vma_alloc_info);
-
-  VulkanBuffer *vk_tlas_nodes = p_rm->access_buffer(tlas_nodes_buffer);
-
-  staging_buffer.stage(tlas_nodes.data(), tlas_nodes_buffer, 0,
-                       vk_tlas_nodes->vk_device_size);
-  /////////////////////////////////////////////////////////
 
   // Uniform buffers
   buffer_info.size = sizeof(UniformData);
@@ -583,6 +468,10 @@ void Renderer::render(Camera &camera) {
     frame_index = 0;
     camera.changed = false;
   }
+  // Rebuild tlas if a change was made
+  if (rebuild_tlas)
+    build_tlas();
+
   // Update uniforms
   VulkanImageView *vk_output_image_view =
       p_rm->access_image_view(output_image_view);
@@ -925,15 +814,9 @@ u32 Renderer::add_blas_instance(u32 blas_index, const glm::mat4 &transform,
   inst.material_handle = material;
   staging_buffer.stage(&inst, blas_instances_buffer,
                        sizeof(BLASInstance) * index, sizeof(BLASInstance));
-
+  rebuild_tlas = true;
   return index;
 }
-
-void Renderer::add_sphere_instance(f32 radius, const glm::vec3 &center,
-                                   MaterialHandle mat) {}
-
-void Renderer::add_plane_instance(f32 width, f32 depth, const glm::vec3 &center,
-                                  MaterialHandle mat) {}
 
 void Renderer::load_sphere_data() {
   HASSERT_MSG(sphere_blas_index == UINT32_MAX,
@@ -965,4 +848,26 @@ void Renderer::load_plane_data() {
   generate_plane(positions, indices, normals, 1.f, 1.f, 1, 1, glm::vec3(0.f));
   plane_blas_index = add_blas(positions, normals, indices);
 }
+
+void Renderer::build_tlas() {
+  tlas_nodes.resize(blas_inst_index_pool.size * 2);
+  Clock clock;
+  clock.start();
+  tlas.build(tlas_nodes, blas_instances,
+             std::span<u32>(blas_inst_index_pool.free_indices,
+                            blas_inst_index_pool.size),
+             blases,
+             std::span<BVHNode>(
+                 reinterpret_cast<BVHNode *>(bvh_nodes_allocator.memory),
+                 bvh_nodes_allocator.max_size / sizeof(BVHNode)));
+  HINFO("TLAS build time: {}s", clock.get_elapsed_time_s());
+
+  VulkanBuffer *vk_tlas_nodes = p_rm->access_buffer(tlas_nodes_buffer);
+
+  staging_buffer.stage(tlas_nodes.data(), tlas_nodes_buffer, 0,
+                       vk_tlas_nodes->vk_device_size);
+  staging_buffer.flush();
+  rebuild_tlas = false;
+}
+
 } // namespace hlx

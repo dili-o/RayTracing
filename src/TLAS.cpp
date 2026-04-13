@@ -1,7 +1,5 @@
 #include "TLAS.hpp"
 #include "AABB.hpp"
-// Vendor
-#include <glm/ext/matrix_transform.hpp>
 
 namespace hlx {
 
