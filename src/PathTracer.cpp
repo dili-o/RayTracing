@@ -87,14 +87,6 @@ void PathTracer::init() {
   end_application = false;
   staging_buffer.flush();
 
-  u32 root_id = scene_graph.add_node(INVALID_NODE_ID, 0, "Root");
-  for (u32 i = 0; i < 5; ++i) {
-    scene_graph.add_node(root_id, 1, std::string());
-  }
-
-  for (u32 i = 0; i < 3; ++i) {
-    scene_graph.add_node(2, 1, std::string());
-  }
   struct Transform {
     glm::vec3 position{0.f};
     glm::vec4 rotation = glm::vec4(0.f, 1.f, 0.f, 0.f);
@@ -107,6 +99,7 @@ void PathTracer::init() {
     }
   };
   // Create Cornell Box
+  u32 cornell_box_id = scene_graph.add_node(0, "Cornell Box");
   // Materials
   MaterialHandle red_mat = renderer.add_lambert_material({0.65f, 0.05f, 0.05f});
   MaterialHandle white_mat =
@@ -118,92 +111,121 @@ void PathTracer::init() {
 
   // FLOOR
   {
+    u32 node_id = scene_graph.add_node(cornell_box_id, "Floor");
+
     Transform t;
     t.position = glm::vec3(0.0f, 0.0f, -0.025f);
     t.scale = glm::vec3(2.0f, 1.0f, 2.0f);
 
-    renderer.add_blas_instance(renderer.plane_blas_index, t.get_mat4(),
-                               white_mat);
+    scene_graph.set_node_blas_instance(
+        node_id, renderer.add_blas_instance(renderer.plane_blas_index,
+                                            t.get_mat4(), white_mat));
+    scene_graph.update_node_local_transform(node_id, t.get_mat4());
   }
 
   // CEILING
   {
+    u32 node_id = scene_graph.add_node(cornell_box_id, "Ceiling");
+
     Transform t;
     t.position = glm::vec3(0.0f, 1.99f, -0.025f);
     t.scale = glm::vec3(2.0f, 1.0f, 2.0f);
     t.rotation = glm::vec4(1, 0, 0, glm::pi<float>());
 
-    renderer.add_blas_instance(renderer.plane_blas_index, t.get_mat4(),
-                               white_mat);
+    scene_graph.set_node_blas_instance(
+        node_id, renderer.add_blas_instance(renderer.plane_blas_index,
+                                            t.get_mat4(), white_mat));
+    scene_graph.update_node_local_transform(node_id, t.get_mat4());
   }
 
   // BACK WALL
   {
+    u32 node_id = scene_graph.add_node(cornell_box_id, "Back Wall");
+
     Transform t;
     t.position = glm::vec3(0.0f, 1.0f, -1.0f);
     t.scale = glm::vec3(2.0f, 1.0f, 2.0f);
     t.rotation = glm::vec4(1, 0, 0, -glm::half_pi<float>());
 
-    renderer.add_blas_instance(renderer.plane_blas_index, t.get_mat4(),
-                               white_mat);
+    scene_graph.set_node_blas_instance(
+        node_id, renderer.add_blas_instance(renderer.plane_blas_index,
+                                            t.get_mat4(), white_mat));
+    scene_graph.update_node_local_transform(node_id, t.get_mat4());
   }
 
   // LEFT WALL (RED)
   {
+    u32 node_id = scene_graph.add_node(cornell_box_id, "Left Wall");
+
     Transform t;
     t.position = glm::vec3(-1.0f, 1.0f, -0.025f);
     t.scale = glm::vec3(2.0f, 1.0f, 2.0f);
     t.rotation = glm::vec4(0, 0, 1, glm::half_pi<float>());
 
-    renderer.add_blas_instance(renderer.plane_blas_index, t.get_mat4(),
-                               red_mat);
+    scene_graph.set_node_blas_instance(
+        node_id, renderer.add_blas_instance(renderer.plane_blas_index,
+                                            t.get_mat4(), red_mat));
+    scene_graph.update_node_local_transform(node_id, t.get_mat4());
   }
 
   // RIGHT WALL (GREEN)
   {
+    u32 node_id = scene_graph.add_node(cornell_box_id, "Right Wall");
+
     Transform t;
     t.position = glm::vec3(1.0f, 1.0f, -0.025f);
     t.scale = glm::vec3(2.0f, 1.0f, 2.0f);
     t.rotation = glm::vec4(0, 0, 1, -glm::half_pi<float>());
 
-    renderer.add_blas_instance(renderer.plane_blas_index, t.get_mat4(),
-                               green_mat);
+    scene_graph.set_node_blas_instance(
+        node_id, renderer.add_blas_instance(renderer.plane_blas_index,
+                                            t.get_mat4(), green_mat));
+    scene_graph.update_node_local_transform(node_id, t.get_mat4());
   }
 
   // LIGHT (small ceiling panel)
   {
+    u32 node_id = scene_graph.add_node(cornell_box_id, "Ceiling Light");
+
     Transform t;
     t.position = glm::vec3(0.0f, 1.98f, -0.03f);
     t.scale = glm::vec3(0.5f, 1.0f, 0.4f);
     t.rotation = glm::vec4(1, 0, 0, glm::pi<float>());
 
-    renderer.add_blas_instance(renderer.plane_blas_index, t.get_mat4(),
-                               emissive_mat);
+    scene_graph.set_node_blas_instance(
+        node_id, renderer.add_blas_instance(renderer.plane_blas_index,
+                                            t.get_mat4(), emissive_mat));
+    scene_graph.update_node_local_transform(node_id, t.get_mat4());
   }
   // short box
   {
+    u32 node_id = scene_graph.add_node(cornell_box_id, "Short Box");
+
     Transform t;
     t.position = glm::vec3(0.3f, 0.3f, 0.35f);
     t.scale = glm::vec3(0.6f, 0.6f, 0.6f);
     t.rotation = glm::vec4(0, 1, 0, glm::radians(-18.f));
 
-    renderer.add_blas_instance(renderer.sphere_blas_index, t.get_mat4(),
-                               white_mat);
+    scene_graph.set_node_blas_instance(
+        node_id, renderer.add_blas_instance(renderer.sphere_blas_index,
+                                            t.get_mat4(), white_mat));
+    scene_graph.update_node_local_transform(node_id, t.get_mat4());
   }
 
   // tall box
   {
+    u32 node_id = scene_graph.add_node(cornell_box_id, "Tall Box");
+
     Transform t;
     t.position = glm::vec3(-0.4f, 0.6f, -0.3f);
     t.scale = glm::vec3(0.6f, 1.2f, 0.6f);
     t.rotation = glm::vec4(0, 1, 0, glm::radians(15.f));
 
-    renderer.add_blas_instance(renderer.cube_blas_index, t.get_mat4(),
-                               white_mat);
+    scene_graph.set_node_blas_instance(
+        node_id, renderer.add_blas_instance(renderer.cube_blas_index,
+                                            t.get_mat4(), white_mat));
+    scene_graph.update_node_local_transform(node_id, t.get_mat4());
   }
-
-  // Testing remove_blas_instance, should remove the floor
-  renderer.remove_blas_instance(1);
 }
 
 void PathTracer::run() {
@@ -387,7 +409,7 @@ void PathTracer::run() {
 
     if (!Platform::is_suspended()) {
       cam.update(delta_time);
-      scene_graph.update_transforms();
+      scene_graph.update_transforms(&renderer);
       device.begin_frame();
       VkCommandBuffer cmd = device.get_current_cmd_buffer();
 

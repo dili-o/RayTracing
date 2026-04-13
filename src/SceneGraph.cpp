@@ -1,6 +1,8 @@
 #include "SceneGraph.hpp"
 #include "Core/Assert.hpp"
+#include "Renderer.hpp"
 // Vendor
+#include <glm/ext/matrix_transform.hpp>
 #include <glm/mat4x4.hpp>
 #include <glm/vec3.hpp>
 #include <imgui/imgui.h>
@@ -31,6 +33,7 @@ SceneGraph::SceneGraph(u32 max_node_capacity) {
   local_transforms.resize(max_node_capacity);
   global_transforms.resize(max_node_capacity);
   node_names.resize(max_node_capacity);
+  add_node(INVALID_NODE_ID, "Root");
 }
 
 SceneGraph::~SceneGraph() {
@@ -40,7 +43,14 @@ SceneGraph::~SceneGraph() {
   }
 }
 
-u32 SceneGraph::add_node(u32 parent, i32 level, std::string name) {
+u32 SceneGraph::add_node(u32 parent, std::string name) {
+  i32 level;
+  if (parent != INVALID_NODE_ID) {
+    level = nodes[parent].level + 1;
+  } else {
+    // Root node
+    level = 0;
+  }
   HASSERT_MSG(level < MAX_NODE_LEVEL,
               "SceneGraph::add_node(): level exceeds MAX_NODE_LEVEL");
   u32 node_id = node_index_pool.obtain_new();
@@ -70,7 +80,13 @@ u32 SceneGraph::add_node(u32 parent, i32 level, std::string name) {
     }
   }
 
+  node_to_blas_instance[node_id] = UINT32_MAX;
+
   return node_id;
+}
+
+void SceneGraph::set_node_blas_instance(u32 node_id, u32 blas_instance_id) {
+  node_to_blas_instance[node_id] = blas_instance_id;
 }
 
 std::string_view SceneGraph::get_node_name(u32 node_id) const {
@@ -118,7 +134,13 @@ void SceneGraph::delete_scene_nodes(const std::vector<u32> &nodes_to_delete) {
   }
 }
 
-void SceneGraph::update_transforms() {
+void SceneGraph::update_node_local_transform(u32 node_id,
+                                             const glm::mat4 &transform) {
+  local_transforms[node_id] = transform;
+  queue_to_update(node_id);
+}
+
+void SceneGraph::update_transforms(Renderer *renderer) {
   // NOTE: This assumes we have only 1 root node
   if (!nodes_to_update[0].empty()) {
     const u32 node_id = nodes_to_update[0][0];
@@ -126,10 +148,17 @@ void SceneGraph::update_transforms() {
     nodes_to_update[0].clear();
   }
 
-  for (u32 i = 1; i < MAX_NODE_LEVEL && (!nodes_to_update[i].empty()); ++i) {
+  for (u32 i = 1; i < MAX_NODE_LEVEL; ++i) {
+    if (nodes_to_update[i].empty())
+      continue;
     for (u32 c : nodes_to_update[i]) {
       u32 parent_id = nodes[c].parent_node;
       global_transforms[c] = global_transforms[parent_id] * local_transforms[c];
+      u32 blas_instance_id = node_to_blas_instance[c];
+      if (blas_instance_id != UINT32_MAX) {
+        renderer->set_blas_instance_transform(blas_instance_id,
+                                              global_transforms[c]);
+      }
     }
     nodes_to_update[i].clear();
   }
@@ -230,8 +259,8 @@ void render_scene_graph_nodes_property(SceneGraph &scene_graph, u32 node_id) {
   glm::vec3 global_translation = scene_graph.global_transforms[node_id][3];
   bool modified = false;
   ImGui::Text("Local Translation");
-  ImGui::DragFloat3("Position", &local_translation.x, 0.5f, 0.f, 0.f, "%.3f");
-  modified |= ImGui::IsItemActive();
+  modified |= ImGui::DragFloat3("Position", &local_translation.x, 0.5f, 0.f,
+                                0.f, "%.3f");
 
   ImGui::Text("World Translation");
   ImGui::BeginDisabled();
@@ -271,11 +300,9 @@ void render_scene_graph_nodes_property(SceneGraph &scene_graph, u32 node_id) {
   ImGui::InputText("Node name", node_name, 50);
   if (ImGui::Button("Add Node")) {
     if (node_name[0] == 0) {
-      scene_graph.add_node(node_id, scene_graph.nodes[node_id].level + 1,
-                           std::string());
+      scene_graph.add_node(node_id, std::string());
     } else {
-      scene_graph.add_node(node_id, scene_graph.nodes[node_id].level + 1,
-                           node_name);
+      scene_graph.add_node(node_id, node_name);
       std::memset(node_name, 0, sizeof(char) * 50);
     }
   }
@@ -285,9 +312,10 @@ void render_scene_graph_nodes_property(SceneGraph &scene_graph, u32 node_id) {
   }
 
   if (modified) {
-    scene_graph.queue_to_update(node_id);
-    scene_graph.local_transforms[node_id][3] =
-        glm::vec4(local_translation, 1.f);
+    glm::mat4 new_transform = scene_graph.local_transforms[node_id];
+    new_transform[3] = glm::vec4(local_translation, 1.f);
+
+    scene_graph.update_node_local_transform(node_id, new_transform);
   }
 }
 

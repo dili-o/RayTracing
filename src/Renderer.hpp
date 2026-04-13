@@ -33,6 +33,8 @@ public:
                std::span<u32> indices);
   u32 add_blas_instance(u32 blas_index, const glm::mat4 &transform,
                         const MaterialHandle material);
+  void set_blas_instance_transform(u32 blas_instance_id,
+                                   const glm::mat4 &transform);
 
   void remove_blas(u32 blas_id);
   void remove_blas_instance(u32 blas_instance_id);

@@ -807,6 +807,7 @@ u32 Renderer::add_blas(std::span<glm::vec3> positions,
   return blas_index;
 }
 
+// TODO: Remove the transform parameter
 u32 Renderer::add_blas_instance(u32 blas_index, const glm::mat4 &transform,
                                 const MaterialHandle material) {
   u32 index = blas_inst_index_pool.obtain_new();
@@ -819,6 +820,23 @@ u32 Renderer::add_blas_instance(u32 blas_index, const glm::mat4 &transform,
   rebuild_tlas = true;
   blas_instance_ids.insert(index);
   return index;
+}
+
+void Renderer::set_blas_instance_transform(u32 blas_instance_id,
+                                           const glm::mat4 &transform) {
+  // Check if blas_instance exists
+  if (!blas_instance_ids.contains(blas_instance_id)) {
+    HWARN("Renderer::set_blas_instance_transform() - Trying to update an "
+          "invalid blas_instance_id!.");
+    return;
+  }
+  BLASInstance &inst = blas_instances[blas_instance_id];
+  inst.set_transform(transform);
+  staging_buffer.stage(&inst, blas_instances_buffer,
+                       sizeof(BLASInstance) * blas_instance_id,
+                       sizeof(BLASInstance));
+
+  rebuild_tlas = true;
 }
 
 void Renderer::remove_blas(u32 blas_id) {
@@ -891,6 +909,7 @@ void Renderer::build_tlas() {
                        vk_tlas_nodes->vk_device_size);
   staging_buffer.flush();
   rebuild_tlas = false;
+  frame_index = 0;
 }
 
 } // namespace hlx
