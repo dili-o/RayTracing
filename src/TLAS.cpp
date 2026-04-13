@@ -7,22 +7,25 @@ namespace hlx {
 
 void TLAS::build(std::span<TLASNode> tlas_nodes,
                  const std::span<BLASInstance> blas_instances,
-                 const std::span<BLAS> blas, u32 blas_instance_count,
+                 const std::span<u32> blas_instance_indices,
+                 const std::span<BLAS> blas,
                  const std::span<BVHNode> bvh_nodes) {
   node_count = 1;
-  std::vector<i32> node_ids(blas_instance_count);
-  i32 node_indices = blas_instance_count;
+  std::vector<i32> node_ids(blas_instance_indices.size());
+  i32 node_indices = node_ids.size();
   // Assign a TLASleaf node to each BLAS
-  for (u32 i = 0; i < blas_instance_count; ++i) {
+  for (u32 i = 0; i < blas_instance_indices.size(); ++i) {
     // Find the bounds (in world space)
-    u32 blas_idx = blas_instances[i].blas_id;
+    u32 blas_inst_id = blas_instance_indices[i];
+    u32 blas_idx = blas_instances[blas_inst_id].blas_id;
     glm::vec3 bmin = bvh_nodes[blas[blas_idx].bvh_nodes_offset].aabb_min,
               bmax = bvh_nodes[blas[blas_idx].bvh_nodes_offset].aabb_max;
     AABB bounds = AABB();
-    glm::mat4 transform = glm::inverse(blas_instances[i].inv_transform);
-    for (int i = 0; i < 8; i++) {
-      glm::vec3 corner((i & 1) ? bmax.x : bmin.x, (i & 2) ? bmax.y : bmin.y,
-                       (i & 4) ? bmax.z : bmin.z);
+    glm::mat4 transform =
+        glm::inverse(blas_instances[blas_inst_id].inv_transform);
+    for (int j = 0; j < 8; j++) {
+      glm::vec3 corner((j & 1) ? bmax.x : bmin.x, (j & 2) ? bmax.y : bmin.y,
+                       (j & 4) ? bmax.z : bmin.z);
 
       glm::vec3 world_pos = glm::vec3(transform * glm::vec4(corner, 1.0f));
       bounds.grow(world_pos);

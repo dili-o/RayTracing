@@ -1,6 +1,7 @@
 #pragma once
 #include "BVHNode.hpp"
 #include "Camera.hpp"
+#include "Core/FreeIndexPool.hpp"
 #include "Core/TlsfAllocator.hpp"
 #include "Material.hpp"
 #include "TLAS.hpp"
@@ -31,6 +32,9 @@ public:
   // Returns the index into the blases array
   u32 add_blas(std::span<glm::vec3> positions, std::span<glm::vec3> normals,
                std::span<u32> indices);
+
+  u32 add_blas_instance(u32 blas_index, const glm::mat4 &transform,
+                        const MaterialHandle material);
 
   void add_sphere_instance(f32 radius, const glm::vec3 &center,
                            MaterialHandle mat);
@@ -83,7 +87,9 @@ private:
   TlsfAllocator bvh_nodes_allocator;
   std::unordered_map<u32, void *> blas_to_bvh_nodes_allocation;
   std::vector<void *> tri_id_allocations;
+  FreeIndexPool blases_index_pool;
   std::vector<BLAS> blases;
+  FreeIndexPool blas_inst_index_pool;
   std::vector<BLASInstance> blas_instances;
   std::vector<TLASNode> tlas_nodes;
 

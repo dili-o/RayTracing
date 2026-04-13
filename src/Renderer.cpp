@@ -214,8 +214,8 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
   HASSERT(p_rm);
   this->p_device = p_device;
   this->p_rm = p_rm;
-  // Create staging buffer
 
+  // Create staging buffer
   staging_buffer.init(
       p_device, p_rm,
       p_device->queue_family_indices.transfer_family_index.value(),
@@ -349,8 +349,19 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
       p_rm->create_buffer("BVHNodesBuffer", buffer_info, vma_alloc_info);
   bvh_nodes_allocator.init(buffer_info.size, sizeof(BVHNode));
 
+  // Initialize blases_index_pool, blas_buffer and blases vector
+  blases_index_pool.init(MAX_BLAS_COUNT);
   buffer_info.size = MAX_BLAS_COUNT * sizeof(BLAS);
   blas_buffer = p_rm->create_buffer("BLASBuffer", buffer_info, vma_alloc_info);
+  blases.resize(MAX_BLAS_COUNT);
+
+  // Initialize blas_inst_index_pool, blas_instances_buffer and blas_instances
+  // vector
+  blas_inst_index_pool.init(MAX_BLAS_COUNT);
+  buffer_info.size = MAX_BLAS_COUNT * sizeof(BLASInstance);
+  blas_instances_buffer =
+      p_rm->create_buffer("BLASInstancesBuffer", buffer_info, vma_alloc_info);
+  blas_instances.resize(MAX_BLAS_COUNT);
 
   // Init materials
   MaterialHandle red_mat = add_lambert_material({0.65f, 0.05f, 0.05f});
@@ -363,14 +374,6 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
   load_cube_data();
   load_sphere_data();
 
-  auto add_instance = [&](u32 id, const glm::mat4 &transform,
-                          MaterialHandle mat_handle) {
-    BLASInstance inst;
-    inst.blas_id = id;
-    inst.set_transform(transform);
-    inst.material_handle = mat_handle;
-    blas_instances.push_back(inst);
-  };
   struct Transform {
     glm::vec3 position{0.f};
     glm::vec4 rotation = glm::vec4(0.f, 1.f, 0.f, 0.f);
@@ -390,7 +393,7 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
     t.position = glm::vec3(0.0f, 0.0f, -0.025f);
     t.scale = glm::vec3(2.0f, 1.0f, 2.0f);
 
-    add_instance(plane_blas_index, t.get_mat4(), white_mat);
+    add_blas_instance(plane_blas_index, t.get_mat4(), white_mat);
   }
 
   // CEILING
@@ -400,7 +403,7 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
     t.scale = glm::vec3(2.0f, 1.0f, 2.0f);
     t.rotation = glm::vec4(1, 0, 0, glm::pi<float>());
 
-    add_instance(plane_blas_index, t.get_mat4(), white_mat);
+    add_blas_instance(plane_blas_index, t.get_mat4(), white_mat);
   }
 
   // BACK WALL
@@ -410,7 +413,7 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
     t.scale = glm::vec3(2.0f, 1.0f, 2.0f);
     t.rotation = glm::vec4(1, 0, 0, -glm::half_pi<float>());
 
-    add_instance(plane_blas_index, t.get_mat4(), white_mat);
+    add_blas_instance(plane_blas_index, t.get_mat4(), white_mat);
   }
 
   // LEFT WALL (RED)
@@ -420,7 +423,7 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
     t.scale = glm::vec3(2.0f, 1.0f, 2.0f);
     t.rotation = glm::vec4(0, 0, 1, glm::half_pi<float>());
 
-    add_instance(plane_blas_index, t.get_mat4(), red_mat);
+    add_blas_instance(plane_blas_index, t.get_mat4(), red_mat);
   }
 
   // RIGHT WALL (GREEN)
@@ -430,7 +433,7 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
     t.scale = glm::vec3(2.0f, 1.0f, 2.0f);
     t.rotation = glm::vec4(0, 0, 1, -glm::half_pi<float>());
 
-    add_instance(plane_blas_index, t.get_mat4(), green_mat);
+    add_blas_instance(plane_blas_index, t.get_mat4(), green_mat);
   }
 
   // LIGHT (small ceiling panel)
@@ -440,7 +443,7 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
     t.scale = glm::vec3(0.5f, 1.0f, 0.4f);
     t.rotation = glm::vec4(1, 0, 0, glm::pi<float>());
 
-    add_instance(plane_blas_index, t.get_mat4(), emissive_mat);
+    add_blas_instance(plane_blas_index, t.get_mat4(), emissive_mat);
   }
   // short box
   {
@@ -449,7 +452,7 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
     t.scale = glm::vec3(0.6f, 0.6f, 0.6f);
     t.rotation = glm::vec4(0, 1, 0, glm::radians(-18.f));
 
-    add_instance(sphere_blas_index, t.get_mat4(), white_mat);
+    add_blas_instance(sphere_blas_index, t.get_mat4(), white_mat);
   }
 
   // tall box
@@ -459,13 +462,17 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
     t.scale = glm::vec3(0.6f, 1.2f, 0.6f);
     t.rotation = glm::vec4(0, 1, 0, glm::radians(15.f));
 
-    add_instance(cube_blas_index, t.get_mat4(), white_mat);
+    add_blas_instance(cube_blas_index, t.get_mat4(), white_mat);
   }
 
+  // TODO: MAke into a function
   tlas_nodes.resize(blas_instances.size() * 2);
   Clock clock;
   clock.start();
-  tlas.build(tlas_nodes, blas_instances, blases, blas_instances.size(),
+  tlas.build(tlas_nodes, blas_instances,
+             std::span<u32>(blas_inst_index_pool.free_indices,
+                            blas_inst_index_pool.size),
+             blases,
              std::span<BVHNode>(
                  reinterpret_cast<BVHNode *>(bvh_nodes_allocator.memory),
                  bvh_nodes_allocator.max_size / sizeof(BVHNode)));
@@ -475,17 +482,12 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
   tlas_nodes_buffer =
       p_rm->create_buffer("TLASNodesBuffer", buffer_info, vma_alloc_info);
 
-  buffer_info.size = blas_instances.size() * sizeof(BLASInstance);
-  blas_instances_buffer =
-      p_rm->create_buffer("BLASInstancesBuffer", buffer_info, vma_alloc_info);
-
   VulkanBuffer *vk_tlas_nodes = p_rm->access_buffer(tlas_nodes_buffer);
-  VulkanBuffer *vk_blas_instances = p_rm->access_buffer(blas_instances_buffer);
 
   staging_buffer.stage(tlas_nodes.data(), tlas_nodes_buffer, 0,
                        vk_tlas_nodes->vk_device_size);
-  staging_buffer.stage(blas_instances.data(), blas_instances_buffer, 0,
-                       vk_blas_instances->vk_device_size);
+  /////////////////////////////////////////////////////////
+
   // Uniform buffers
   buffer_info.size = sizeof(UniformData);
   buffer_info.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
@@ -534,6 +536,17 @@ void Renderer::shutdown() {
   free(tri_geom_data);
   free(tri_surface_data);
   free(triangle_centroids_data);
+
+  blases_index_pool.release(sphere_blas_index);
+  blases_index_pool.release(cube_blas_index);
+  blases_index_pool.release(plane_blas_index);
+  blases_index_pool.shutdown();
+
+  // TODO: Users of add_blas_instance should be responsible for releasing each
+  // blas_instance_index, rather than doing a release_all() here
+  blas_inst_index_pool.release_all();
+  blas_inst_index_pool.shutdown();
+
   p_rm = nullptr;
   p_device = nullptr;
 }
@@ -565,14 +578,6 @@ void Renderer::resize(u32 output_image_width, u32 output_image_height) {
 }
 
 void Renderer::render(Camera &camera) {
-  // TODO: Some sort of signal for when the staging buffer has data
-  // TODO: Rebuilding TLAS
-  // Clock clock;
-  // clock.start();
-  // tlas.build(tlas_nodes, blas_instances, blases, blas_instances.size(),
-  //            bvh_nodes);
-  // HINFO("TLAS build time: {}s", clock.get_elapsed_time_s());
-
   // Reset frame number if cam has moved
   if (camera.changed) {
     frame_index = 0;
@@ -863,7 +868,8 @@ u32 Renderer::add_blas(std::span<glm::vec3> positions,
   // Create vector of bvh_nodes at the upper bound
   std::vector<BVHNode> bvh_nodes(trig_count * 2 - 1);
 
-  BLAS blas;
+  u32 blas_index = blases_index_pool.obtain_new();
+  BLAS &blas = blases[blas_index];
   // TODO: Right now we create a separate bvh_nodes vector that is used to build
   // the blas.
   // We then allocate the fitted size from the bvh_nodes_allocator and update
@@ -886,10 +892,8 @@ u32 Renderer::add_blas(std::span<glm::vec3> positions,
   HASSERT((byte_offset % sizeof(BVHNode)) == 0);
   blas.bvh_nodes_offset = byte_offset / sizeof(BVHNode);
 
-  blases.push_back(blas);
   bvh_nodes_size += blas.nodes_count;
 
-  u32 blas_index = static_cast<u32>(blases.size() - 1);
   // Update map
   blas_to_bvh_nodes_allocation[blas_index] = bvh_nodes_data;
 
@@ -905,13 +909,24 @@ u32 Renderer::add_blas(std::span<glm::vec3> positions,
                          blas.nodes_count * sizeof(BVHNode));
   }
   {
-    VulkanBuffer *vk_blas = p_rm->access_buffer(blas_buffer);
-    std::span<BLAS> data_view = std::span(blases).subspan(blases.size() - 1);
-    staging_buffer.stage(data_view.data(), blas_buffer, vk_blas->current_size,
+    staging_buffer.stage(&blas, blas_buffer, sizeof(BLAS) * blas_index,
                          sizeof(BLAS));
   }
 
   return blas_index;
+}
+
+u32 Renderer::add_blas_instance(u32 blas_index, const glm::mat4 &transform,
+                                const MaterialHandle material) {
+  u32 index = blas_inst_index_pool.obtain_new();
+  BLASInstance &inst = blas_instances[index];
+  inst.blas_id = blas_index;
+  inst.set_transform(transform);
+  inst.material_handle = material;
+  staging_buffer.stage(&inst, blas_instances_buffer,
+                       sizeof(BLASInstance) * index, sizeof(BLASInstance));
+
+  return index;
 }
 
 void Renderer::add_sphere_instance(f32 radius, const glm::vec3 &center,

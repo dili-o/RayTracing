@@ -15,8 +15,8 @@ struct TLAS {
 public:
   void build(std::span<TLASNode> tlas_nodes,
              const std::span<BLASInstance> blas_instances,
-             const std::span<BLAS> blas, u32 blas_instance_count,
-             const std::span<BVHNode> bvh_nodes);
+             const std::span<u32> blas_instance_indices,
+             const std::span<BLAS> blas, const std::span<BVHNode> bvh_nodes);
   u32 node_count;
 
 private:

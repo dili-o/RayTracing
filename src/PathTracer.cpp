@@ -90,6 +90,7 @@ void PathTracer::init() {
   for (u32 i = 0; i < 5; ++i) {
     scene_graph.add_node(root_id, 1, std::string());
   }
+
   for (u32 i = 0; i < 3; ++i) {
     scene_graph.add_node(2, 1, std::string());
   }
