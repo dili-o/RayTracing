@@ -93,6 +93,7 @@ private:
   std::unordered_map<u32, BLAS_Allocation> blas_allocations_map;
   FreeIndexPool blases_index_pool;
   std::vector<BLAS> blases;
+  std::unordered_set<u32> blas_instance_ids;
   FreeIndexPool blas_inst_index_pool;
   std::vector<BLASInstance> blas_instances;
   std::vector<TLASNode> tlas_nodes;

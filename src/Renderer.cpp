@@ -817,12 +817,30 @@ u32 Renderer::add_blas_instance(u32 blas_index, const glm::mat4 &transform,
   staging_buffer.stage(&inst, blas_instances_buffer,
                        sizeof(BLASInstance) * index, sizeof(BLASInstance));
   rebuild_tlas = true;
+  blas_instance_ids.insert(index);
   return index;
 }
 
-void Renderer::remove_blas(u32 blas_id) {}
+void Renderer::remove_blas(u32 blas_id) {
+  // TODO: Right now there are no checks to ensure that no blas instance
+  // references this
+  if (!blas_allocations_map.contains(blas_id)) {
+    HWARN("Renderer::remove_blas() - Trying to remove a blas_id with no "
+          "allocation data!.");
+    return;
+  }
 
-void Renderer::remove_blas_instance(u32 blas_instance_id) {}
+  BLAS_Allocation &allocation = blas_allocations_map[blas_id];
+  tri_id_allocator.deallocate(allocation.tri_id_allocation);
+  bvh_nodes_allocator.deallocate(allocation.bvh_nodes_allocation);
+  blases_index_pool.release(blas_id);
+}
+
+void Renderer::remove_blas_instance(u32 blas_instance_id) {
+  blas_inst_index_pool.release(blas_instance_id);
+  blas_instance_ids.erase(blas_instance_id);
+  rebuild_tlas = true;
+}
 
 void Renderer::load_sphere_data() {
   HASSERT_MSG(sphere_blas_index == UINT32_MAX,
@@ -859,10 +877,9 @@ void Renderer::build_tlas() {
   tlas_nodes.resize(blas_inst_index_pool.size * 2);
   Clock clock;
   clock.start();
-  tlas.build(tlas_nodes, blas_instances,
-             std::span<u32>(blas_inst_index_pool.free_indices,
-                            blas_inst_index_pool.size),
-             blases,
+  std::vector<u32> temp_blas_instance_ids(blas_instance_ids.begin(),
+                                          blas_instance_ids.end());
+  tlas.build(tlas_nodes, blas_instances, temp_blas_instance_ids, blases,
              std::span<BVHNode>(
                  reinterpret_cast<BVHNode *>(bvh_nodes_allocator.memory),
                  bvh_nodes_allocator.max_size / sizeof(BVHNode)));

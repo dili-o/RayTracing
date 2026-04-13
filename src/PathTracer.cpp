@@ -201,6 +201,9 @@ void PathTracer::init() {
     renderer.add_blas_instance(renderer.cube_blas_index, t.get_mat4(),
                                white_mat);
   }
+
+  // Testing remove_blas_instance, should remove the floor
+  renderer.remove_blas_instance(1);
 }
 
 void PathTracer::run() {

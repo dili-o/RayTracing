@@ -31,7 +31,7 @@ void TLAS::build(std::span<TLASNode> tlas_nodes,
     node_ids[i] = node_count;
     tlas_nodes[node_count].aabb_min = bounds.min;
     tlas_nodes[node_count].aabb_max = bounds.max;
-    tlas_nodes[node_count].blas_instance_idx = i;
+    tlas_nodes[node_count].blas_instance_idx = blas_inst_id;
     tlas_nodes[node_count++].left_right = 0; // Leaf
   }
 
