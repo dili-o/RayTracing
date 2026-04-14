@@ -48,13 +48,21 @@ struct TriangleGeom {
 };
 
 struct TriangleShading {
-  // TODO: UVCoords interpolate function
   float3 interpolate_normal(float u, float v) {
     float alpha = 1.f - u - v;
     return normalize(alpha * n0.xyz + u * n1.xyz + v * n2.xyz);
   }
 
+  float2 interpolate_uvs(float u, float v) {
+    float alpha = 1.f - u - v;
+    return alpha * uv0 + u * uv1 + v * uv2;
+  }
+
   float4 n0;
   float4 n1;
   float4 n2;
+  float2 uv0;
+  float2 uv1;
+  float2 uv2;
+  float2 padding;
 };

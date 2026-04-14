@@ -31,7 +31,7 @@ public:
   void remove_material(const MaterialHandle &material_handle);
 
   u32 add_blas(std::span<glm::vec3> positions, std::span<glm::vec3> normals,
-               std::span<u32> indices);
+               std::span<glm::vec2> uvs, std::span<u32> indices);
   u32 add_blas_instance(u32 blas_index, const glm::mat4 &transform,
                         const MaterialHandle material);
   void set_blas_instance_transform(u32 blas_instance_id,

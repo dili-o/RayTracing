@@ -112,6 +112,7 @@ void compute_main(uint3 dispatch_thread_id: SV_DispatchThreadID,
                 r, normalize(mul(transpose(blas_instance.inv_transform),
                                  float4(local_normal, 0.f))
                                  .xyz));
+            float2 uv = data.triangle_shading_buffer[rec.tri_surface_id].interpolate_uvs(rec.u, rec.v);
 
             rec.p = mul(blas_instance.transform, float4(rec.p, 1.f)).xyz;
 
@@ -123,7 +124,7 @@ void compute_main(uint3 dispatch_thread_id: SV_DispatchThreadID,
             switch (mat_handle.material_type) {
             case MATERIAL_LAMBERT:
               data.lambert_materials_buffer[mat_handle.material_index]
-                  .scatter_ray(seed, rec, material_attenuation, r_out);
+                  .scatter_ray(seed, rec, uv, material_attenuation, r_out);
               ray_scattered = true;
               break;
 

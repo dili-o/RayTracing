@@ -60,7 +60,8 @@ struct PushConstant {
 
 void generate_sphere(std::vector<glm::vec3> &out_vertices,
                      std::vector<uint32_t> &out_indices,
-                     std::vector<glm::vec3> &out_normals, float radius,
+                     std::vector<glm::vec3> &out_normals,
+                     std::vector<glm::vec2> &out_uvs, float radius,
                      uint32_t segments, uint32_t rings,
                      const glm::vec3 &center = glm::vec3(0.f)) {
   uint32_t vertex_offset = static_cast<uint32_t>(out_vertices.size());
@@ -82,6 +83,7 @@ void generate_sphere(std::vector<glm::vec3> &out_vertices,
 
       out_vertices.push_back(position);
       out_normals.push_back(normal);
+      out_uvs.push_back(glm::vec2(u, v));
     }
   }
 
@@ -103,12 +105,12 @@ void generate_sphere(std::vector<glm::vec3> &out_vertices,
 
 void generate_plane(std::vector<glm::vec3> &out_vertices,
                     std::vector<uint32_t> &out_indices,
-                    std::vector<glm::vec3> &out_normals, float width,
-                    float depth, uint32_t x_segments, uint32_t z_segments,
+                    std::vector<glm::vec3> &out_normals,
+                    std::vector<glm::vec2> &out_uvs, float width, float depth,
+                    uint32_t x_segments, uint32_t z_segments,
                     const glm::vec3 &center = glm::vec3(0.f)) {
   uint32_t vertex_offset = static_cast<uint32_t>(out_vertices.size());
 
-  // Plane lies on XZ, normal pointing up (Y+)
   for (uint32_t z = 0; z <= z_segments; ++z) {
     float vz = float(z) / z_segments;
     float pos_z = (vz - 0.5f) * depth;
@@ -117,15 +119,12 @@ void generate_plane(std::vector<glm::vec3> &out_vertices,
       float ux = float(x) / x_segments;
       float pos_x = (ux - 0.5f) * width;
 
-      glm::vec3 position = center + glm::vec3(pos_x, 0.f, pos_z);
-      glm::vec3 normal = glm::vec3(0.f, 1.f, 0.f);
-
-      out_vertices.push_back(position);
-      out_normals.push_back(normal);
+      out_vertices.push_back(center + glm::vec3(pos_x, 0.f, pos_z));
+      out_normals.push_back(glm::vec3(0.f, 1.f, 0.f));
+      out_uvs.push_back(glm::vec2(ux, vz));
     }
   }
 
-  // Indices
   for (uint32_t z = 0; z < z_segments; ++z) {
     for (uint32_t x = 0; x < x_segments; ++x) {
       uint32_t i0 = z * (x_segments + 1) + x;
@@ -144,13 +143,13 @@ void generate_plane(std::vector<glm::vec3> &out_vertices,
 
 void generate_cube(std::vector<glm::vec3> &out_vertices,
                    std::vector<uint32_t> &out_indices,
-                   std::vector<glm::vec3> &out_normals, const glm::vec3 &center,
+                   std::vector<glm::vec3> &out_normals,
+                   std::vector<glm::vec2> &out_uvs, const glm::vec3 &center,
                    float width, float height, float depth) {
   float hx = width * 0.5f;
   float hy = height * 0.5f;
   float hz = depth * 0.5f;
 
-  // Helper lambda to push a face
   auto add_face = [&](glm::vec3 v0, glm::vec3 v1, glm::vec3 v2, glm::vec3 v3,
                       glm::vec3 normal) {
     uint32_t base = static_cast<uint32_t>(out_vertices.size());
@@ -165,7 +164,11 @@ void generate_cube(std::vector<glm::vec3> &out_vertices,
     out_normals.push_back(normal);
     out_normals.push_back(normal);
 
-    // Two triangles
+    out_uvs.push_back(glm::vec2(0.f, 0.f));
+    out_uvs.push_back(glm::vec2(1.f, 0.f));
+    out_uvs.push_back(glm::vec2(1.f, 1.f));
+    out_uvs.push_back(glm::vec2(0.f, 1.f));
+
     out_indices.push_back(0 + base);
     out_indices.push_back(1 + base);
     out_indices.push_back(2 + base);
@@ -174,8 +177,6 @@ void generate_cube(std::vector<glm::vec3> &out_vertices,
     out_indices.push_back(2 + base);
     out_indices.push_back(3 + base);
   };
-
-  // ---- Faces ----
 
   // Front (+Z)
   add_face(center + glm::vec3(-hx, -hy, hz), center + glm::vec3(hx, -hy, hz),
@@ -913,7 +914,8 @@ void Renderer::remove_material(const MaterialHandle &material_handle) {
 }
 
 u32 Renderer::add_blas(std::span<glm::vec3> positions,
-                       std::span<glm::vec3> normals, std::span<u32> indices) {
+                       std::span<glm::vec3> normals, std::span<glm::vec2> uvs,
+                       std::span<u32> indices) {
   u32 trig_count = indices.size() / 3;
 
   // Allocate tri ids data
@@ -933,7 +935,8 @@ u32 Renderer::add_blas(std::span<glm::vec3> positions,
         (TriangleGeom(positions[indices[i]], positions[indices[i + 1]],
                       positions[indices[i + 2]]));
     tri_surface_data[tri_index] = (TriangleShading(
-        normals[indices[i]], normals[indices[i + 1]], normals[indices[i + 2]]));
+        normals[indices[i]], normals[indices[i + 1]], normals[indices[i + 2]],
+        uvs[indices[i]], uvs[indices[i + 1]], uvs[indices[i + 2]]));
     triangle_centroids_data[tri_index] =
         ((positions[indices[i]] + positions[indices[i + 1]] +
           positions[indices[i + 2]]) *
@@ -1072,10 +1075,12 @@ void Renderer::load_sphere_data() {
               "Renderer::load_sphere_data() should only be called once");
   std::vector<glm::vec3> positions;
   std::vector<glm::vec3> normals;
+  std::vector<glm::vec2> uvs;
   std::vector<u32> indices;
-  generate_sphere(positions, indices, normals, 0.5f, 64, 32, glm::vec3(0.f));
+  generate_sphere(positions, indices, normals, uvs, 0.5f, 64, 32,
+                  glm::vec3(0.f));
 
-  sphere_blas_index = add_blas(positions, normals, indices);
+  sphere_blas_index = add_blas(positions, normals, uvs, indices);
 }
 
 void Renderer::load_cube_data() {
@@ -1083,9 +1088,11 @@ void Renderer::load_cube_data() {
               "Renderer::load_cube_data() should only be called once");
   std::vector<glm::vec3> positions;
   std::vector<glm::vec3> normals;
+  std::vector<glm::vec2> uvs;
   std::vector<u32> indices;
-  generate_cube(positions, indices, normals, glm::vec3(0.f), 1.f, 1.f, 1.f);
-  cube_blas_index = add_blas(positions, normals, indices);
+  generate_cube(positions, indices, normals, uvs, glm::vec3(0.f), 1.f, 1.f,
+                1.f);
+  cube_blas_index = add_blas(positions, normals, uvs, indices);
 }
 
 void Renderer::load_plane_data() {
@@ -1093,9 +1100,11 @@ void Renderer::load_plane_data() {
               "Renderer::load_plane_data() should only be called once");
   std::vector<glm::vec3> positions;
   std::vector<glm::vec3> normals;
+  std::vector<glm::vec2> uvs;
   std::vector<u32> indices;
-  generate_plane(positions, indices, normals, 1.f, 1.f, 1, 1, glm::vec3(0.f));
-  plane_blas_index = add_blas(positions, normals, indices);
+  generate_plane(positions, indices, normals, uvs, 1.f, 1.f, 1, 1,
+                 glm::vec3(0.f));
+  plane_blas_index = add_blas(positions, normals, uvs, indices);
 }
 
 void Renderer::build_tlas() {

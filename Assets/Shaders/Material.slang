@@ -21,7 +21,7 @@ struct MaterialHandle {
 Sampler2D albedo_textures[ALBEDO_TEXTURE_COUNT];
 
 struct LambertMaterial {
-  void scatter_ray(inout uint seed, in HitRecord rec,
+  void scatter_ray(inout uint seed, in HitRecord rec, in float2 tex_coord,
   out float3 attenuation, out Ray r_out) {
     float3 scattered_direction = rec.normal + rand_unit_vector(seed);
     if (near_zero(scattered_direction)) {
@@ -30,7 +30,7 @@ struct LambertMaterial {
 
     r_out = Ray(rec.p, scattered_direction);
     attenuation = albedo_textures[NonUniformResourceIndex(index)]
-                 .Sample(float2(rec.u, rec.v)).xyz;
+                 .Sample(float2(tex_coord.x, tex_coord.y)).xyz;
   }
 
   uint index;
