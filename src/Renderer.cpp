@@ -677,7 +677,10 @@ void Renderer::create_output_image(u32 width, u32 height) {
 
 MaterialHandle Renderer::add_lambert_material(const glm::vec3 &albedo) {
   u32 index = lambert_mats_index_pool.obtain_new();
-  lambert_materials[index] = {albedo.x, albedo.y, albedo.z, 1.f};
+  glm::vec3 clamped_albedo = glm::clamp(albedo, 0.f, 1.f);
+  lambert_materials[index] = {clamped_albedo.x, clamped_albedo.y,
+                              clamped_albedo.z, 1.f};
+  lambert_material_indices.insert(index);
   // Stage addition
   staging_buffer.stage(&lambert_materials[index], lambert_materials_buffer,
                        index * sizeof(Lambert), sizeof(Lambert));
@@ -688,6 +691,7 @@ MaterialHandle Renderer::add_metal_material(const glm::vec3 &albedo,
                                             const f32 fuzz) {
   u32 index = metal_mats_index_pool.obtain_new();
   metal_materials[index] = {albedo.x, albedo.y, albedo.z, fuzz};
+  metal_material_indices.insert(index);
   // Stage addition
   staging_buffer.stage(&metal_materials[index], metal_materials_buffer,
                        index * sizeof(Metal), sizeof(Metal));
@@ -697,6 +701,7 @@ MaterialHandle Renderer::add_metal_material(const glm::vec3 &albedo,
 MaterialHandle Renderer::add_dielectric_material(const f32 refractive_index) {
   u32 index = dielectric_mats_index_pool.obtain_new();
   dielectric_materials[index] = {refractive_index};
+  dielectric_material_indices.insert(index);
   // Stage addition
   staging_buffer.stage(&dielectric_materials[index],
                        dielectric_materials_buffer, index * sizeof(Dielectric),
@@ -707,6 +712,7 @@ MaterialHandle Renderer::add_dielectric_material(const f32 refractive_index) {
 MaterialHandle Renderer::add_emissive_material(const glm::vec3 &intensity) {
   u32 index = emissive_mats_index_pool.obtain_new();
   emissive_materials[index] = {intensity.x, intensity.y, intensity.z, 1.f};
+  emissive_material_indices.insert(index);
   // Stage addition
   staging_buffer.stage(&emissive_materials[index], emissive_materials_buffer,
                        index * sizeof(Emissive), sizeof(Emissive));
@@ -718,18 +724,22 @@ void Renderer::remove_material(const MaterialHandle &material_handle) {
   switch (material_handle.type) {
   case MaterialType::LAMBERT: {
     lambert_mats_index_pool.release(material_handle.index);
+    lambert_material_indices.erase(material_handle.index);
     break;
   }
   case MaterialType::METAL: {
     metal_mats_index_pool.release(material_handle.index);
+    metal_material_indices.erase(material_handle.index);
     break;
   }
   case MaterialType::EMISSIVE: {
     emissive_mats_index_pool.release(material_handle.index);
+    emissive_material_indices.erase(material_handle.index);
     break;
   }
   case MaterialType::DIELECTRIC: {
     dielectric_mats_index_pool.release(material_handle.index);
+    dielectric_material_indices.erase(material_handle.index);
     break;
   }
   default:

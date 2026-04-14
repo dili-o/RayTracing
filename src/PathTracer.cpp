@@ -20,6 +20,8 @@ namespace hlx {
 
 static SceneGraph scene_graph = SceneGraph(100);
 static u32 selected_node_id = INVALID_NODE_ID;
+static MaterialHandle current_material_handle{.index = UINT32_MAX,
+                                              .type = MaterialType::LAMBERT};
 
 bool application_on_resize_event(u16 event_code, void *sender, void *listener,
 
@@ -505,6 +507,7 @@ void PathTracer::run() {
       ImGui::SeparatorText("Scene Node Property");
       render_scene_graph_nodes_property(scene_graph, selected_node_id,
                                         &renderer);
+      render_materials_window(&renderer, current_material_handle);
       ImGui::End();
       scene_ui.end_frame();
 

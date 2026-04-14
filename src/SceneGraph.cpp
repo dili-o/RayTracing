@@ -1,5 +1,6 @@
 #include "SceneGraph.hpp"
 #include "Core/Assert.hpp"
+#include "Material.hpp"
 #include "Renderer.hpp"
 // Vendor
 #include <glm/ext/matrix_transform.hpp>
@@ -303,15 +304,114 @@ void render_scene_graph_nodes_property(SceneGraph &scene_graph, u32 node_id,
                   : std::to_string(node.last_sibling).c_str());
   ImGui::Text("Level: %s", std::to_string(node.level).c_str());
 
-  static char node_name[50] = {0};
-  ImGui::InputText("Node name", node_name, 50);
+  static bool add_node_clicked = false;
   if (ImGui::Button("Add Node")) {
-    if (node_name[0] == 0) {
-      scene_graph.add_node(node_id, std::string());
-    } else {
-      scene_graph.add_node(node_id, node_name);
-      std::memset(node_name, 0, sizeof(char) * 50);
+    add_node_clicked = true;
+  }
+
+  if (add_node_clicked) {
+    ImGui::SeparatorText("Add Node");
+    static char node_name[50] = {0};
+    ImGui::InputText("Node name", node_name, 50);
+
+    const char *mesh_types[] = {"Plane", "Sphere", "Cube"};
+    static int selected_mesh_type = 0;
+    ImGui::Combo("Mesh Type", &selected_mesh_type, mesh_types,
+                 IM_ARRAYSIZE(mesh_types));
+
+    const char *material_types[] = {"Lambert", "Metal", "Dielectric",
+                                    "Emissive", "None"};
+    static int selected_material_type = MaterialType::NONE;
+    ImGui::Combo("Material Type", &selected_material_type, material_types,
+                 IM_ARRAYSIZE(material_types));
+
+    static int selected_material_index_combo = 0;
+    u32 material_index = UINT32_MAX;
+    if (selected_material_type != MaterialType::NONE) {
+      // TODO: Right now I am building the material_indices every frame instead
+      // of caching it
+      std::vector<int> material_indices;
+      switch (selected_material_type) {
+      case MaterialType::LAMBERT: {
+        material_indices =
+            std::vector<int>(renderer->lambert_material_indices.begin(),
+                             renderer->lambert_material_indices.end());
+        break;
+      }
+      case MaterialType::METAL: {
+        material_indices =
+            std::vector<int>(renderer->metal_material_indices.begin(),
+                             renderer->metal_material_indices.end());
+        break;
+      }
+      case MaterialType::DIELECTRIC: {
+        material_indices =
+            std::vector<int>(renderer->dielectric_material_indices.begin(),
+                             renderer->dielectric_material_indices.end());
+        break;
+      }
+      case MaterialType::EMISSIVE: {
+        material_indices =
+            std::vector<int>(renderer->emissive_material_indices.begin(),
+                             renderer->emissive_material_indices.end());
+        break;
+      }
+      default: {
+        HERROR("render_scene_graph_nodes_property() - Unknown type");
+        break;
+      }
+      }
+      // TODO: Im also building this every frame
+      auto getter = [](void *data, int idx, const char **out) -> bool {
+        auto *indices = static_cast<std::vector<int> *>(data);
+        static char label[32];
+        snprintf(label, sizeof(label), "%d", (*indices)[idx]);
+        *out = label;
+        return true;
+      };
+
+      ImGui::Combo("Material Indices", &selected_material_index_combo, getter,
+                   &material_indices, material_indices.size());
+      material_index = material_indices[selected_material_index_combo];
     }
+
+    if (ImGui::Button("Add")) {
+      u32 new_node_id;
+      if (node_name[0] == 0) {
+        new_node_id = scene_graph.add_node(node_id, std::string());
+      } else {
+        new_node_id = scene_graph.add_node(node_id, node_name);
+        std::memset(node_name, 0, sizeof(char) * 50);
+      }
+
+      u32 blas_index;
+      switch (selected_mesh_type) {
+      case 0:
+        blas_index = renderer->plane_blas_index;
+        break;
+      case 1:
+        blas_index = renderer->sphere_blas_index;
+        break;
+      case 2:
+        blas_index = renderer->cube_blas_index;
+        break;
+      default:
+        blas_index = UINT32_MAX;
+        HASSERT_MSG(false, "Unknown mesh type");
+      }
+
+      scene_graph.set_node_blas_instance(
+          new_node_id, renderer->add_blas_instance(
+                           blas_index, glm::mat4(1.f),
+                           {.index = material_index,
+                            .type = (MaterialType)selected_material_type}));
+      scene_graph.update_node_local_transform(new_node_id, glm::mat4(1.f));
+      add_node_clicked = false;
+      selected_mesh_type = 0;
+      selected_material_type = 0;
+      selected_material_index_combo = 0;
+    }
+    ImGui::SeparatorText("");
   }
 
   if (ImGui::Button("Delete Node")) {
@@ -324,6 +424,144 @@ void render_scene_graph_nodes_property(SceneGraph &scene_graph, u32 node_id,
 
     scene_graph.update_node_local_transform(node_id, new_transform);
   }
+}
+
+void render_materials_window(Renderer *renderer,
+                             MaterialHandle &selected_material) {
+  ImGui::Begin("Materials");
+
+  if (ImGui::BeginTabBar("MaterialTabs")) {
+    // Lambert
+    if (ImGui::BeginTabItem("Lambert")) {
+      for (const u32 index : renderer->lambert_material_indices) {
+        char label[32];
+        snprintf(label, sizeof(label), "Lambert %d", index);
+        if (ImGui::Selectable(label, selected_material.index == index &&
+                                         selected_material.type ==
+                                             MaterialType::LAMBERT)) {
+          selected_material.index = index;
+          selected_material.type = MaterialType::LAMBERT;
+        }
+      }
+      ImGui::EndTabItem();
+      ImGui::SeparatorText("Selected Material");
+      if (selected_material.index != UINT32_MAX &&
+          selected_material.type == MaterialType::LAMBERT) {
+        Lambert &mat = renderer->lambert_materials[selected_material.index];
+        ImGui::Text("Albedo: %.3f, %.3f, %.3f", mat.albedo[0], mat.albedo[1],
+                    mat.albedo[2]);
+      }
+      ImGui::SeparatorText("");
+      static glm::vec3 col(0.f);
+      ImGui::InputFloat3("Albedo", &col.x);
+      if (ImGui::Button("Add Material")) {
+        renderer->add_lambert_material(col);
+        col = glm::vec3(0.f);
+      }
+    }
+
+    // Metal
+    if (ImGui::BeginTabItem("Metal")) {
+      for (const u32 index : renderer->metal_material_indices) {
+        char label[32];
+        snprintf(label, sizeof(label), "Metal %d", index);
+        if (ImGui::Selectable(label, selected_material.index == index &&
+                                         selected_material.type ==
+                                             MaterialType::METAL)) {
+          selected_material.index = index;
+          selected_material.type = MaterialType::METAL;
+        }
+      }
+      ImGui::EndTabItem();
+      ImGui::SeparatorText("Selected Material");
+      if (selected_material.index != UINT32_MAX &&
+          selected_material.type == MaterialType::METAL) {
+        Metal &mat = renderer->metal_materials[selected_material.index];
+        ImGui::Text("Albedo: %.3f, %.3f, %.3f", mat.albedo_fuzz[0],
+                    mat.albedo_fuzz[1], mat.albedo_fuzz[2]);
+        ImGui::Text("Fuzz: %.3f", mat.albedo_fuzz[3]);
+      }
+      ImGui::SeparatorText("");
+      static glm::vec3 albedo(0.f);
+      static f32 fuzz{0.f};
+      ImGui::InputFloat3("Albedo", &albedo.x);
+      ImGui::InputFloat("Fuzz", &fuzz);
+      if (ImGui::Button("Add Material")) {
+        renderer->add_metal_material(albedo, fuzz);
+        albedo = glm::vec3(0.f);
+        fuzz = 0.f;
+      }
+    }
+
+    // Dielectric
+    if (ImGui::BeginTabItem("Dielectric")) {
+      for (const u32 index : renderer->dielectric_material_indices) {
+        char label[32];
+        snprintf(label, sizeof(label), "Dielectric %d", index);
+        if (ImGui::Selectable(label, selected_material.index == index &&
+                                         selected_material.type ==
+                                             MaterialType::DIELECTRIC)) {
+          selected_material.index = index;
+          selected_material.type = MaterialType::DIELECTRIC;
+        }
+      }
+      ImGui::EndTabItem();
+      ImGui::SeparatorText("Selected Material");
+      if (selected_material.index != UINT32_MAX &&
+          selected_material.type == MaterialType::DIELECTRIC) {
+        Dielectric &mat =
+            renderer->dielectric_materials[selected_material.index];
+        ImGui::Text("Refraction index: %.3f", mat.refraction_index);
+      }
+      ImGui::SeparatorText("");
+      static f32 refraction_index{0.f};
+      ImGui::InputFloat("Refraction Index", &refraction_index);
+      if (ImGui::Button("Add Material")) {
+        renderer->add_dielectric_material(refraction_index);
+        refraction_index = 0.f;
+      }
+    }
+
+    // Emissive
+    if (ImGui::BeginTabItem("Emissive")) {
+      for (const u32 index : renderer->emissive_material_indices) {
+        char label[32];
+        snprintf(label, sizeof(label), "Emissive %d", index);
+        if (ImGui::Selectable(label, selected_material.index == index &&
+                                         selected_material.type ==
+                                             MaterialType::EMISSIVE)) {
+          selected_material.index = index;
+          selected_material.type = MaterialType::EMISSIVE;
+        }
+      }
+      ImGui::EndTabItem();
+      ImGui::SeparatorText("Selected Material");
+      if (selected_material.index != UINT32_MAX &&
+          selected_material.type == MaterialType::EMISSIVE) {
+        Emissive &mat = renderer->emissive_materials[selected_material.index];
+        ImGui::Text("Albedo: %.3f, %.3f, %.3f", mat.intensity[0],
+                    mat.intensity[1], mat.intensity[2]);
+      }
+      ImGui::SeparatorText("");
+      static glm::vec3 intensity(0.f);
+      ImGui::InputFloat3("Intensity", &intensity.x);
+      if (ImGui::Button("Add Material")) {
+        renderer->add_emissive_material(intensity);
+        intensity = glm::vec3(0.f);
+      }
+    }
+
+    ImGui::EndTabBar();
+  }
+
+  if (selected_material.index != UINT32_MAX) {
+    if (ImGui::Button("Delete Material")) {
+      renderer->remove_material(selected_material);
+      selected_material.index = UINT32_MAX;
+    }
+  }
+
+  ImGui::End();
 }
 
 } // namespace hlx

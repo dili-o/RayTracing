@@ -67,6 +67,22 @@ public:
   u32 cube_blas_index{UINT32_MAX};
   u32 plane_blas_index{UINT32_MAX};
 
+  std::unordered_set<u32> lambert_material_indices;
+  FreeIndexPool lambert_mats_index_pool;
+  std::vector<Lambert> lambert_materials;
+
+  std::unordered_set<u32> metal_material_indices;
+  FreeIndexPool metal_mats_index_pool;
+  std::vector<Metal> metal_materials;
+
+  std::unordered_set<u32> emissive_material_indices;
+  FreeIndexPool emissive_mats_index_pool;
+  std::vector<Emissive> emissive_materials;
+
+  std::unordered_set<u32> dielectric_material_indices;
+  FreeIndexPool dielectric_mats_index_pool;
+  std::vector<Dielectric> dielectric_materials;
+
 private:
   void load_sphere_data();
   void load_cube_data();
@@ -78,18 +94,6 @@ private:
     void *tri_id_allocation;
     void *bvh_nodes_allocation;
   };
-
-  FreeIndexPool lambert_mats_index_pool;
-  std::vector<Lambert> lambert_materials;
-
-  FreeIndexPool metal_mats_index_pool;
-  std::vector<Metal> metal_materials;
-
-  FreeIndexPool emissive_mats_index_pool;
-  std::vector<Emissive> emissive_materials;
-
-  FreeIndexPool dielectric_mats_index_pool;
-  std::vector<Dielectric> dielectric_materials;
 
   // NOTE: This is only used for creating bvh_nodes
   glm::vec3 *triangle_centroids_data;

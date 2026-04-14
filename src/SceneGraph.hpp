@@ -1,5 +1,6 @@
 #pragma once
 #include "Core/FreeIndexPool.hpp"
+#include "Material.hpp"
 // Vendor
 #include <glm/fwd.hpp>
 
@@ -51,4 +52,6 @@ u32 render_scene_graph_nodes(const SceneGraph &scene_graph, u32 node_id,
                              u32 selected_node_id);
 void render_scene_graph_nodes_property(SceneGraph &scene_graph, u32 node_id,
                                        Renderer *renderer);
+void render_materials_window(Renderer *renderer,
+                             MaterialHandle &selected_material);
 } // namespace hlx
