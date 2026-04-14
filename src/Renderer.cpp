@@ -240,43 +240,6 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
   const VkDescriptorSetLayout vk_set_layout =
       p_rm->access_set_layout(set_layout)->vk_handle;
 
-  // Create path tracing shader
-  ShaderHandle path_tracing_shader;
-  try {
-    ShaderBlob blob;
-    SlangCompiler::compile_code("compute_main", "RayTracing",
-                                SHADER_PATH "RayTracing.slang", blob);
-    path_tracing_shader = p_rm->create_shader("PathTracingComp", blob);
-  } catch (Exception exception) {
-    HERROR("{}", exception.what());
-  }
-
-  VkPipelineShaderStageCreateInfo shader_stage_info{
-      VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
-  shader_stage_info.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-  shader_stage_info.module =
-      p_rm->access_shader(path_tracing_shader)->vk_handle;
-  shader_stage_info.pName = "main";
-
-  VkPushConstantRange push_constant = {.stageFlags =
-                                           VK_SHADER_STAGE_COMPUTE_BIT,
-                                       .offset = 0,
-                                       .size = sizeof(PushConstant)};
-  VkPipelineLayoutCreateInfo pipeline_layout_info{
-      VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
-  pipeline_layout_info.setLayoutCount = 1;
-  pipeline_layout_info.pSetLayouts = &vk_set_layout;
-  pipeline_layout_info.pushConstantRangeCount = 1;
-  pipeline_layout_info.pPushConstantRanges = &push_constant;
-
-  VkComputePipelineCreateInfo pipelien_create_info{
-      VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
-  pipelien_create_info.stage = shader_stage_info;
-  path_tracing_pipeline = p_rm->create_compute_pipeline(
-      "PathTracingPipeline", pipelien_create_info, pipeline_layout_info);
-
-  p_rm->queue_destroy({path_tracing_shader});
-
   // Allocate the set
   const VkDescriptorSetAllocateInfo alloc_info = {
       .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
@@ -330,9 +293,70 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
   // Material buffers
   lambert_mats_index_pool.init(MAX_MATERIAL_COUNT);
   lambert_materials.resize(MAX_MATERIAL_COUNT);
+  lambert_textures.resize(MAX_MATERIAL_COUNT);
+  image_infos.reserve(MAX_MATERIAL_COUNT);
+  write_infos.reserve(MAX_MATERIAL_COUNT);
   buffer_info.size = MAX_MATERIAL_COUNT * sizeof(Lambert);
   lambert_materials_buffer = p_rm->create_buffer("LambertMaterialsBuffer",
                                                  buffer_info, vma_alloc_info);
+
+  const VkDescriptorPoolSize bindless_pool_size = {
+      .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+      .descriptorCount = MAX_MATERIAL_COUNT};
+  VkDescriptorPoolCreateInfo descriptor_pool_info{
+      VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+  descriptor_pool_info.maxSets = 1;
+  descriptor_pool_info.poolSizeCount = 1;
+  descriptor_pool_info.pPoolSizes = &bindless_pool_size;
+  descriptor_pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
+  VK_CHECK(vkCreateDescriptorPool(p_device->vk_device, &descriptor_pool_info,
+                                  nullptr, &vk_lambert_descriptor_pool));
+  p_device->set_resource_name<VkDescriptorPool>(
+      VK_OBJECT_TYPE_DESCRIPTOR_POOL, vk_lambert_descriptor_pool,
+      "LambertMaterialsDescriptorPool");
+
+  // Create Bindless Set Layout and Set
+  VkDescriptorSetLayoutBinding bindless_layout_binding = {
+      .binding = 0,
+      .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+      .descriptorCount = MAX_MATERIAL_COUNT,
+      .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT};
+
+  VkDescriptorBindingFlags layout_flags =
+      VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT |
+      VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
+
+  VkDescriptorSetLayoutBindingFlagsCreateInfo flags_info{
+      VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO};
+  flags_info.bindingCount = 1;
+  flags_info.pBindingFlags = &layout_flags;
+
+  VkDescriptorSetLayoutCreateInfo bindless_layout_info{
+      VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+  bindless_layout_info.bindingCount = 1;
+  bindless_layout_info.pBindings = &bindless_layout_binding;
+  bindless_layout_info.flags =
+      VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
+  bindless_layout_info.pNext = &flags_info;
+  VK_CHECK(vkCreateDescriptorSetLayout(p_device->vk_device,
+                                       &bindless_layout_info, nullptr,
+                                       &vk_lambert_descriptor_set_layout));
+  p_device->set_resource_name<VkDescriptorSetLayout>(
+      VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, vk_lambert_descriptor_set_layout,
+      "LambertMaterialsSetLayout");
+
+  // Allocate the bindless set
+  VkDescriptorSetAllocateInfo bindless_set_alloc_info{
+      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+      .descriptorPool = vk_lambert_descriptor_pool,
+      .descriptorSetCount = 1,
+      .pSetLayouts = &vk_lambert_descriptor_set_layout};
+  VK_CHECK(vkAllocateDescriptorSets(p_device->vk_device,
+                                    &bindless_set_alloc_info,
+                                    &vk_lambert_descriptor_set));
+  p_device->set_resource_name<VkDescriptorSet>(VK_OBJECT_TYPE_DESCRIPTOR_SET,
+                                               vk_lambert_descriptor_set,
+                                               "LambertMaterialsSet");
 
   metal_mats_index_pool.init(MAX_MATERIAL_COUNT);
   metal_materials.resize(MAX_MATERIAL_COUNT);
@@ -393,6 +417,63 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
     handle = p_rm->create_buffer("UniformBuffer", buffer_info, vma_alloc_info);
   }
 
+  // Create sampler
+  VkSamplerCreateInfo sampler_info{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+  sampler_info.magFilter = VK_FILTER_NEAREST;
+  sampler_info.minFilter = VK_FILTER_NEAREST;
+  sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+  sampler_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+  sampler_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+  sampler_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+  sampler_info.anisotropyEnable = VK_FALSE;
+  sampler_info.compareEnable = VK_FALSE;
+  sampler_info.minLod = 0.f;
+  sampler_info.maxLod = VK_LOD_CLAMP_NONE;
+  sampler_info.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+  sampler_info.unnormalizedCoordinates = VK_FALSE;
+  texture_sampler = p_rm->create_sampler("TextureSampler", sampler_info);
+
+  // Create path tracing shader
+  ShaderHandle path_tracing_shader;
+  try {
+    ShaderBlob blob;
+    VkCompileOptions opts;
+    opts.add("ALBEDO_TEXTURE_COUNT", MAX_MATERIAL_COUNT);
+    SlangCompiler::compile_code("compute_main", "RayTracing",
+                                SHADER_PATH "RayTracing.slang", blob, opts);
+    path_tracing_shader = p_rm->create_shader("PathTracingComp", blob);
+  } catch (Exception exception) {
+    HERROR("{}", exception.what());
+  }
+
+  VkPipelineShaderStageCreateInfo shader_stage_info{
+      VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
+  shader_stage_info.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+  shader_stage_info.module =
+      p_rm->access_shader(path_tracing_shader)->vk_handle;
+  shader_stage_info.pName = "main";
+
+  VkPushConstantRange push_constant = {.stageFlags =
+                                           VK_SHADER_STAGE_COMPUTE_BIT,
+                                       .offset = 0,
+                                       .size = sizeof(PushConstant)};
+  VkDescriptorSetLayout set_layouts[] = {vk_set_layout,
+                                         vk_lambert_descriptor_set_layout};
+  VkPipelineLayoutCreateInfo pipeline_layout_info{
+      VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+  pipeline_layout_info.setLayoutCount = 2;
+  pipeline_layout_info.pSetLayouts = set_layouts;
+  pipeline_layout_info.pushConstantRangeCount = 1;
+  pipeline_layout_info.pPushConstantRanges = &push_constant;
+
+  VkComputePipelineCreateInfo pipelien_create_info{
+      VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
+  pipelien_create_info.stage = shader_stage_info;
+  path_tracing_pipeline = p_rm->create_compute_pipeline(
+      "PathTracingPipeline", pipelien_create_info, pipeline_layout_info);
+
+  p_rm->queue_destroy({path_tracing_shader});
+
   // TODO: Remove
   staging_buffer.flush();
 }
@@ -410,13 +491,14 @@ void Renderer::shutdown() {
   p_rm->queue_destroy({bvh_nodes_buffer});
   p_rm->queue_destroy({emissive_materials_buffer});
   p_rm->queue_destroy({dielectric_materials_buffer});
-  p_rm->queue_destroy({metal_materials_buffer});
   p_rm->queue_destroy({lambert_materials_buffer});
+  p_rm->queue_destroy({metal_materials_buffer});
   p_rm->queue_destroy({triangle_shading_buffer});
   p_rm->queue_destroy({triangle_geom_buffer});
   p_rm->queue_destroy({set_layout});
   p_rm->queue_destroy({output_image_view});
   p_rm->queue_destroy({path_tracing_pipeline});
+  p_rm->queue_destroy({texture_sampler});
   staging_buffer.shutdown();
 
   for (const auto &[blas_id, allocation] : blas_allocations_map) {
@@ -442,6 +524,11 @@ void Renderer::shutdown() {
 
   // TODO: Users of add_<material> should be responsible for releasing each
   // material, rather than doing a release_all() here
+  for (u32 index : lambert_material_indices) {
+    // Destroy remaining textures
+    p_rm->queue_destroy({.handle = lambert_textures[index]});
+  }
+
   lambert_mats_index_pool.release_all();
   lambert_mats_index_pool.shutdown();
   metal_mats_index_pool.release_all();
@@ -450,6 +537,13 @@ void Renderer::shutdown() {
   emissive_mats_index_pool.shutdown();
   dielectric_mats_index_pool.release_all();
   dielectric_mats_index_pool.shutdown();
+
+  // Destroy descriptors
+  VK_CHECK(vkDeviceWaitIdle(p_device->vk_device));
+  vkDestroyDescriptorSetLayout(p_device->vk_device,
+                               vk_lambert_descriptor_set_layout, nullptr);
+  vkDestroyDescriptorPool(p_device->vk_device, vk_lambert_descriptor_pool,
+                          nullptr);
 
   p_rm = nullptr;
   p_device = nullptr;
@@ -486,6 +580,13 @@ void Renderer::render(Camera &camera) {
   if (camera.changed) {
     frame_index = 0;
     camera.changed = false;
+  }
+  if (update_descriptor) {
+    vkUpdateDescriptorSets(p_device->vk_device, write_infos.size(),
+                           write_infos.data(), 0, nullptr);
+    image_infos.clear();
+    write_infos.clear();
+    update_descriptor = false;
   }
   // Rebuild tlas if a change was made
   if (rebuild_tlas)
@@ -622,13 +723,14 @@ void Renderer::render(Camera &camera) {
   vkCmdPushConstants(cmd, pipeline->vk_pipeline_layout,
                      VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstant),
                      &push_constant);
+  VkDescriptorSet vk_sets[] = {vk_set, vk_lambert_descriptor_set};
   const VkBindDescriptorSetsInfo bind_info{
       .sType = VK_STRUCTURE_TYPE_BIND_DESCRIPTOR_SETS_INFO,
       .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
       .layout = pipeline->vk_pipeline_layout,
       .firstSet = 0,
-      .descriptorSetCount = 1,
-      .pDescriptorSets = &vk_set,
+      .descriptorSetCount = 2,
+      .pDescriptorSets = vk_sets,
   };
   vkCmdBindDescriptorSets2(cmd, &bind_info);
 
@@ -678,12 +780,72 @@ void Renderer::create_output_image(u32 width, u32 height) {
 MaterialHandle Renderer::add_lambert_material(const glm::vec3 &albedo) {
   u32 index = lambert_mats_index_pool.obtain_new();
   glm::vec3 clamped_albedo = glm::clamp(albedo, 0.f, 1.f);
-  lambert_materials[index] = {clamped_albedo.x, clamped_albedo.y,
-                              clamped_albedo.z, 1.f};
+
+  // Create pixel data
+  u8 *pixels = static_cast<u8 *>(malloc(sizeof(u8) * 4));
+  HASSERT(pixels);
+  pixels[0] = static_cast<u8>(clamped_albedo.x * 255.f);
+  pixels[1] = static_cast<u8>(clamped_albedo.y * 255.f);
+  pixels[2] = static_cast<u8>(clamped_albedo.z * 255.f);
+  pixels[3] = 255;
+
+  // Create Image
+  VkImageCreateInfo image_info{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+  image_info.imageType = VK_IMAGE_TYPE_2D;
+  image_info.extent.width = 1;
+  image_info.extent.height = 1;
+  image_info.extent.depth = 1;
+  image_info.mipLevels = 1;
+  image_info.arrayLayers = 1;
+  image_info.format = VK_FORMAT_R8G8B8A8_UNORM;
+  image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+  image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+  image_info.usage =
+      VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+  image_info.samples = VK_SAMPLE_COUNT_1_BIT;
+  image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+  VmaAllocationCreateInfo vma_alloc_info{};
+  vma_alloc_info.requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+
+  VkImageViewCreateInfo view_info{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+  view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+  view_info.format = image_info.format;
+  view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  view_info.subresourceRange.baseMipLevel = 0;
+  view_info.subresourceRange.levelCount = image_info.mipLevels;
+  view_info.subresourceRange.baseArrayLayer = 0;
+  view_info.subresourceRange.layerCount = 1;
+
+  std::string name = "Lambert " + std::to_string(index) + "Image";
+  std::string view_name = name + "View";
+  lambert_textures[index] = p_rm->create_image_view(view_name, name, image_info,
+                                                    vma_alloc_info, view_info);
+  lambert_materials[index] = {index};
   lambert_material_indices.insert(index);
-  // Stage addition
+  // Stage pixel data
+  staging_buffer.stage(pixels, lambert_textures[index],
+                       image_info.extent.width * image_info.extent.height * 4);
+  // Stage buffer change
   staging_buffer.stage(&lambert_materials[index], lambert_materials_buffer,
                        index * sizeof(Lambert), sizeof(Lambert));
+  // Descriptor update write
+  const VkDescriptorImageInfo descriptor_image_info{
+      .sampler = p_rm->access_sampler(texture_sampler)->vk_handle,
+      .imageView = p_rm->access_image_view(lambert_textures[index])->vk_handle,
+      .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+  image_infos.push_back(descriptor_image_info);
+
+  const VkWriteDescriptorSet image_write = {
+      .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+      .dstSet = vk_lambert_descriptor_set,
+      .dstBinding = 0,
+      .dstArrayElement = index,
+      .descriptorCount = 1,
+      .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+      .pImageInfo = &image_infos[image_infos.size() - 1]};
+  write_infos.push_back(image_write);
+  update_descriptor = true;
   return MaterialHandle(index, MaterialType::LAMBERT);
 }
 
@@ -725,6 +887,8 @@ void Renderer::remove_material(const MaterialHandle &material_handle) {
   case MaterialType::LAMBERT: {
     lambert_mats_index_pool.release(material_handle.index);
     lambert_material_indices.erase(material_handle.index);
+    p_rm->queue_destroy({.handle = lambert_textures[material_handle.index],
+                         .frame_index = p_device->frame_count});
     break;
   }
   case MaterialType::METAL: {

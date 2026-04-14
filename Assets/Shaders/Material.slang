@@ -12,6 +12,14 @@ struct MaterialHandle {
   uint material_type;
 };
 
+#ifndef ALBEDO_TEXTURE_COUNT
+#define ALBEDO_TEXTURE_COUNT 1
+#error "ALBEDO_TEXTURE_COUNT must be defined"
+#endif
+
+[[vk::binding(0, 1)]]
+Sampler2D albedo_textures[ALBEDO_TEXTURE_COUNT];
+
 struct LambertMaterial {
   void scatter_ray(inout uint seed, in HitRecord rec,
   out float3 attenuation, out Ray r_out) {
@@ -21,10 +29,11 @@ struct LambertMaterial {
     }
 
     r_out = Ray(rec.p, scattered_direction);
-    attenuation = albedo.xyz;
+    attenuation = albedo_textures[NonUniformResourceIndex(index)]
+                 .Sample(float2(rec.u, rec.v)).xyz;
   }
 
-  float4 albedo;
+  uint index;
 };
 
 #define NORMALIZE_REFLECTION

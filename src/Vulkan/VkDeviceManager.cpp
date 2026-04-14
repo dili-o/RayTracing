@@ -995,6 +995,7 @@ void VkDeviceManager::present() {
   }
 
   current_frame = (current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
+  ++frame_count;
 }
 } // namespace hlx
 // #pragma warning(pop)

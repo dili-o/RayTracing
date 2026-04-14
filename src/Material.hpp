@@ -2,8 +2,8 @@
 
 enum MaterialType { LAMBERT, METAL, DIELECTRIC, EMISSIVE, NONE };
 
-struct alignas(16) Lambert {
-  f32 albedo[4];
+struct Lambert {
+  u32 index;
 };
 
 struct alignas(16) Metal {

@@ -56,6 +56,10 @@ public:
   BufferHandle blas_buffer;
   BufferHandle blas_instances_buffer;
   BufferHandle tri_ids_buffer;
+  SamplerHandle texture_sampler;
+  VkDescriptorPool vk_lambert_descriptor_pool{VK_NULL_HANDLE};
+  VkDescriptorSetLayout vk_lambert_descriptor_set_layout{VK_NULL_HANDLE};
+  VkDescriptorSet vk_lambert_descriptor_set{VK_NULL_HANDLE};
   BufferHandle lambert_materials_buffer;
   BufferHandle metal_materials_buffer;
   BufferHandle dielectric_materials_buffer;
@@ -70,6 +74,7 @@ public:
   std::unordered_set<u32> lambert_material_indices;
   FreeIndexPool lambert_mats_index_pool;
   std::vector<Lambert> lambert_materials;
+  std::vector<ImageViewHandle> lambert_textures;
 
   std::unordered_set<u32> metal_material_indices;
   FreeIndexPool metal_mats_index_pool;
@@ -117,5 +122,8 @@ private:
   TLAS tlas;
 
   bool rebuild_tlas{false};
+  std::vector<VkDescriptorImageInfo> image_infos;
+  std::vector<VkWriteDescriptorSet> write_infos;
+  bool update_descriptor{false};
 };
 } // namespace hlx

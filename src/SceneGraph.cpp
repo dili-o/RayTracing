@@ -448,8 +448,7 @@ void render_materials_window(Renderer *renderer,
       if (selected_material.index != UINT32_MAX &&
           selected_material.type == MaterialType::LAMBERT) {
         Lambert &mat = renderer->lambert_materials[selected_material.index];
-        ImGui::Text("Albedo: %.3f, %.3f, %.3f", mat.albedo[0], mat.albedo[1],
-                    mat.albedo[2]);
+        ImGui::Text("Image View Index: %d", mat.index);
       }
       ImGui::SeparatorText("");
       static glm::vec3 col(0.f);

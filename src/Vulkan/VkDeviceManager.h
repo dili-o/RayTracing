@@ -92,6 +92,7 @@ public:
   VkCommandPool vk_command_pool{VK_NULL_HANDLE};
   std::array<VkCommandBuffer, MAX_FRAMES_IN_FLIGHT> vk_command_buffers;
   u32 current_frame{0};
+  u64 frame_count{0};
   std::array<VkFence, MAX_FRAMES_IN_FLIGHT> frame_in_flight_fences{
       VK_NULL_HANDLE};
   std::vector<VkSemaphore> render_finished_semaphores;
