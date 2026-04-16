@@ -60,6 +60,10 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "Use static GLM library" FORCE)
 add_subdirectory(Vendor/glm)
 target_link_libraries(${PROJECT_NAME} PUBLIC glm::glm)
 target_include_directories(${PROJECT_NAME} PUBLIC Vendor/glm)
+# FastGlTF
+set(FASTGLTF_COMPILE_AS_CPP20 ON CACHE BOOL "" FORCE)
+add_subdirectory(Vendor/fastgltf)
+target_link_libraries(${PROJECT_NAME} PUBLIC fastgltf::fastgltf)
 # Slang
 target_link_libraries(${PROJECT_NAME} PRIVATE "${VULKAN_SDK}/Lib/slang.lib")
 # -------------------------

@@ -218,6 +218,9 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
   this->p_device = p_device;
   this->p_rm = p_rm;
 
+  blas_use_count.resize(MAX_BLAS_COUNT);
+  blas_use_count.assign(MAX_BLAS_COUNT, 0);
+
   // Create staging buffer
   staging_buffer.init(
       p_device, p_rm,
@@ -780,8 +783,8 @@ void Renderer::create_output_image(u32 width, u32 height) {
       "OutputImageView", "OutputImage", image_info, vma_alloc_info, view_info);
 }
 
-MaterialHandle Renderer::_add_lambert_material(i32 width, i32 height,
-                                               u8 *pixels) {
+MaterialHandle Renderer::add_lambert_material(i32 width, i32 height,
+                                              u8 *pixels) {
   u32 index = lambert_mats_index_pool.obtain_new();
   // Create Image
   VkImageCreateInfo image_info{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
@@ -852,7 +855,7 @@ MaterialHandle Renderer::add_lambert_material(const glm::vec3 &albedo) {
   pixels[1] = static_cast<u8>(clamped_albedo.y * 255.f);
   pixels[2] = static_cast<u8>(clamped_albedo.z * 255.f);
   pixels[3] = 255;
-  MaterialHandle handle = _add_lambert_material(1, 1, pixels);
+  MaterialHandle handle = add_lambert_material(1, 1, pixels);
   free(pixels);
   return handle;
 }
@@ -865,7 +868,7 @@ MaterialHandle Renderer::add_lambert_material(std::string_view file_path) {
   HASSERT_MSGS(raw_bdata, "Failed to load image: {}", file_path.data());
 
   MaterialHandle handle =
-      _add_lambert_material(image_width, image_height, raw_bdata);
+      add_lambert_material(image_width, image_height, raw_bdata);
   free(raw_bdata);
   return handle;
 }
@@ -1048,6 +1051,9 @@ u32 Renderer::add_blas_instance(u32 blas_index, const glm::mat4 &transform,
                        sizeof(BLASInstance) * index, sizeof(BLASInstance));
   rebuild_tlas = true;
   blas_instance_ids.insert(index);
+
+  // Increment blas use
+  blas_use_count[blas_index]++;
   return index;
 }
 
@@ -1069,11 +1075,15 @@ void Renderer::set_blas_instance_transform(u32 blas_instance_id,
 }
 
 void Renderer::remove_blas(u32 blas_id) {
-  // TODO: Right now there are no checks to ensure that no blas instance
-  // references this
   if (!blas_allocations_map.contains(blas_id)) {
     HWARN("Renderer::remove_blas() - Trying to remove a blas_id with no "
           "allocation data!.");
+    return;
+  }
+
+  --blas_use_count[blas_id];
+
+  if (blas_use_count[blas_id] != 0) {
     return;
   }
 
@@ -1081,11 +1091,13 @@ void Renderer::remove_blas(u32 blas_id) {
   tri_id_allocator.deallocate(allocation.tri_id_allocation);
   bvh_nodes_allocator.deallocate(allocation.bvh_nodes_allocation);
   blases_index_pool.release(blas_id);
+  blas_allocations_map.erase(blas_id);
 }
 
 void Renderer::remove_blas_instance(u32 blas_instance_id) {
   blas_inst_index_pool.release(blas_instance_id);
   blas_instance_ids.erase(blas_instance_id);
+  remove_blas(blas_instances[blas_instance_id].blas_id);
   rebuild_tlas = true;
 }
 
@@ -1100,6 +1112,9 @@ void Renderer::load_sphere_data() {
                   glm::vec3(0.f));
 
   sphere_blas_index = add_blas(positions, normals, uvs, indices);
+
+  // Set it to 1 to ensure it can never be deleted by the user
+  blas_use_count[sphere_blas_index] = 1;
 }
 
 void Renderer::load_cube_data() {
@@ -1112,6 +1127,9 @@ void Renderer::load_cube_data() {
   generate_cube(positions, indices, normals, uvs, glm::vec3(0.f), 1.f, 1.f,
                 1.f);
   cube_blas_index = add_blas(positions, normals, uvs, indices);
+
+  // Set it to 1 to ensure it can never be deleted by the user
+  blas_use_count[cube_blas_index] = 1;
 }
 
 void Renderer::load_plane_data() {
@@ -1124,6 +1142,9 @@ void Renderer::load_plane_data() {
   generate_plane(positions, indices, normals, uvs, 1.f, 1.f, 1, 1,
                  glm::vec3(0.f));
   plane_blas_index = add_blas(positions, normals, uvs, indices);
+
+  // Set it to 1 to ensure it can never be deleted by the user
+  blas_use_count[plane_blas_index] = 1;
 }
 
 void Renderer::build_tlas() {

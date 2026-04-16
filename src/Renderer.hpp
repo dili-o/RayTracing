@@ -26,6 +26,7 @@ public:
 
   MaterialHandle add_lambert_material(const glm::vec3 &albedo);
   MaterialHandle add_lambert_material(std::string_view file_path);
+  MaterialHandle add_lambert_material(i32 width, i32 height, u8 *pixels);
   MaterialHandle add_metal_material(const glm::vec3 &albedo, const f32 fuzz);
   MaterialHandle add_dielectric_material(const f32 refractive_index);
   MaterialHandle add_emissive_material(const glm::vec3 &intensity);
@@ -90,7 +91,6 @@ public:
   std::vector<Dielectric> dielectric_materials;
 
 private:
-  MaterialHandle _add_lambert_material(i32 width, i32 height, u8 *pixels);
   void load_sphere_data();
   void load_cube_data();
   void load_plane_data();
@@ -101,6 +101,9 @@ private:
     void *tri_id_allocation;
     void *bvh_nodes_allocation;
   };
+
+  // Tracks how many blas instances are using a blas
+  std::vector<u32> blas_use_count;
 
   // NOTE: This is only used for creating bvh_nodes
   glm::vec3 *triangle_centroids_data;

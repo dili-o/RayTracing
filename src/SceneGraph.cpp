@@ -1,16 +1,387 @@
 #include "SceneGraph.hpp"
 #include "Core/Assert.hpp"
+#include "Core/RingQueue.hpp"
 #include "Material.hpp"
 #include "Platform/FileIO.h"
 #include "Renderer.hpp"
+#include "Transform.hpp"
 // Vendor
-#include <glm/ext/matrix_transform.hpp>
-#include <glm/mat4x4.hpp>
-#include <glm/vec3.hpp>
+#include <fastgltf/core.hpp>
+#include <fastgltf/math.hpp>
+#include <fastgltf/tools.hpp>
+#include <fastgltf/types.hpp>
+#include <filesystem>
 #include <imgui/imgui.h>
 #include <numeric>
+#include <stb_image.h>
+
+namespace fs = std::filesystem;
 
 namespace hlx {
+static void gltf_set_vec3(glm::vec3 &glm_vec,
+                          const fastgltf::math::fvec3 &f_vec) {
+  glm_vec.x = f_vec.data()[0];
+  glm_vec.y = f_vec.data()[1];
+  glm_vec.z = f_vec.data()[2];
+}
+
+static void gltf_set_quat(glm::quat &glm_vec,
+                          const fastgltf::math::fquat &f_vec) {
+  glm_vec.x = f_vec.data()[0];
+  glm_vec.y = f_vec.data()[1];
+  glm_vec.z = f_vec.data()[2];
+  glm_vec.w = f_vec.data()[3];
+}
+
+static glm::mat4 gltf_get_matrix4x4(const fastgltf::math::fmat4x4 &m) {
+  return glm::mat4(m[0][0], m[0][1], m[0][2], m[0][3], m[1][0], m[1][1],
+                   m[1][2], m[1][3], m[2][0], m[2][1], m[2][2], m[2][3],
+                   m[3][0], m[3][1], m[3][2], m[3][3]);
+}
+
+static MaterialHandle gltf_load_texture(Renderer *renderer,
+                                        fastgltf::Asset &asset,
+                                        fastgltf::Texture &texture,
+                                        std::string_view texture_path) {
+  MaterialHandle material_handle;
+  fastgltf::Image &image = asset.images[texture.imageIndex.value()];
+
+  std::visit(
+      fastgltf::visitor{
+          [&](auto &arg) {
+            HERROR("Current image type: {} is not yet supported",
+                   typeid(arg).name());
+          },
+          [&](fastgltf::sources::Array &array) {
+            i32 texture_width, texture_height;
+            i32 channel_count;
+
+            if (!stbi_info_from_memory(
+                    reinterpret_cast<stbi_uc *>(array.bytes.data()),
+                    array.bytes.size(), &texture_width, &texture_height,
+                    &channel_count)) {
+              HERROR("gltf_load_pbr_texture::stbi_info_from_memory::fastgltf::"
+                     "sources::Array failed to "
+                     "load texture info, Reason: {}",
+                     stbi_failure_reason());
+            }
+            u8 *pixels = stbi_load_from_memory(
+                reinterpret_cast<stbi_uc *>(array.bytes.data()),
+                array.bytes.size(), &texture_width, &texture_height,
+                &channel_count, STBI_rgb_alpha);
+            HASSERT(pixels);
+
+            material_handle = renderer->add_lambert_material(
+                texture_width, texture_height, pixels);
+            stbi_image_free(pixels);
+          },
+          [&](fastgltf::sources::URI &filePath) {
+            HASSERT_MSG(
+                filePath.fileByteOffset == 0,
+                "Gltf filePath.uri has a byteOffset"); // We don't support
+                                                       // offsets with stbi.
+
+            HASSERT_MSG(
+                filePath.uri.isLocalPath(),
+                "Gltf filePath.uri is not local"); // We're only capable of
+                                                   // loading local files.
+
+            material_handle = renderer->add_lambert_material(
+                std::string(texture_path) + filePath.uri.c_str());
+          },
+          [&](fastgltf::sources::BufferView &view) {
+            auto &bufferView = asset.bufferViews[view.bufferViewIndex];
+            auto &buffer = asset.buffers[bufferView.bufferIndex];
+
+            std::visit(
+                fastgltf::visitor{
+                    // We only care about VectorWithMime here, because
+                    // we specify LoadExternalBuffers, meaning all
+                    // buffers are already loaded into a vector.
+                    [](auto &arg) {
+                      HERROR("Current image type: {} is not yet supported",
+                             typeid(arg).name());
+                    },
+                    [&](fastgltf::sources::Array &array) {
+                      i32 texture_width, texture_height;
+                      i32 channel_count;
+
+                      if (!stbi_info_from_memory(
+                              reinterpret_cast<stbi_uc *>(
+                                  array.bytes.data() + bufferView.byteOffset),
+                              array.bytes.size(), &texture_width,
+                              &texture_height, &channel_count)) {
+                        HERROR("gltf_load_pbr_texture::stbi_info_from_"
+                               "memoryfastgltf::sources::BufferView::Array "
+                               "failed to "
+                               "load texture info, Reason: {}",
+                               stbi_failure_reason());
+                      }
+                      u8 *pixels = stbi_load_from_memory(
+                          reinterpret_cast<u8 *>(array.bytes.data()) +
+                              bufferView.byteOffset,
+                          array.bytes.size(), &texture_width, &texture_height,
+                          &channel_count, STBI_rgb_alpha);
+                      HASSERT(pixels);
+
+                      material_handle = renderer->add_lambert_material(
+                          texture_width, texture_height, pixels);
+
+                      stbi_image_free(pixels);
+                    },
+                    [&](fastgltf::sources::Vector &vector) {
+                      i32 texture_width, texture_height;
+                      i32 channel_count;
+
+                      if (!stbi_info_from_memory(
+                              reinterpret_cast<stbi_uc *>(
+                                  vector.bytes.data() + bufferView.byteOffset),
+                              bufferView.byteLength, &texture_width,
+                              &texture_height, &channel_count)) {
+                        HERROR("gltf_load_pbr_texture::stbi_info_from_"
+                               "memory::fastgltf::sources::BufferView::Vector "
+                               "failed to "
+                               "load texture info, Reason: {}",
+                               stbi_failure_reason());
+                      }
+
+                      u8 *pixels = stbi_load_from_memory(
+                          reinterpret_cast<u8 *>(vector.bytes.data()) +
+                              bufferView.byteOffset,
+                          vector.bytes.size(), &texture_width, &texture_height,
+                          &channel_count, STBI_rgb_alpha);
+                      HASSERT(pixels);
+
+                      material_handle = renderer->add_lambert_material(
+                          texture_width, texture_height, pixels);
+
+                      stbi_image_free(pixels);
+                    }},
+                buffer.data);
+          },
+      },
+      image.data);
+
+  return material_handle;
+}
+
+static bool load_gltf_scene(SceneGraph &scene_graph, Renderer *renderer,
+                            std::string_view path, std::string_view file_name,
+                            u32 parent_node) {
+  fs::path cwd = fs::current_path();
+  fs::current_path(path);
+
+  fs::path std_path = fs::path(path) / file_name;
+
+  // Parse the glTF file and get the constructed asset
+  fastgltf::Parser parser(fastgltf::Extensions::None);
+
+  constexpr auto gltf_options = fastgltf::Options::DontRequireValidAssetMember |
+                                fastgltf::Options::AllowDouble |
+                                fastgltf::Options::LoadExternalBuffers |
+                                fastgltf::Options::GenerateMeshIndices;
+  auto gltf_file = fastgltf::MappedGltfFile::FromPath(std_path);
+  if (!bool(gltf_file)) {
+    HERROR("Failed to open glTF file: {}",
+           fastgltf::getErrorMessage(gltf_file.error()));
+    return false;
+  }
+
+  fastgltf::Expected<fastgltf::Asset> asset =
+      parser.loadGltf(gltf_file.get(), std_path.parent_path(), gltf_options);
+  if (asset.error() != fastgltf::Error::None) {
+    HERROR("Failed to open glTF file: {}",
+           fastgltf::getErrorMessage(asset.error()));
+    return false;
+  }
+
+  // Load materials
+  std::vector<MaterialHandle> material_handles(asset->materials.size());
+  for (size_t i = 0; i < asset->materials.size(); ++i) {
+    fastgltf::Material &material = asset->materials[i];
+
+    if (material.pbrData.baseColorTexture.has_value()) {
+      material_handles[i] = gltf_load_texture(
+          renderer, asset.get(),
+          asset->textures[material.pbrData.baseColorTexture.value()
+                              .textureIndex],
+          path);
+    } else {
+      u8 def_colour[4];
+      f32 *albedo_colour = material.pbrData.baseColorFactor.data();
+      def_colour[0] =
+          static_cast<u8>(std::clamp(albedo_colour[0], 0.0f, 1.0f) * 255.0f);
+      def_colour[1] =
+          static_cast<u8>(std::clamp(albedo_colour[1], 0.0f, 1.0f) * 255.0f);
+      def_colour[2] =
+          static_cast<u8>(std::clamp(albedo_colour[2], 0.0f, 1.0f) * 255.0f);
+      def_colour[3] =
+          static_cast<u8>(std::clamp(albedo_colour[3], 0.0f, 1.0f) * 255.0f);
+
+      material_handles[i] = renderer->add_lambert_material(1, 1, def_colour);
+    }
+  }
+
+  std::vector<i32> gltf_to_hierarchy_node(asset->nodes.size(), -1);
+
+  RingQueue<size_t> gltf_node_queue{};
+  gltf_node_queue.init(asset->nodes.size());
+
+  // If we only have one root node then we add it to the scene graph's root,
+  // else we create a new node to be the root of the gltf asset
+  fastgltf::Scene &root_scene = asset->scenes[asset->defaultScene.value()];
+  i32 root_node_parent = root_scene.nodeIndices.size() == 1
+                             ? parent_node
+                             : scene_graph.add_node(parent_node, std::string());
+
+  // Enqueue root nodes
+  for (u32 i = 0; i < root_scene.nodeIndices.size(); ++i) {
+    gltf_node_queue.enqueue(root_scene.nodeIndices[i]);
+    fastgltf::Node &node = asset->nodes[root_scene.nodeIndices[i]];
+    std::string node_name = node.name.empty() ? nullptr : node.name.c_str();
+
+    gltf_to_hierarchy_node[root_scene.nodeIndices[i]] =
+        scene_graph.add_node(root_node_parent, node_name);
+  }
+
+  // Work through nodes
+  while (gltf_node_queue.size) {
+    size_t gltf_node_index = UINT32_MAX;
+    gltf_node_queue.dequeue(&gltf_node_index);
+
+    fastgltf::Node &node = asset->nodes[gltf_node_index];
+    i32 node_hierarchy_index = gltf_to_hierarchy_node[gltf_node_index];
+    // Transform
+    if (std::holds_alternative<fastgltf::TRS>(node.transform)) {
+      const fastgltf::TRS &trs = std::get<fastgltf::TRS>(node.transform);
+
+      Transform transform{};
+      gltf_set_vec3(transform.position, trs.translation);
+      gltf_set_quat(transform.rotation, trs.rotation);
+      gltf_set_vec3(transform.scale, trs.scale);
+      scene_graph.update_node_local_transform(node_hierarchy_index,
+                                              transform.get_mat4());
+
+    } else if (std::holds_alternative<fastgltf::math::fmat4x4>(
+                   node.transform)) {
+      const fastgltf::math::fmat4x4 &mat =
+          std::get<fastgltf::math::fmat4x4>(node.transform);
+
+      Transform transform{};
+      glm::mat4 matrix = gltf_get_matrix4x4(mat);
+      transform.set_transform(matrix);
+      scene_graph.update_node_local_transform(node_hierarchy_index,
+                                              transform.get_mat4());
+    }
+
+    // Add child nodes to the queue
+    for (u32 i = 0; i < node.children.size(); ++i) {
+      gltf_node_queue.enqueue(node.children[i]);
+      fastgltf::Node &child_node = asset->nodes[node.children[i]];
+      std::string child_node_name =
+          child_node.name.empty() ? nullptr : child_node.name.c_str();
+      gltf_to_hierarchy_node[node.children[i]] =
+          scene_graph.add_node(node_hierarchy_index, child_node_name);
+    }
+
+    if (node.meshIndex.has_value()) {
+      fastgltf::Mesh &gltf_mesh = asset->meshes[node.meshIndex.value()];
+
+      for (u32 i = 0; i < gltf_mesh.primitives.size(); ++i) {
+        // Single Vertex buffer for each mesh primitive
+        std::vector<glm::vec3> positions;
+        std::vector<glm::vec3> normals;
+        std::vector<glm::vec2> tex_coords;
+        std::vector<u32> indices;
+        fastgltf::Primitive &primitive = gltf_mesh.primitives[i];
+        HASSERT_MSG(primitive.type == fastgltf::PrimitiveType::Triangles,
+                    "Non-Triangle Primitive type");
+
+        std::string primitive_name = "Mesh_" + std::to_string(i);
+        i32 primitive_node =
+            scene_graph.add_node(node_hierarchy_index, primitive_name);
+
+        // Index buffer per primitive
+        {
+          fastgltf::Accessor &index_accessor =
+              asset->accessors[primitive.indicesAccessor.value()];
+
+          indices.reserve(index_accessor.count);
+
+          fastgltf::iterateAccessor<u32>(
+              asset.get(), index_accessor,
+              [&](std::uint32_t idx) { indices.push_back(idx); });
+        }
+
+        // load position vertices
+        {
+          fastgltf::Accessor &pos_accessor =
+              asset->accessors[primitive.findAttribute("POSITION")
+                                   ->accessorIndex];
+          positions.reserve(pos_accessor.count);
+
+          fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec3>(
+              asset.get(), pos_accessor,
+              [&](fastgltf::math::fvec3 v, size_t index) {
+                positions.push_back(
+                    glm::vec3(v.data()[0], v.data()[1], v.data()[2]));
+              });
+        }
+
+        // load normal vertices
+        {
+          fastgltf::Accessor &normal_accessor =
+              asset
+                  ->accessors[primitive.findAttribute("NORMAL")->accessorIndex];
+
+          normals.reserve(normal_accessor.count);
+
+          fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec3>(
+              asset.get(), normal_accessor,
+              [&](fastgltf::math::fvec3 n, size_t index) {
+                normals.push_back(
+                    glm::vec3(n.data()[0], n.data()[1], n.data()[2]));
+              });
+        }
+
+        // load tex_coord vertices
+        {
+          fastgltf::Attribute *tex_attribute =
+              primitive.findAttribute("TEXCOORD_0");
+          if (tex_attribute != primitive.attributes.end()) {
+            fastgltf::Accessor &tex_coord_accessor =
+                asset->accessors[tex_attribute->accessorIndex];
+
+            tex_coords.reserve(tex_coord_accessor.count);
+
+            fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec2>(
+                asset.get(), tex_coord_accessor,
+                [&](fastgltf::math::fvec2 uv, size_t index) {
+                  tex_coords.push_back(glm::vec2(uv.data()[0], uv.data()[1]));
+                });
+          } else {
+            tex_coords.resize(positions.size());
+          }
+        }
+        u32 blas_id =
+            renderer->add_blas(positions, normals, tex_coords, indices);
+
+        // TODO: Right now just using the first lambert material
+        scene_graph.set_node_blas_instance(
+            primitive_node,
+            renderer->add_blas_instance(
+                blas_id, glm::mat4(1.f),
+                material_handles[primitive.materialIndex.value()]));
+      }
+    }
+  }
+
+  scene_graph.update_node_local_transform(root_node_parent, glm::mat4(1.f));
+
+  gltf_node_queue.shutdown();
+  fs::current_path(cwd);
+  return true;
+}
 
 template <typename T, typename Index = u32>
 void erase_selected(std::vector<T> &v, const std::vector<Index> &selection) {
@@ -29,7 +400,7 @@ void add_unique_idx(std::vector<uint32_t> &v, uint32_t index) {
     v.push_back(index);
 }
 
-SceneGraph::SceneGraph(u32 max_node_capacity) {
+void SceneGraph::init(u32 max_node_capacity) {
   node_index_pool.init(max_node_capacity);
   nodes.resize(max_node_capacity);
   local_transforms.resize(max_node_capacity);
@@ -38,10 +409,15 @@ SceneGraph::SceneGraph(u32 max_node_capacity) {
   add_node(INVALID_NODE_ID, "Root");
 }
 
-SceneGraph::~SceneGraph() {
+void SceneGraph::shutdown(Renderer *renderer) {
   if (node_index_pool.size) {
     node_index_pool.release_all();
     node_index_pool.shutdown();
+  }
+
+  for (const auto &[node_id, blas_instance_id] : node_to_blas_instance) {
+    if (blas_instance_id != UINT32_MAX)
+      renderer->remove_blas_instance(blas_instance_id);
   }
 }
 
@@ -315,7 +691,7 @@ void render_scene_graph_nodes_property(SceneGraph &scene_graph, u32 node_id,
     static char node_name[50] = {0};
     ImGui::InputText("Node name", node_name, 50);
 
-    const char *mesh_types[] = {"Plane", "Sphere", "Cube"};
+    const char *mesh_types[] = {"Plane", "Sphere", "Cube", "Gltf"};
     static int selected_mesh_type = 0;
     ImGui::Combo("Mesh Type", &selected_mesh_type, mesh_types,
                  IM_ARRAYSIZE(mesh_types));
@@ -377,36 +753,46 @@ void render_scene_graph_nodes_property(SceneGraph &scene_graph, u32 node_id,
     }
 
     if (ImGui::Button("Add")) {
-      u32 new_node_id;
-      if (node_name[0] == 0) {
-        new_node_id = scene_graph.add_node(node_id, std::string());
-      } else {
-        new_node_id = scene_graph.add_node(node_id, node_name);
-        std::memset(node_name, 0, sizeof(char) * 50);
-      }
+      if (selected_mesh_type < 3) {
+        u32 new_node_id;
+        if (node_name[0] == 0) {
+          new_node_id = scene_graph.add_node(node_id, std::string());
+        } else {
+          new_node_id = scene_graph.add_node(node_id, node_name);
+          std::memset(node_name, 0, sizeof(char) * 50);
+        }
+        u32 blas_index;
+        switch (selected_mesh_type) {
+        case 0:
+          blas_index = renderer->plane_blas_index;
+          break;
+        case 1:
+          blas_index = renderer->sphere_blas_index;
+          break;
+        case 2:
+          blas_index = renderer->cube_blas_index;
+          break;
+        default:
+          blas_index = UINT32_MAX;
+          HASSERT_MSG(false, "Unknown mesh type");
+        }
 
-      u32 blas_index;
-      switch (selected_mesh_type) {
-      case 0:
-        blas_index = renderer->plane_blas_index;
-        break;
-      case 1:
-        blas_index = renderer->sphere_blas_index;
-        break;
-      case 2:
-        blas_index = renderer->cube_blas_index;
-        break;
-      default:
-        blas_index = UINT32_MAX;
-        HASSERT_MSG(false, "Unknown mesh type");
+        scene_graph.set_node_blas_instance(
+            new_node_id, renderer->add_blas_instance(
+                             blas_index, glm::mat4(1.f),
+                             {.index = material_index,
+                              .type = (MaterialType)selected_material_type}));
+        scene_graph.update_node_local_transform(new_node_id, glm::mat4(1.f));
+      } else if (selected_mesh_type == 3) {
+        std::string file_path;
+        std::string file_name;
+        if (File::OpenFileDialog(file_name, file_path)) {
+          if (file_path.size() && file_name.size()) {
+            HASSERT(load_gltf_scene(scene_graph, renderer, file_path, file_name,
+                                    node_id));
+          }
+        }
       }
-
-      scene_graph.set_node_blas_instance(
-          new_node_id, renderer->add_blas_instance(
-                           blas_index, glm::mat4(1.f),
-                           {.index = material_index,
-                            .type = (MaterialType)selected_material_type}));
-      scene_graph.update_node_local_transform(new_node_id, glm::mat4(1.f));
       add_node_clicked = false;
       selected_mesh_type = 0;
       selected_material_type = 0;

@@ -42,7 +42,7 @@ struct PushConstants {
 };
 
 // TODO: Make configurable
-static const uint max_depth = 10;
+static const uint max_depth = 3;
 
 static float2 sample_square_stratified(uint seed, float recip_sqrt_spp,
                                        uint s_i, uint s_j) {
@@ -157,7 +157,10 @@ void compute_main(uint3 dispatch_thread_id: SV_DispatchThreadID,
             r = r_out;
 
           } else {
-            float3 sky = float3(0.f);
+            float3 unit_direction = normalize(r.direction);
+            float a = 0.5f * (unit_direction.y + 1.f);
+            float3 sky = (1.f - a) * float3(1.f, 1.f, 1.f) + a * float3(0.5f, 0.7f, 1.f);
+            // float3 sky = float3(0.f);
             sample_radiance += attenuation * sky;
             break;
           }

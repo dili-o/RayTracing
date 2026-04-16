@@ -6,19 +6,17 @@
 #include "Core/Input.hpp"
 #include "Platform/Platform.hpp"
 #include "SceneGraph.hpp"
+#include "Transform.hpp"
 #include "Vulkan/VkPipelineStates.hpp"
 #include "Vulkan/VkResources.hpp"
 #include "Vulkan/VkShaderCompilation.h"
 #include "Vulkan/VkUtils.hpp"
 // Vendor
-#include <glm/ext/matrix_transform.hpp>
-#include <glm/mat4x4.hpp>
-#include <glm/vec3.hpp>
 #include <imgui/imgui.h>
 
 namespace hlx {
 
-static SceneGraph scene_graph = SceneGraph(100);
+static SceneGraph scene_graph;
 static u32 selected_node_id = INVALID_NODE_ID;
 static MaterialHandle current_material_handle{.index = UINT32_MAX,
                                               .type = MaterialType::LAMBERT};
@@ -89,17 +87,8 @@ void PathTracer::init() {
   end_application = false;
   staging_buffer.flush();
 
-  struct Transform {
-    glm::vec3 position{0.f};
-    glm::vec4 rotation = glm::vec4(0.f, 1.f, 0.f, 0.f);
-    glm::vec3 scale{1.f};
+  scene_graph.init(100);
 
-    glm::mat4 get_mat4() {
-      return glm::translate(glm::mat4(1.f), position) *
-             glm::rotate(glm::mat4(1.f), rotation.w, glm::vec3(rotation)) *
-             glm::scale(glm::mat4(1.f), scale);
-    }
-  };
   // Create Cornell Box
   u32 cornell_box_id = scene_graph.add_node(0, "Cornell Box");
   // Materials
@@ -132,7 +121,7 @@ void PathTracer::init() {
     Transform t;
     t.position = glm::vec3(0.0f, 1.99f, -0.025f);
     t.scale = glm::vec3(2.0f, 1.0f, 2.0f);
-    t.rotation = glm::vec4(1, 0, 0, glm::pi<float>());
+    t.rotation = glm::angleAxis(glm::pi<float>(), glm::vec3(1, 0, 0));
 
     scene_graph.set_node_blas_instance(
         node_id, renderer.add_blas_instance(renderer.plane_blas_index,
@@ -147,7 +136,7 @@ void PathTracer::init() {
     Transform t;
     t.position = glm::vec3(0.0f, 1.0f, -1.0f);
     t.scale = glm::vec3(2.0f, 1.0f, 2.0f);
-    t.rotation = glm::vec4(1, 0, 0, -glm::half_pi<float>());
+    t.rotation = glm::angleAxis(-glm::half_pi<float>(), glm::vec3(1, 0, 0));
 
     scene_graph.set_node_blas_instance(
         node_id, renderer.add_blas_instance(renderer.plane_blas_index,
@@ -162,7 +151,7 @@ void PathTracer::init() {
     Transform t;
     t.position = glm::vec3(-1.0f, 1.0f, -0.025f);
     t.scale = glm::vec3(2.0f, 1.0f, 2.0f);
-    t.rotation = glm::vec4(0, 0, 1, glm::half_pi<float>());
+    t.rotation = glm::angleAxis(glm::half_pi<float>(), glm::vec3(0, 0, 1));
 
     scene_graph.set_node_blas_instance(
         node_id, renderer.add_blas_instance(renderer.plane_blas_index,
@@ -177,7 +166,7 @@ void PathTracer::init() {
     Transform t;
     t.position = glm::vec3(1.0f, 1.0f, -0.025f);
     t.scale = glm::vec3(2.0f, 1.0f, 2.0f);
-    t.rotation = glm::vec4(0, 0, 1, -glm::half_pi<float>());
+    t.rotation = glm::angleAxis(-glm::half_pi<float>(), glm::vec3(0, 0, 1));
 
     scene_graph.set_node_blas_instance(
         node_id, renderer.add_blas_instance(renderer.plane_blas_index,
@@ -192,7 +181,7 @@ void PathTracer::init() {
     Transform t;
     t.position = glm::vec3(0.0f, 1.98f, -0.03f);
     t.scale = glm::vec3(0.5f, 1.0f, 0.4f);
-    t.rotation = glm::vec4(1, 0, 0, glm::pi<float>());
+    t.rotation = glm::angleAxis(glm::pi<float>(), glm::vec3(1, 0, 0));
 
     scene_graph.set_node_blas_instance(
         node_id, renderer.add_blas_instance(renderer.plane_blas_index,
@@ -206,7 +195,7 @@ void PathTracer::init() {
     Transform t;
     t.position = glm::vec3(0.3f, 0.3f, 0.35f);
     t.scale = glm::vec3(0.6f, 0.6f, 0.6f);
-    t.rotation = glm::vec4(0, 1, 0, glm::radians(-18.f));
+    t.rotation = glm::angleAxis(glm::radians(-18.f), glm::vec3(0, 1, 0));
 
     scene_graph.set_node_blas_instance(
         node_id, renderer.add_blas_instance(renderer.cube_blas_index,
@@ -221,7 +210,7 @@ void PathTracer::init() {
     Transform t;
     t.position = glm::vec3(-0.4f, 0.6f, -0.3f);
     t.scale = glm::vec3(0.6f, 1.2f, 0.6f);
-    t.rotation = glm::vec4(0, 1, 0, glm::radians(15.f));
+    t.rotation = glm::angleAxis(glm::radians(15.f), glm::vec3(0, 1, 0));
 
     scene_graph.set_node_blas_instance(
         node_id, renderer.add_blas_instance(renderer.cube_blas_index,
@@ -531,6 +520,7 @@ void PathTracer::run() {
 }
 
 void PathTracer::shutdown() {
+  scene_graph.shutdown(&renderer);
   scene_ui.shutdown();
   staging_buffer.shutdown();
   renderer.shutdown();

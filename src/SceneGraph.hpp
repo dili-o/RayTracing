@@ -5,7 +5,7 @@
 #include <glm/fwd.hpp>
 
 constexpr u32 INVALID_NODE_ID = UINT32_MAX;
-constexpr u32 MAX_NODE_LEVEL = 5;
+constexpr u32 MAX_NODE_LEVEL = 8;
 
 namespace hlx {
 struct Renderer;
@@ -21,8 +21,8 @@ struct SceneNode {
 
 struct SceneGraph {
 public:
-  SceneGraph(u32 max_node_capacity = 10);
-  ~SceneGraph();
+  void init(u32 max_node_capacity = 10);
+  void shutdown(Renderer *renderer);
 
   u32 add_node(u32 parent, std::string name);
   void set_node_blas_instance(u32 node_id, u32 blas_instance_id);
