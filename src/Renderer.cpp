@@ -20,9 +20,9 @@
 constexpr u32 samples_per_pixel = 1u;
 
 static constexpr VkFormat output_image_format = VK_FORMAT_R32G32B32A32_SFLOAT;
-static constexpr size_t MAX_TRIANGLE_COUNT = 1'000'000;
+static constexpr size_t MAX_TRIANGLE_COUNT = 4'000'000;
 static constexpr size_t MAX_MATERIAL_COUNT = 1'000;
-static constexpr size_t MAX_BLAS_COUNT = 1'000;
+static constexpr size_t MAX_BLAS_COUNT = 4'000;
 static constexpr u32 BYTES_PER_PIXEL = 4u;
 
 namespace hlx {
@@ -225,7 +225,7 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
   staging_buffer.init(
       p_device, p_rm,
       p_device->queue_family_indices.transfer_family_index.value(),
-      p_device->vk_transfer_queue, 10'000'000);
+      p_device->vk_transfer_queue, 4096 * 4096 * 4);
 
   // Create the output image
   create_output_image(output_image_width, output_image_height);
