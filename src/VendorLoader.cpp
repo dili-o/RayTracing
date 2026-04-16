@@ -4,3 +4,5 @@
 #include <vk_mem_alloc.h>
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <Vendor/stb_image_write.h>
+#define STB_IMAGE_IMPLEMENTATION
+#include <Vendor/stb_image.h>

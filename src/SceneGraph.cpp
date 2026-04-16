@@ -1,6 +1,7 @@
 #include "SceneGraph.hpp"
 #include "Core/Assert.hpp"
 #include "Material.hpp"
+#include "Platform/FileIO.h"
 #include "Renderer.hpp"
 // Vendor
 #include <glm/ext/matrix_transform.hpp>
@@ -451,11 +452,28 @@ void render_materials_window(Renderer *renderer,
         ImGui::Text("Image View Index: %d", mat.index);
       }
       ImGui::SeparatorText("");
+      const char *albedo_types[] = {"Vec3", "File"};
+      static int selected_albedo_type = 0;
+      ImGui::Combo("Albedo Type", &selected_albedo_type, albedo_types,
+                   IM_ARRAYSIZE(albedo_types));
       static glm::vec3 col(0.f);
-      ImGui::InputFloat3("Albedo", &col.x);
+
+      if (selected_albedo_type == 0) {
+        ImGui::InputFloat3("Albedo", &col.x);
+      }
       if (ImGui::Button("Add Material")) {
-        renderer->add_lambert_material(col);
-        col = glm::vec3(0.f);
+        if (selected_albedo_type == 0) {
+          renderer->add_lambert_material(col);
+          col = glm::vec3(0.f);
+        } else {
+          std::string file_path;
+          std::string file_name;
+          if (File::OpenFileDialog(file_name, file_path)) {
+            if (file_path.size() && file_name.size()) {
+              renderer->add_lambert_material(file_path + "\\" + file_name);
+            }
+          }
+        }
       }
     }
 

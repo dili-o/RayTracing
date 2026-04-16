@@ -14,6 +14,7 @@
 #include <glm/gtc/constants.hpp>
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
+#include <stb_image.h>
 
 // TODO: Make configurable
 constexpr u32 samples_per_pixel = 1u;
@@ -22,6 +23,7 @@ static constexpr VkFormat output_image_format = VK_FORMAT_R32G32B32A32_SFLOAT;
 static constexpr size_t MAX_TRIANGLE_COUNT = 1'000'000;
 static constexpr size_t MAX_MATERIAL_COUNT = 1'000;
 static constexpr size_t MAX_BLAS_COUNT = 1'000;
+static constexpr u32 BYTES_PER_PIXEL = 4u;
 
 namespace hlx {
 struct alignas(16) UniformData {
@@ -220,7 +222,7 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
   staging_buffer.init(
       p_device, p_rm,
       p_device->queue_family_indices.transfer_family_index.value(),
-      p_device->vk_transfer_queue, 1'000'000);
+      p_device->vk_transfer_queue, 10'000'000);
 
   // Create the output image
   create_output_image(output_image_width, output_image_height);
@@ -778,23 +780,14 @@ void Renderer::create_output_image(u32 width, u32 height) {
       "OutputImageView", "OutputImage", image_info, vma_alloc_info, view_info);
 }
 
-MaterialHandle Renderer::add_lambert_material(const glm::vec3 &albedo) {
+MaterialHandle Renderer::_add_lambert_material(i32 width, i32 height,
+                                               u8 *pixels) {
   u32 index = lambert_mats_index_pool.obtain_new();
-  glm::vec3 clamped_albedo = glm::clamp(albedo, 0.f, 1.f);
-
-  // Create pixel data
-  u8 *pixels = static_cast<u8 *>(malloc(sizeof(u8) * 4));
-  HASSERT(pixels);
-  pixels[0] = static_cast<u8>(clamped_albedo.x * 255.f);
-  pixels[1] = static_cast<u8>(clamped_albedo.y * 255.f);
-  pixels[2] = static_cast<u8>(clamped_albedo.z * 255.f);
-  pixels[3] = 255;
-
   // Create Image
   VkImageCreateInfo image_info{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
   image_info.imageType = VK_IMAGE_TYPE_2D;
-  image_info.extent.width = 1;
-  image_info.extent.height = 1;
+  image_info.extent.width = width;
+  image_info.extent.height = height;
   image_info.extent.depth = 1;
   image_info.mipLevels = 1;
   image_info.arrayLayers = 1;
@@ -848,6 +841,33 @@ MaterialHandle Renderer::add_lambert_material(const glm::vec3 &albedo) {
   write_infos.push_back(image_write);
   update_descriptor = true;
   return MaterialHandle(index, MaterialType::LAMBERT);
+}
+
+MaterialHandle Renderer::add_lambert_material(const glm::vec3 &albedo) {
+  glm::vec3 clamped_albedo = glm::clamp(albedo, 0.f, 1.f);
+  // Create pixel data
+  u8 *pixels = static_cast<u8 *>(malloc(sizeof(u8) * 4));
+  HASSERT(pixels);
+  pixels[0] = static_cast<u8>(clamped_albedo.x * 255.f);
+  pixels[1] = static_cast<u8>(clamped_albedo.y * 255.f);
+  pixels[2] = static_cast<u8>(clamped_albedo.z * 255.f);
+  pixels[3] = 255;
+  MaterialHandle handle = _add_lambert_material(1, 1, pixels);
+  free(pixels);
+  return handle;
+}
+
+MaterialHandle Renderer::add_lambert_material(std::string_view file_path) {
+  i32 comp, image_width, image_height;
+  stbi_set_flip_vertically_on_load(false);
+  u8 *raw_bdata = stbi_load(file_path.data(), &image_width, &image_height,
+                            &comp, BYTES_PER_PIXEL);
+  HASSERT_MSGS(raw_bdata, "Failed to load image: {}", file_path.data());
+
+  MaterialHandle handle =
+      _add_lambert_material(image_width, image_height, raw_bdata);
+  free(raw_bdata);
+  return handle;
 }
 
 MaterialHandle Renderer::add_metal_material(const glm::vec3 &albedo,
@@ -969,11 +989,10 @@ u32 Renderer::add_blas(std::span<glm::vec3> positions,
 
   u32 blas_index = blases_index_pool.obtain_new();
   BLAS &blas = blases[blas_index];
-  // TODO: Right now we create a separate bvh_nodes vector that is used to build
-  // the blas.
-  // We then allocate the fitted size from the bvh_nodes_allocator and update
-  // the blas' bvh_nodes_offset. This means we don't need to pass in a
-  // bvh_nodes_offset parameter
+  // TODO: Right now we create a separate bvh_nodes vector that is used to
+  // build the blas. We then allocate the fitted size from the
+  // bvh_nodes_allocator and update the blas' bvh_nodes_offset. This means we
+  // don't need to pass in a bvh_nodes_offset parameter
   blas.build(bvh_nodes, /*This is redundant*/ prev_blas_nodes_count,
              std::span(tri_geom_data, MAX_TRIANGLE_COUNT),
              std::span(triangle_centroids_data, MAX_TRIANGLE_COUNT),

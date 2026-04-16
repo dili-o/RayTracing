@@ -25,6 +25,7 @@ public:
   void create_output_image(u32 width, u32 height);
 
   MaterialHandle add_lambert_material(const glm::vec3 &albedo);
+  MaterialHandle add_lambert_material(std::string_view file_path);
   MaterialHandle add_metal_material(const glm::vec3 &albedo, const f32 fuzz);
   MaterialHandle add_dielectric_material(const f32 refractive_index);
   MaterialHandle add_emissive_material(const glm::vec3 &intensity);
@@ -89,6 +90,7 @@ public:
   std::vector<Dielectric> dielectric_materials;
 
 private:
+  MaterialHandle _add_lambert_material(i32 width, i32 height, u8 *pixels);
   void load_sphere_data();
   void load_cube_data();
   void load_plane_data();

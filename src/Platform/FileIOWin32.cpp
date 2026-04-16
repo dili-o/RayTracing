@@ -11,6 +11,9 @@
 #include "Core/Assert.hpp"
 #include "FileIO.h"
 #include "PCH.h"
+#include <shlwapi.h>
+#include <shobjidl.h>
+#pragma comment(lib, "Shlwapi.lib")
 #include <windows.h>
 
 namespace hlx {
@@ -192,6 +195,63 @@ u64 File::Size() const {
   Win32Call(GetFileSizeEx(fileHandle, &fileSize));
 
   return fileSize.QuadPart;
+}
+
+bool File::OpenFileDialog(std::string &outFileName, std::string &outFilePath) {
+  HRESULT hr =
+      CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+  if (SUCCEEDED(hr)) {
+    IFileOpenDialog *pFileOpen;
+
+    // Create the FileOpenDialog object.
+    hr = CoCreateInstance(CLSID_FileOpenDialog, NULL, CLSCTX_ALL,
+                          IID_IFileOpenDialog,
+                          reinterpret_cast<void **>(&pFileOpen));
+    if (SUCCEEDED(hr)) {
+      // Show the Open dialog box.
+      hr = pFileOpen->Show(NULL);
+
+      // Get the file name from the dialog box.
+      if (SUCCEEDED(hr)) {
+        IShellItem *pItem;
+        hr = pFileOpen->GetResult(&pItem);
+        if (SUCCEEDED(hr)) {
+          PWSTR pszFilePath;
+          hr = pItem->GetDisplayName(SIGDN_FILESYSPATH, &pszFilePath);
+
+          // Display the file name to the user.
+          if (SUCCEEDED(hr)) {
+            PWSTR pszDirPath = _wcsdup(pszFilePath);
+            PathRemoveFileSpecW(pszDirPath);
+
+            PWSTR pszFileName = PathFindFileNameW(pszFilePath);
+
+            char dirBuffer[512] = {0};
+            char fileBuffer[512] = {0};
+            WideCharToMultiByte(CP_UTF8, 0, pszDirPath, -1, dirBuffer, 512,
+                                NULL, NULL);
+            WideCharToMultiByte(CP_UTF8, 0, pszFileName, -1, fileBuffer, 512,
+                                NULL, NULL);
+
+            outFileName = fileBuffer;
+
+            outFilePath = dirBuffer;
+
+            CoTaskMemFree(pszFilePath);
+            free(pszDirPath);
+          }
+          pItem->Release();
+        }
+      }
+      pFileOpen->Release();
+      CoUninitialize();
+    }
+  } else {
+    HERROR("Failed to open file");
+    return false;
+  }
+
+  return true;
 }
 
 } // namespace hlx

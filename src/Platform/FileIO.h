@@ -59,6 +59,9 @@ public:
 
   // Accessors
   u64 Size() const;
+
+  static bool OpenFileDialog(std::string &outFileName,
+                             std::string &outFilePath);
 };
 
 // == File
@@ -79,7 +82,8 @@ template <typename T> void ReadFromFile(std::string_view fileName, T &val) {
 }
 
 // Writes a POD type to a file
-template <typename T> void WriteToFile(std::string_view fileName, const T &val) {
+template <typename T>
+void WriteToFile(std::string_view fileName, const T &val) {
   File file(fileName, File::OpenWrite);
   file.Write(val);
 }
