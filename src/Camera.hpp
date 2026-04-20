@@ -1,6 +1,7 @@
 #pragma once
 
 // Vendor
+#include <glm/mat4x4.hpp>
 #include <glm/vec3.hpp>
 
 namespace hlx {
@@ -10,6 +11,9 @@ public:
   void shutdown();
 
   void update(f32 delta_time);
+
+  glm::mat4 get_view();
+  glm::mat4 get_rotation();
 
   void on_key_event(bool key_down, u16 key_code);
   void on_mouse_event(i16 x, i16 y);

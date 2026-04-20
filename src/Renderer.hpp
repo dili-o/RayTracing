@@ -1,6 +1,7 @@
 #pragma once
 #include "BVHNode.hpp"
 #include "Camera.hpp"
+#include "Core/Clock.hpp"
 #include "Core/FreeIndexPool.hpp"
 #include "Core/TlsfAllocator.hpp"
 #include "Material.hpp"
@@ -130,5 +131,19 @@ private:
   std::vector<VkDescriptorImageInfo> image_infos;
   std::vector<VkWriteDescriptorSet> write_infos;
   bool update_descriptor{false};
+
+  // Sky-Rendering
+  std::array<BufferHandle, MAX_FRAMES_IN_FLIGHT> sky_constant_buffers;
+  std::array<BufferHandle, MAX_FRAMES_IN_FLIGHT> sky_atmosphere_buffers;
+  ImageViewHandle transmittance_lut_texture;
+  ImageViewHandle dummy_texture;
+
+  SetLayoutHandle sky_cb_set_layout;
+  std::array<VkDescriptorSet, MAX_FRAMES_IN_FLIGHT> sky_cb_sets;
+  SetLayoutHandle sky_textures_set_layout;
+  VkDescriptorSet sky_textures_set;
+  PipelineHandle transmittance_lut_pipeline;
+
+  Clock timer;
 };
 } // namespace hlx

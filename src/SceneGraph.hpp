@@ -5,7 +5,7 @@
 #include <glm/fwd.hpp>
 
 constexpr u32 INVALID_NODE_ID = UINT32_MAX;
-constexpr u32 MAX_NODE_LEVEL = 8;
+constexpr u32 MAX_NODE_LEVEL = 20;
 
 namespace hlx {
 struct Renderer;

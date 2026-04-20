@@ -73,8 +73,9 @@ void Camera::update(f32 delta_time) {
   if (glm::length(velocity) == 0)
     return;
 
-  // 1. Get the forward vector (you already calculate this in on_mouse_event)
-  // If you don't store it, recalculate it here or use look_at - position
+  // 1. perspectiveGet the forward vector (you already calculate this in
+  // on_mouse_event) If you don't store it, recalculate it here or use look_at -
+  // position
   glm::vec3 forward = glm::normalize(look_at - position);
 
   // 2. Calculate local axes
@@ -90,6 +91,19 @@ void Camera::update(f32 delta_time) {
   // 4. Keep look_at in front of the camera
   look_at = position + forward;
   changed = true;
+}
+
+glm::mat4 Camera::get_rotation() {
+  glm::quat pitch_rotation = glm::angleAxis(pitch, glm::vec3{1.f, 0.f, 0.f});
+  glm::quat yaw_rotation = glm::angleAxis(yaw, glm::vec3{0.f, -1.f, 0.f});
+
+  return glm::toMat4(yaw_rotation) * glm::toMat4(pitch_rotation);
+}
+
+glm::mat4 Camera::get_view() {
+  glm::mat4 camera_translation = glm::translate(glm::mat4(1.f), position);
+  glm::mat4 camera_rotation = get_rotation();
+  return glm::inverse(camera_translation * camera_rotation);
 }
 
 void Camera::on_key_event(bool key_down, u16 key_code) {
