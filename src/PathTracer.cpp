@@ -87,7 +87,7 @@ void PathTracer::init() {
   end_application = false;
   staging_buffer.flush();
 
-  scene_graph.init(1000);
+  scene_graph.init(2000);
 
   // Create Cornell Box
   u32 cornell_box_id = scene_graph.add_node(0, "Cornell Box");

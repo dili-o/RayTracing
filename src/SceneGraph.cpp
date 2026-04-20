@@ -299,7 +299,9 @@ static bool load_gltf_scene(SceneGraph &scene_graph, Renderer *renderer,
 
         std::string primitive_name = "Mesh_" + std::to_string(i);
         i32 primitive_node =
-            scene_graph.add_node(node_hierarchy_index, primitive_name);
+            gltf_mesh.primitives.size() == 1
+                ? node_hierarchy_index
+                : scene_graph.add_node(node_hierarchy_index, primitive_name);
 
         // Index buffer per primitive
         {
