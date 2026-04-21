@@ -297,90 +297,10 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
   tri_id_allocator.init(buffer_info.size, alignof(u32));
 
   // Material buffers
-  lambert_mats_index_pool.init(MAX_MATERIAL_COUNT);
-  lambert_materials.resize(MAX_MATERIAL_COUNT);
-  lambert_textures.resize(MAX_MATERIAL_COUNT);
-  image_infos.reserve(MAX_MATERIAL_COUNT);
-  write_infos.reserve(MAX_MATERIAL_COUNT);
-  buffer_info.size = MAX_MATERIAL_COUNT * sizeof(Lambert);
-  lambert_materials_buffer = p_rm->create_buffer("LambertMaterialsBuffer",
-                                                 buffer_info, vma_alloc_info);
-
-  const VkDescriptorPoolSize bindless_pool_size = {
-      .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-      .descriptorCount = MAX_MATERIAL_COUNT};
-  VkDescriptorPoolCreateInfo descriptor_pool_info{
-      VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
-  descriptor_pool_info.maxSets = 1;
-  descriptor_pool_info.poolSizeCount = 1;
-  descriptor_pool_info.pPoolSizes = &bindless_pool_size;
-  descriptor_pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
-  VK_CHECK(vkCreateDescriptorPool(p_device->vk_device, &descriptor_pool_info,
-                                  nullptr, &vk_lambert_descriptor_pool));
-  p_device->set_resource_name<VkDescriptorPool>(
-      VK_OBJECT_TYPE_DESCRIPTOR_POOL, vk_lambert_descriptor_pool,
-      "LambertMaterialsDescriptorPool");
-
-  // Create Bindless Set Layout and Set
-  VkDescriptorSetLayoutBinding bindless_layout_binding = {
-      .binding = 0,
-      .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-      .descriptorCount = MAX_MATERIAL_COUNT,
-      .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT};
-
-  VkDescriptorBindingFlags layout_flags =
-      VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT |
-      VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
-
-  VkDescriptorSetLayoutBindingFlagsCreateInfo flags_info{
-      VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO};
-  flags_info.bindingCount = 1;
-  flags_info.pBindingFlags = &layout_flags;
-
-  VkDescriptorSetLayoutCreateInfo bindless_layout_info{
-      VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
-  bindless_layout_info.bindingCount = 1;
-  bindless_layout_info.pBindings = &bindless_layout_binding;
-  bindless_layout_info.flags =
-      VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
-  bindless_layout_info.pNext = &flags_info;
-  VK_CHECK(vkCreateDescriptorSetLayout(p_device->vk_device,
-                                       &bindless_layout_info, nullptr,
-                                       &vk_lambert_descriptor_set_layout));
-  p_device->set_resource_name<VkDescriptorSetLayout>(
-      VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, vk_lambert_descriptor_set_layout,
-      "LambertMaterialsSetLayout");
-
-  // Allocate the bindless set
-  VkDescriptorSetAllocateInfo bindless_set_alloc_info{
-      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-      .descriptorPool = vk_lambert_descriptor_pool,
-      .descriptorSetCount = 1,
-      .pSetLayouts = &vk_lambert_descriptor_set_layout};
-  VK_CHECK(vkAllocateDescriptorSets(p_device->vk_device,
-                                    &bindless_set_alloc_info,
-                                    &vk_lambert_descriptor_set));
-  p_device->set_resource_name<VkDescriptorSet>(VK_OBJECT_TYPE_DESCRIPTOR_SET,
-                                               vk_lambert_descriptor_set,
-                                               "LambertMaterialsSet");
-
-  metal_mats_index_pool.init(MAX_MATERIAL_COUNT);
-  metal_materials.resize(MAX_MATERIAL_COUNT);
-  buffer_info.size = MAX_MATERIAL_COUNT * sizeof(Metal);
-  metal_materials_buffer =
-      p_rm->create_buffer("MetalMaterialsBuffer", buffer_info, vma_alloc_info);
-
-  dielectric_mats_index_pool.init(MAX_MATERIAL_COUNT);
-  dielectric_materials.resize(MAX_MATERIAL_COUNT);
-  buffer_info.size = MAX_MATERIAL_COUNT * sizeof(Dielectric);
-  dielectric_materials_buffer = p_rm->create_buffer(
-      "DielectricMaterialsBuffer", buffer_info, vma_alloc_info);
-
-  emissive_mats_index_pool.init(MAX_MATERIAL_COUNT);
-  emissive_materials.resize(MAX_MATERIAL_COUNT);
-  buffer_info.size = MAX_MATERIAL_COUNT * sizeof(Emissive);
-  emissive_materials_buffer = p_rm->create_buffer("EmissiveMaterialsBuffer",
-                                                  buffer_info, vma_alloc_info);
+  lambert_mats.init(MAX_MATERIAL_COUNT, p_rm);
+  metal_mats.init(MAX_MATERIAL_COUNT, p_rm);
+  dielectric_mats.init(MAX_MATERIAL_COUNT, p_rm);
+  emissive_mats.init(MAX_MATERIAL_COUNT, p_rm);
 
   // Create with upper bound limit
   buffer_info.size = (MAX_TRIANGLE_COUNT * 2 - 1) * sizeof(BVHNode);
@@ -464,7 +384,7 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
                                        .offset = 0,
                                        .size = sizeof(PushConstant)};
   VkDescriptorSetLayout set_layouts[] = {vk_set_layout,
-                                         vk_lambert_descriptor_set_layout};
+                                         lambert_mats.vk_descriptor_set_layout};
   VkPipelineLayoutCreateInfo pipeline_layout_info{
       VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
   pipeline_layout_info.setLayoutCount = 2;
@@ -480,6 +400,10 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
 
   p_rm->queue_destroy({path_tracing_shader});
 
+  // Create default material
+  default_material = add_lambert_material(glm::vec3(0.7f));
+  ++lambert_mats.reference_counts[default_material.index];
+
   // TODO: Remove
   staging_buffer.flush();
 }
@@ -487,6 +411,12 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
 void Renderer::shutdown() {
   HASSERT(p_rm);
 
+  remove_material(default_material);
+
+  lambert_mats.shutdown(p_rm);
+  metal_mats.shutdown(p_rm);
+  dielectric_mats.shutdown(p_rm);
+  emissive_mats.shutdown(p_rm);
   for (BufferHandle &handle : uniform_buffers) {
     p_rm->queue_destroy({handle});
   }
@@ -495,10 +425,6 @@ void Renderer::shutdown() {
   p_rm->queue_destroy({blas_buffer});
   p_rm->queue_destroy({tlas_nodes_buffer});
   p_rm->queue_destroy({bvh_nodes_buffer});
-  p_rm->queue_destroy({emissive_materials_buffer});
-  p_rm->queue_destroy({dielectric_materials_buffer});
-  p_rm->queue_destroy({lambert_materials_buffer});
-  p_rm->queue_destroy({metal_materials_buffer});
   p_rm->queue_destroy({triangle_shading_buffer});
   p_rm->queue_destroy({triangle_geom_buffer});
   p_rm->queue_destroy({set_layout});
@@ -527,29 +453,6 @@ void Renderer::shutdown() {
   // blas_instance_index, rather than doing a release_all() here
   blas_inst_index_pool.release_all();
   blas_inst_index_pool.shutdown();
-
-  // TODO: Users of add_<material> should be responsible for releasing each
-  // material, rather than doing a release_all() here
-  for (u32 index : lambert_material_indices) {
-    // Destroy remaining textures
-    p_rm->queue_destroy({.handle = lambert_textures[index]});
-  }
-
-  lambert_mats_index_pool.release_all();
-  lambert_mats_index_pool.shutdown();
-  metal_mats_index_pool.release_all();
-  metal_mats_index_pool.shutdown();
-  emissive_mats_index_pool.release_all();
-  emissive_mats_index_pool.shutdown();
-  dielectric_mats_index_pool.release_all();
-  dielectric_mats_index_pool.shutdown();
-
-  // Destroy descriptors
-  VK_CHECK(vkDeviceWaitIdle(p_device->vk_device));
-  vkDestroyDescriptorSetLayout(p_device->vk_device,
-                               vk_lambert_descriptor_set_layout, nullptr);
-  vkDestroyDescriptorPool(p_device->vk_device, vk_lambert_descriptor_pool,
-                          nullptr);
 
   p_rm = nullptr;
   p_device = nullptr;
@@ -587,13 +490,8 @@ void Renderer::render(Camera &camera) {
     frame_index = 0;
     camera.changed = false;
   }
-  if (update_descriptor) {
-    vkUpdateDescriptorSets(p_device->vk_device, write_infos.size(),
-                           write_infos.data(), 0, nullptr);
-    image_infos.clear();
-    write_infos.clear();
-    update_descriptor = false;
-  }
+
+  lambert_mats.update(p_device);
   // Rebuild tlas if a change was made
   if (rebuild_tlas)
     build_tlas();
@@ -648,13 +546,13 @@ void Renderer::render(Camera &camera) {
           p_rm->access_buffer(blas_instances_buffer)->vk_device_address,
       .tri_ids_buffer = p_rm->access_buffer(tri_ids_buffer)->vk_device_address,
       .lambert_materials_buffer =
-          p_rm->access_buffer(lambert_materials_buffer)->vk_device_address,
+          p_rm->access_buffer(lambert_mats.buffer)->vk_device_address,
       .metal_materials_buffer =
-          p_rm->access_buffer(metal_materials_buffer)->vk_device_address,
+          p_rm->access_buffer(metal_mats.buffer)->vk_device_address,
       .dielectric_materials_buffer =
-          p_rm->access_buffer(dielectric_materials_buffer)->vk_device_address,
+          p_rm->access_buffer(dielectric_mats.buffer)->vk_device_address,
       .emissive_materials_buffer =
-          p_rm->access_buffer(emissive_materials_buffer)->vk_device_address,
+          p_rm->access_buffer(emissive_mats.buffer)->vk_device_address,
   };
   VulkanBuffer *uniform_buffer =
       p_rm->access_buffer(uniform_buffers.at(p_device->current_frame));
@@ -729,7 +627,7 @@ void Renderer::render(Camera &camera) {
   vkCmdPushConstants(cmd, pipeline->vk_pipeline_layout,
                      VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstant),
                      &push_constant);
-  VkDescriptorSet vk_sets[] = {vk_set, vk_lambert_descriptor_set};
+  VkDescriptorSet vk_sets[] = {vk_set, lambert_mats.vk_descriptor_set};
   const VkBindDescriptorSetsInfo bind_info{
       .sType = VK_STRUCTURE_TYPE_BIND_DESCRIPTOR_SETS_INFO,
       .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
@@ -785,65 +683,7 @@ void Renderer::create_output_image(u32 width, u32 height) {
 
 MaterialHandle Renderer::add_lambert_material(i32 width, i32 height,
                                               u8 *pixels) {
-  u32 index = lambert_mats_index_pool.obtain_new();
-  // Create Image
-  VkImageCreateInfo image_info{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
-  image_info.imageType = VK_IMAGE_TYPE_2D;
-  image_info.extent.width = width;
-  image_info.extent.height = height;
-  image_info.extent.depth = 1;
-  image_info.mipLevels = 1;
-  image_info.arrayLayers = 1;
-  image_info.format = VK_FORMAT_R8G8B8A8_UNORM;
-  image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
-  image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-  image_info.usage =
-      VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-  image_info.samples = VK_SAMPLE_COUNT_1_BIT;
-  image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-  VmaAllocationCreateInfo vma_alloc_info{};
-  vma_alloc_info.requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-
-  VkImageViewCreateInfo view_info{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
-  view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-  view_info.format = image_info.format;
-  view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-  view_info.subresourceRange.baseMipLevel = 0;
-  view_info.subresourceRange.levelCount = image_info.mipLevels;
-  view_info.subresourceRange.baseArrayLayer = 0;
-  view_info.subresourceRange.layerCount = 1;
-
-  std::string name = "Lambert " + std::to_string(index) + "Image";
-  std::string view_name = name + "View";
-  lambert_textures[index] = p_rm->create_image_view(view_name, name, image_info,
-                                                    vma_alloc_info, view_info);
-  lambert_materials[index] = {index};
-  lambert_material_indices.insert(index);
-  // Stage pixel data
-  staging_buffer.stage(pixels, lambert_textures[index],
-                       image_info.extent.width * image_info.extent.height * 4);
-  // Stage buffer change
-  staging_buffer.stage(&lambert_materials[index], lambert_materials_buffer,
-                       index * sizeof(Lambert), sizeof(Lambert));
-  // Descriptor update write
-  const VkDescriptorImageInfo descriptor_image_info{
-      .sampler = p_rm->access_sampler(texture_sampler)->vk_handle,
-      .imageView = p_rm->access_image_view(lambert_textures[index])->vk_handle,
-      .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-  image_infos.push_back(descriptor_image_info);
-
-  const VkWriteDescriptorSet image_write = {
-      .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-      .dstSet = vk_lambert_descriptor_set,
-      .dstBinding = 0,
-      .dstArrayElement = index,
-      .descriptorCount = 1,
-      .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-      .pImageInfo = &image_infos[image_infos.size() - 1]};
-  write_infos.push_back(image_write);
-  update_descriptor = true;
-  return MaterialHandle(index, MaterialType::LAMBERT);
+  return lambert_mats.add_material(staging_buffer, p_rm, width, height, pixels);
 }
 
 MaterialHandle Renderer::add_lambert_material(const glm::vec3 &albedo) {
@@ -875,59 +715,34 @@ MaterialHandle Renderer::add_lambert_material(std::string_view file_path) {
 
 MaterialHandle Renderer::add_metal_material(const glm::vec3 &albedo,
                                             const f32 fuzz) {
-  u32 index = metal_mats_index_pool.obtain_new();
-  metal_materials[index] = {albedo.x, albedo.y, albedo.z, fuzz};
-  metal_material_indices.insert(index);
-  // Stage addition
-  staging_buffer.stage(&metal_materials[index], metal_materials_buffer,
-                       index * sizeof(Metal), sizeof(Metal));
-  return MaterialHandle(index, MaterialType::METAL);
+  return metal_mats.add_material(staging_buffer, albedo, fuzz);
 }
 
 MaterialHandle Renderer::add_dielectric_material(const f32 refractive_index) {
-  u32 index = dielectric_mats_index_pool.obtain_new();
-  dielectric_materials[index] = {refractive_index};
-  dielectric_material_indices.insert(index);
-  // Stage addition
-  staging_buffer.stage(&dielectric_materials[index],
-                       dielectric_materials_buffer, index * sizeof(Dielectric),
-                       sizeof(Dielectric));
-  return MaterialHandle(index, MaterialType::DIELECTRIC);
+  return dielectric_mats.add_material(staging_buffer, refractive_index);
 }
 
 MaterialHandle Renderer::add_emissive_material(const glm::vec3 &intensity) {
-  u32 index = emissive_mats_index_pool.obtain_new();
-  emissive_materials[index] = {intensity.x, intensity.y, intensity.z, 1.f};
-  emissive_material_indices.insert(index);
-  // Stage addition
-  staging_buffer.stage(&emissive_materials[index], emissive_materials_buffer,
-                       index * sizeof(Emissive), sizeof(Emissive));
-  return MaterialHandle(index, MaterialType::EMISSIVE);
+  return emissive_mats.add_material(staging_buffer, intensity);
 }
 
 void Renderer::remove_material(const MaterialHandle &material_handle) {
   // TODO: Check if any blas instance uses the material
   switch (material_handle.type) {
   case MaterialType::LAMBERT: {
-    lambert_mats_index_pool.release(material_handle.index);
-    lambert_material_indices.erase(material_handle.index);
-    p_rm->queue_destroy({.handle = lambert_textures[material_handle.index],
-                         .frame_index = p_device->frame_count});
+    lambert_mats.remove_material(material_handle, p_rm);
     break;
   }
   case MaterialType::METAL: {
-    metal_mats_index_pool.release(material_handle.index);
-    metal_material_indices.erase(material_handle.index);
+    metal_mats.remove_material(material_handle);
     break;
   }
   case MaterialType::EMISSIVE: {
-    emissive_mats_index_pool.release(material_handle.index);
-    emissive_material_indices.erase(material_handle.index);
+    emissive_mats.remove_material(material_handle);
     break;
   }
   case MaterialType::DIELECTRIC: {
-    dielectric_mats_index_pool.release(material_handle.index);
-    dielectric_material_indices.erase(material_handle.index);
+    dielectric_mats.remove_material(material_handle);
     break;
   }
   default:
@@ -1052,6 +867,30 @@ u32 Renderer::add_blas_instance(u32 blas_index, const glm::mat4 &transform,
   rebuild_tlas = true;
   blas_instance_ids.insert(index);
 
+  // Incrememnt material ref count
+  switch (material.type) {
+  case MaterialType::LAMBERT: {
+    ++lambert_mats.reference_counts[material.index];
+    break;
+  }
+  case MaterialType::METAL: {
+    ++metal_mats.reference_counts[material.index];
+    break;
+  }
+  case MaterialType::DIELECTRIC: {
+    ++dielectric_mats.reference_counts[material.index];
+    break;
+  }
+  case MaterialType::EMISSIVE: {
+    ++emissive_mats.reference_counts[material.index];
+    break;
+  }
+  default: {
+    HCRITICAL("Unknown MaterialType");
+    break;
+  }
+  }
+
   // Increment blas use
   blas_use_count[blas_index]++;
   return index;
@@ -1095,6 +934,9 @@ void Renderer::remove_blas(u32 blas_id) {
 }
 
 void Renderer::remove_blas_instance(u32 blas_instance_id) {
+  // TODO: Check if blas_instance_id is valid
+  remove_material(blas_instances[blas_instance_id].material_handle);
+
   blas_inst_index_pool.release(blas_instance_id);
   blas_instance_ids.erase(blas_instance_id);
   remove_blas(blas_instances[blas_instance_id].blas_id);
@@ -1162,7 +1004,7 @@ void Renderer::build_tlas() {
   VulkanBuffer *vk_tlas_nodes = p_rm->access_buffer(tlas_nodes_buffer);
 
   staging_buffer.stage(tlas_nodes.data(), tlas_nodes_buffer, 0,
-                       vk_tlas_nodes->vk_device_size);
+                       tlas.node_count * sizeof(TLASNode));
   staging_buffer.flush();
   rebuild_tlas = false;
   frame_index = 0;
