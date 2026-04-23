@@ -334,7 +334,7 @@ static bool load_gltf_scene(SceneGraph &scene_graph, Renderer *renderer,
 
         // load normal vertices
         {
-          auto normal_it = primitive.findAttribute("Normal");
+          auto normal_it = primitive.findAttribute("NORMAL");
           if (normal_it == primitive.attributes.end()) {
             normals.reserve(positions.size());
             for (size_t i = 0; i < indices.size(); i += 3) {
@@ -352,8 +352,7 @@ static bool load_gltf_scene(SceneGraph &scene_graph, Renderer *renderer,
             }
           } else {
             fastgltf::Accessor &normal_accessor =
-                asset->accessors[primitive.findAttribute("NORMAL")
-                                     ->accessorIndex];
+                asset->accessors[normal_it->accessorIndex];
 
             normals.reserve(normal_accessor.count);
 
