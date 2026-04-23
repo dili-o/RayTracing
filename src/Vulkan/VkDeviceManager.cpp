@@ -598,48 +598,6 @@ void VkDeviceManager::init() {
   set_resource_name<VkDescriptorPool>(VK_OBJECT_TYPE_DESCRIPTOR_POOL,
                                       vk_descriptor_pool, "MainDescriptorPool");
 
-  // Bindless pool
-  const VkDescriptorPoolSize bindless_pool_size = {
-      .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-      .descriptorCount = MAX_TEXTURES};
-  descriptor_pool_info.maxSets = 1;
-  descriptor_pool_info.poolSizeCount = 1;
-  descriptor_pool_info.pPoolSizes = &bindless_pool_size;
-  descriptor_pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
-  VK_CHECK(vkCreateDescriptorPool(vk_device, &descriptor_pool_info, nullptr,
-                                  &vk_bindless_descriptor_pool));
-  set_resource_name<VkDescriptorPool>(VK_OBJECT_TYPE_DESCRIPTOR_POOL,
-                                      vk_bindless_descriptor_pool,
-                                      "BindlessDescriptorPool");
-
-  // Create Bindless Set Layout and Set
-  VkDescriptorSetLayoutBinding bindless_layout_binding = {
-      .binding = 0,
-      .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-      .descriptorCount = MAX_TEXTURES,
-      .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT};
-
-  VkDescriptorSetLayoutCreateInfo bindless_layout_info{
-      VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
-  bindless_layout_info.bindingCount = 1;
-  bindless_layout_info.pBindings = &bindless_layout_binding;
-  bindless_layout_info.flags =
-      VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
-  VK_CHECK(vkCreateDescriptorSetLayout(vk_device, &bindless_layout_info,
-                                       nullptr, &vk_bindless_set_layout));
-  set_resource_name<VkDescriptorSetLayout>(VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,
-                                           vk_bindless_set_layout,
-                                           "BindlessSetLayout");
-
-  // Allocate the bindless set
-  VkDescriptorSetAllocateInfo bindless_set_alloc_info{
-      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-      .descriptorPool = vk_bindless_descriptor_pool,
-      .descriptorSetCount = 1,
-      .pSetLayouts = &vk_bindless_set_layout};
-  VK_CHECK(vkAllocateDescriptorSets(vk_device, &bindless_set_alloc_info,
-                                    &vk_bindless_set));
-
   // Create Command pool and buffers
   VkCommandPoolCreateInfo pool_info{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
   pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
@@ -821,9 +779,6 @@ void VkDeviceManager::shutdown() {
   destroy_swapchain();
 
   vkDestroyCommandPool(vk_device, vk_command_pool, nullptr);
-
-  vkDestroyDescriptorSetLayout(vk_device, vk_bindless_set_layout, nullptr);
-  vkDestroyDescriptorPool(vk_device, vk_bindless_descriptor_pool, nullptr);
   vkDestroyDescriptorPool(vk_device, vk_descriptor_pool, nullptr);
   vmaDestroyAllocator(vma_allocator);
 

@@ -159,7 +159,8 @@ void compute_main(uint3 dispatch_thread_id: SV_DispatchThreadID,
           } else {
             float3 unit_direction = normalize(r.direction);
             float a = 0.5f * (unit_direction.y + 1.f);
-            float3 sky = (1.f - a) * float3(0.7f) + a * float3(0.5f, 0.7f, 1.f);
+            float3 sky = lerp(float3(0.7f), float3(0.5f, 0.7f, 1.f), a);
+
             // float3 sky = float3(0.f);
             sample_radiance += attenuation * sky;
             break;

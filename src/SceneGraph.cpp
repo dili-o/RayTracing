@@ -87,7 +87,7 @@ static MaterialHandle gltf_load_texture(Renderer *renderer,
                                                    // loading local files.
 
             material_handle = renderer->add_lambert_material(
-                std::string(texture_path) + filePath.uri.c_str());
+                std::string(texture_path) + "\\" + filePath.uri.c_str());
           },
           [&](fastgltf::sources::BufferView &view) {
             auto &bufferView = asset.bufferViews[view.bufferViewIndex];
@@ -229,7 +229,10 @@ static bool load_gltf_scene(SceneGraph &scene_graph, Renderer *renderer,
 
   // If we only have one root node then we add it to the scene graph's root,
   // else we create a new node to be the root of the gltf asset
-  fastgltf::Scene &root_scene = asset->scenes[asset->defaultScene.value()];
+  fastgltf::Scene &root_scene =
+      asset
+          ->scenes[asset->defaultScene.has_value() ? asset->defaultScene.value()
+                                                   : 0];
   i32 root_node_parent = root_scene.nodeIndices.size() == 1
                              ? parent_node
                              : scene_graph.add_node(parent_node, std::string());
@@ -238,7 +241,7 @@ static bool load_gltf_scene(SceneGraph &scene_graph, Renderer *renderer,
   for (u32 i = 0; i < root_scene.nodeIndices.size(); ++i) {
     gltf_node_queue.enqueue(root_scene.nodeIndices[i]);
     fastgltf::Node &node = asset->nodes[root_scene.nodeIndices[i]];
-    std::string node_name = node.name.empty() ? nullptr : node.name.c_str();
+    std::string node_name = node.name.c_str();
 
     gltf_to_hierarchy_node[root_scene.nodeIndices[i]] =
         scene_graph.add_node(root_node_parent, node_name);
@@ -278,8 +281,7 @@ static bool load_gltf_scene(SceneGraph &scene_graph, Renderer *renderer,
     for (u32 i = 0; i < node.children.size(); ++i) {
       gltf_node_queue.enqueue(node.children[i]);
       fastgltf::Node &child_node = asset->nodes[node.children[i]];
-      std::string child_node_name =
-          child_node.name.empty() ? nullptr : child_node.name.c_str();
+      std::string child_node_name = child_node.name.c_str();
       gltf_to_hierarchy_node[node.children[i]] =
           scene_graph.add_node(node_hierarchy_index, child_node_name);
     }
@@ -332,18 +334,36 @@ static bool load_gltf_scene(SceneGraph &scene_graph, Renderer *renderer,
 
         // load normal vertices
         {
-          fastgltf::Accessor &normal_accessor =
-              asset
-                  ->accessors[primitive.findAttribute("NORMAL")->accessorIndex];
+          auto normal_it = primitive.findAttribute("Normal");
+          if (normal_it == primitive.attributes.end()) {
+            normals.reserve(positions.size());
+            for (size_t i = 0; i < indices.size(); i += 3) {
+              glm::vec3 &p0 = positions[indices[i]];
+              glm::vec3 &p1 = positions[indices[i + 1]];
+              glm::vec3 &p2 = positions[indices[i + 2]];
 
-          normals.reserve(normal_accessor.count);
+              glm::vec3 edge1 = p1 - p0;
+              glm::vec3 edge2 = p2 - p0;
 
-          fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec3>(
-              asset.get(), normal_accessor,
-              [&](fastgltf::math::fvec3 n, size_t index) {
-                normals.push_back(
-                    glm::vec3(n.data()[0], n.data()[1], n.data()[2]));
-              });
+              glm::vec3 normal = glm::normalize(glm::cross(edge1, edge2));
+              normals.push_back(normal);
+              normals.push_back(normal);
+              normals.push_back(normal);
+            }
+          } else {
+            fastgltf::Accessor &normal_accessor =
+                asset->accessors[primitive.findAttribute("NORMAL")
+                                     ->accessorIndex];
+
+            normals.reserve(normal_accessor.count);
+
+            fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec3>(
+                asset.get(), normal_accessor,
+                [&](fastgltf::math::fvec3 n, size_t index) {
+                  normals.push_back(
+                      glm::vec3(n.data()[0], n.data()[1], n.data()[2]));
+                });
+          }
         }
 
         // load tex_coord vertices

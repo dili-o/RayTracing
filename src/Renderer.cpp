@@ -17,7 +17,7 @@
 #include <stb_image.h>
 
 // TODO: Make configurable
-constexpr u32 samples_per_pixel = 1u;
+constexpr u32 samples_per_pixel = 3u;
 
 static constexpr VkFormat output_image_format = VK_FORMAT_R32G32B32A32_SFLOAT;
 static constexpr size_t MAX_TRIANGLE_COUNT = 4'000'000;
@@ -991,21 +991,23 @@ void Renderer::load_plane_data() {
 
 void Renderer::build_tlas() {
   tlas_nodes.resize(blas_inst_index_pool.size * 2);
-  Clock clock;
-  clock.start();
-  std::vector<u32> temp_blas_instance_ids(blas_instance_ids.begin(),
-                                          blas_instance_ids.end());
-  tlas.build(tlas_nodes, blas_instances, temp_blas_instance_ids, blases,
-             std::span<BVHNode>(
-                 reinterpret_cast<BVHNode *>(bvh_nodes_allocator.memory),
-                 bvh_nodes_allocator.max_size / sizeof(BVHNode)));
-  HINFO("TLAS build time: {}s", clock.get_elapsed_time_s());
+  if (tlas_nodes.size()) {
+    Clock clock;
+    clock.start();
+    std::vector<u32> temp_blas_instance_ids(blas_instance_ids.begin(),
+                                            blas_instance_ids.end());
+    tlas.build(tlas_nodes, blas_instances, temp_blas_instance_ids, blases,
+               std::span<BVHNode>(
+                   reinterpret_cast<BVHNode *>(bvh_nodes_allocator.memory),
+                   bvh_nodes_allocator.max_size / sizeof(BVHNode)));
+    HINFO("TLAS build time: {}s", clock.get_elapsed_time_s());
 
-  VulkanBuffer *vk_tlas_nodes = p_rm->access_buffer(tlas_nodes_buffer);
+    VulkanBuffer *vk_tlas_nodes = p_rm->access_buffer(tlas_nodes_buffer);
 
-  staging_buffer.stage(tlas_nodes.data(), tlas_nodes_buffer, 0,
-                       tlas.node_count * sizeof(TLASNode));
-  staging_buffer.flush();
+    staging_buffer.stage(tlas_nodes.data(), tlas_nodes_buffer, 0,
+                         tlas.node_count * sizeof(TLASNode));
+    staging_buffer.flush();
+  }
   rebuild_tlas = false;
   frame_index = 0;
 }

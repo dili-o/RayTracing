@@ -119,7 +119,7 @@ void PathTracer::init() {
     u32 node_id = scene_graph.add_node(cornell_box_id, "Ceiling");
 
     Transform t;
-    t.position = glm::vec3(0.0f, 1.99f, -0.025f);
+    t.position = glm::vec3(0.0f, 2.0, -0.025f);
     t.scale = glm::vec3(2.0f, 1.0f, 2.0f);
     t.rotation = glm::angleAxis(glm::pi<float>(), glm::vec3(1, 0, 0));
 
@@ -134,7 +134,7 @@ void PathTracer::init() {
     u32 node_id = scene_graph.add_node(cornell_box_id, "Back Wall");
 
     Transform t;
-    t.position = glm::vec3(0.0f, 1.0f, -1.0f);
+    t.position = glm::vec3(0.0f, 1.0f, -1.025f);
     t.scale = glm::vec3(2.0f, 1.0f, 2.0f);
     t.rotation = glm::angleAxis(-glm::half_pi<float>(), glm::vec3(1, 0, 0));
 
@@ -179,7 +179,7 @@ void PathTracer::init() {
     u32 node_id = scene_graph.add_node(cornell_box_id, "Ceiling Light");
 
     Transform t;
-    t.position = glm::vec3(0.0f, 1.98f, -0.03f);
+    t.position = glm::vec3(0.0f, 1.99f, -0.03f);
     t.scale = glm::vec3(0.5f, 1.0f, 0.4f);
     t.rotation = glm::angleAxis(glm::pi<float>(), glm::vec3(1, 0, 0));
 
