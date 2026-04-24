@@ -15,6 +15,7 @@
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
 #include <stb_image.h>
+#include <tracy/public/tracy/Tracy.hpp>
 
 // TODO: Make configurable
 constexpr u32 samples_per_pixel = 3u;
@@ -485,6 +486,7 @@ void Renderer::resize(u32 output_image_width, u32 output_image_height) {
 }
 
 void Renderer::render(Camera &camera) {
+  ZoneScoped;
   // Reset frame number if cam has moved
   if (camera.changed) {
     frame_index = 0;

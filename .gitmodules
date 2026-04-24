@@ -10,3 +10,6 @@
 [submodule "Vendor/fastgltf"]
 	path = Vendor/fastgltf
 	url = https://github.com/spnda/fastgltf.git
+[submodule "Vendor/tracy"]
+	path = Vendor/tracy
+	url = https://github.com/wolfpld/tracy.git

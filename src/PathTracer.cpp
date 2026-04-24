@@ -13,6 +13,7 @@
 #include "Vulkan/VkUtils.hpp"
 // Vendor
 #include <imgui/imgui.h>
+#include <tracy/public/tracy/Tracy.hpp>
 
 namespace hlx {
 
@@ -509,6 +510,7 @@ void PathTracer::run() {
                       delta_time, renderer.total_triangle_count)
               .c_str());
     }
+    FrameMark;
   }
 
   cam.shutdown();
