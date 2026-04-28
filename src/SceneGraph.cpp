@@ -87,7 +87,7 @@ static MaterialHandle gltf_load_texture(Renderer *renderer,
                                                    // loading local files.
 
             material_handle = renderer->add_lambert_material(
-                std::string(texture_path) + filePath.uri.c_str());
+                std::string(texture_path) + "\\" + filePath.uri.c_str());
           },
           [&](fastgltf::sources::BufferView &view) {
             auto &bufferView = asset.bufferViews[view.bufferViewIndex];
@@ -229,7 +229,10 @@ static bool load_gltf_scene(SceneGraph &scene_graph, Renderer *renderer,
 
   // If we only have one root node then we add it to the scene graph's root,
   // else we create a new node to be the root of the gltf asset
-  fastgltf::Scene &root_scene = asset->scenes[asset->defaultScene.value()];
+  fastgltf::Scene &root_scene =
+      asset
+          ->scenes[asset->defaultScene.has_value() ? asset->defaultScene.value()
+                                                   : 0];
   i32 root_node_parent = root_scene.nodeIndices.size() == 1
                              ? parent_node
                              : scene_graph.add_node(parent_node, std::string());
@@ -238,7 +241,7 @@ static bool load_gltf_scene(SceneGraph &scene_graph, Renderer *renderer,
   for (u32 i = 0; i < root_scene.nodeIndices.size(); ++i) {
     gltf_node_queue.enqueue(root_scene.nodeIndices[i]);
     fastgltf::Node &node = asset->nodes[root_scene.nodeIndices[i]];
-    std::string node_name = node.name.empty() ? nullptr : node.name.c_str();
+    std::string node_name = node.name.c_str();
 
     gltf_to_hierarchy_node[root_scene.nodeIndices[i]] =
         scene_graph.add_node(root_node_parent, node_name);
@@ -278,8 +281,7 @@ static bool load_gltf_scene(SceneGraph &scene_graph, Renderer *renderer,
     for (u32 i = 0; i < node.children.size(); ++i) {
       gltf_node_queue.enqueue(node.children[i]);
       fastgltf::Node &child_node = asset->nodes[node.children[i]];
-      std::string child_node_name =
-          child_node.name.empty() ? nullptr : child_node.name.c_str();
+      std::string child_node_name = child_node.name.c_str();
       gltf_to_hierarchy_node[node.children[i]] =
           scene_graph.add_node(node_hierarchy_index, child_node_name);
     }
@@ -335,18 +337,35 @@ static bool load_gltf_scene(SceneGraph &scene_graph, Renderer *renderer,
 
         // load normal vertices
         {
-          fastgltf::Accessor &normal_accessor =
-              asset
-                  ->accessors[primitive.findAttribute("NORMAL")->accessorIndex];
+          auto normal_it = primitive.findAttribute("NORMAL");
+          if (normal_it == primitive.attributes.end()) {
+            normals.reserve(positions.size());
+            for (size_t i = 0; i < indices.size(); i += 3) {
+              glm::vec3 &p0 = positions[indices[i]];
+              glm::vec3 &p1 = positions[indices[i + 1]];
+              glm::vec3 &p2 = positions[indices[i + 2]];
 
-          normals.reserve(normal_accessor.count);
+              glm::vec3 edge1 = p1 - p0;
+              glm::vec3 edge2 = p2 - p0;
 
-          fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec3>(
-              asset.get(), normal_accessor,
-              [&](fastgltf::math::fvec3 n, size_t index) {
-                normals.push_back(
-                    glm::vec3(n.data()[0], n.data()[1], n.data()[2]));
-              });
+              glm::vec3 normal = glm::normalize(glm::cross(edge1, edge2));
+              normals.push_back(normal);
+              normals.push_back(normal);
+              normals.push_back(normal);
+            }
+          } else {
+            fastgltf::Accessor &normal_accessor =
+                asset->accessors[normal_it->accessorIndex];
+
+            normals.reserve(normal_accessor.count);
+
+            fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec3>(
+                asset.get(), normal_accessor,
+                [&](fastgltf::math::fvec3 n, size_t index) {
+                  normals.push_back(
+                      glm::vec3(n.data()[0], n.data()[1], n.data()[2]));
+                });
+          }
         }
 
         // load tex_coord vertices
@@ -372,11 +391,13 @@ static bool load_gltf_scene(SceneGraph &scene_graph, Renderer *renderer,
             renderer->add_blas(positions, normals, tex_coords, indices);
 
         // TODO: Right now just using the first lambert material
+        MaterialHandle mat_handle =
+            primitive.materialIndex.has_value()
+                ? material_handles[primitive.materialIndex.value()]
+                : renderer->default_material;
         scene_graph.set_node_blas_instance(
             primitive_node,
-            renderer->add_blas_instance(
-                blas_id, glm::mat4(1.f),
-                material_handles[primitive.materialIndex.value()]));
+            renderer->add_blas_instance(blas_id, glm::mat4(1.f), mat_handle));
       }
     }
   }
@@ -587,9 +608,10 @@ void SceneGraph::delete_node(u32 node_id, Renderer *renderer) {
   }
 
   // Delete the blas instance if it has one
-  u32 blas_instance_id = node_to_blas_instance[node_id];
+  u32 &blas_instance_id = node_to_blas_instance[node_id];
   if (blas_instance_id != UINT32_MAX) {
     renderer->remove_blas_instance(blas_instance_id);
+    blas_instance_id = UINT32_MAX;
   }
 
   // Delete children aswell
@@ -716,26 +738,26 @@ void render_scene_graph_nodes_property(SceneGraph &scene_graph, u32 node_id,
       switch (selected_material_type) {
       case MaterialType::LAMBERT: {
         material_indices =
-            std::vector<int>(renderer->lambert_material_indices.begin(),
-                             renderer->lambert_material_indices.end());
+            std::vector<int>(renderer->lambert_mats.material_indices.begin(),
+                             renderer->lambert_mats.material_indices.end());
         break;
       }
       case MaterialType::METAL: {
         material_indices =
-            std::vector<int>(renderer->metal_material_indices.begin(),
-                             renderer->metal_material_indices.end());
+            std::vector<int>(renderer->metal_mats.material_indices.begin(),
+                             renderer->metal_mats.material_indices.end());
         break;
       }
       case MaterialType::DIELECTRIC: {
         material_indices =
-            std::vector<int>(renderer->dielectric_material_indices.begin(),
-                             renderer->dielectric_material_indices.end());
+            std::vector<int>(renderer->dielectric_mats.material_indices.begin(),
+                             renderer->dielectric_mats.material_indices.end());
         break;
       }
       case MaterialType::EMISSIVE: {
         material_indices =
-            std::vector<int>(renderer->emissive_material_indices.begin(),
-                             renderer->emissive_material_indices.end());
+            std::vector<int>(renderer->emissive_mats.material_indices.begin(),
+                             renderer->emissive_mats.material_indices.end());
         break;
       }
       default: {
@@ -825,7 +847,7 @@ void render_materials_window(Renderer *renderer,
   if (ImGui::BeginTabBar("MaterialTabs")) {
     // Lambert
     if (ImGui::BeginTabItem("Lambert")) {
-      for (const u32 index : renderer->lambert_material_indices) {
+      for (const u32 index : renderer->lambert_mats.material_indices) {
         char label[32];
         snprintf(label, sizeof(label), "Lambert %d", index);
         if (ImGui::Selectable(label, selected_material.index == index &&
@@ -839,7 +861,8 @@ void render_materials_window(Renderer *renderer,
       ImGui::SeparatorText("Selected Material");
       if (selected_material.index != UINT32_MAX &&
           selected_material.type == MaterialType::LAMBERT) {
-        Lambert &mat = renderer->lambert_materials[selected_material.index];
+        Lambert &mat =
+            renderer->lambert_mats.materials[selected_material.index];
         ImGui::Text("Image View Index: %d", mat.index);
       }
       ImGui::SeparatorText("");
@@ -870,7 +893,7 @@ void render_materials_window(Renderer *renderer,
 
     // Metal
     if (ImGui::BeginTabItem("Metal")) {
-      for (const u32 index : renderer->metal_material_indices) {
+      for (const u32 index : renderer->metal_mats.material_indices) {
         char label[32];
         snprintf(label, sizeof(label), "Metal %d", index);
         if (ImGui::Selectable(label, selected_material.index == index &&
@@ -884,7 +907,7 @@ void render_materials_window(Renderer *renderer,
       ImGui::SeparatorText("Selected Material");
       if (selected_material.index != UINT32_MAX &&
           selected_material.type == MaterialType::METAL) {
-        Metal &mat = renderer->metal_materials[selected_material.index];
+        Metal &mat = renderer->metal_mats.materials[selected_material.index];
         ImGui::Text("Albedo: %.3f, %.3f, %.3f", mat.albedo_fuzz[0],
                     mat.albedo_fuzz[1], mat.albedo_fuzz[2]);
         ImGui::Text("Fuzz: %.3f", mat.albedo_fuzz[3]);
@@ -903,7 +926,7 @@ void render_materials_window(Renderer *renderer,
 
     // Dielectric
     if (ImGui::BeginTabItem("Dielectric")) {
-      for (const u32 index : renderer->dielectric_material_indices) {
+      for (const u32 index : renderer->dielectric_mats.material_indices) {
         char label[32];
         snprintf(label, sizeof(label), "Dielectric %d", index);
         if (ImGui::Selectable(label, selected_material.index == index &&
@@ -918,7 +941,7 @@ void render_materials_window(Renderer *renderer,
       if (selected_material.index != UINT32_MAX &&
           selected_material.type == MaterialType::DIELECTRIC) {
         Dielectric &mat =
-            renderer->dielectric_materials[selected_material.index];
+            renderer->dielectric_mats.materials[selected_material.index];
         ImGui::Text("Refraction index: %.3f", mat.refraction_index);
       }
       ImGui::SeparatorText("");
@@ -932,7 +955,7 @@ void render_materials_window(Renderer *renderer,
 
     // Emissive
     if (ImGui::BeginTabItem("Emissive")) {
-      for (const u32 index : renderer->emissive_material_indices) {
+      for (const u32 index : renderer->emissive_mats.material_indices) {
         char label[32];
         snprintf(label, sizeof(label), "Emissive %d", index);
         if (ImGui::Selectable(label, selected_material.index == index &&
@@ -946,7 +969,8 @@ void render_materials_window(Renderer *renderer,
       ImGui::SeparatorText("Selected Material");
       if (selected_material.index != UINT32_MAX &&
           selected_material.type == MaterialType::EMISSIVE) {
-        Emissive &mat = renderer->emissive_materials[selected_material.index];
+        Emissive &mat =
+            renderer->emissive_mats.materials[selected_material.index];
         ImGui::Text("Albedo: %.3f, %.3f, %.3f", mat.intensity[0],
                     mat.intensity[1], mat.intensity[2]);
       }

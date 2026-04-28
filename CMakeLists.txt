@@ -13,15 +13,19 @@ file(TO_CMAKE_PATH "$ENV{VULKAN_SDK}" VULKAN_SDK)
 # Find and include SPIRV-Reflect headers
 set(SPIRV_REFLECT_INCLUDE_DIR "${VULKAN_SDK}/Source/SPIRV-Reflect")
 
-file(GLOB_RECURSE SOURCE_LIST "Src/*.h" "Src/*.hpp" "Src/*.cpp" 
-  "${SPIRV_REFLECT_INCLUDE_DIR}/spirv_reflect.c" "Vendor/simdjson/simdjson.cpp"
-)
-# Imgui
-file(GLOB IMGUI_SOURCE_LIST 
-  "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/imgui/*.cpp"
-)
+file(GLOB_RECURSE SOURCE_LIST "Src/*.h" "Src/*.hpp" "Src/*.cpp")
 
-add_executable (${PROJECT_NAME} ${SOURCE_LIST} ${IMGUI_SOURCE_LIST} "Src/Scene.cpp" "Src/BVHNode.cpp" "Src/TLAS.cpp" "Vendor/tlsf/tlsf.c")
+# Imgui
+file(GLOB VENDOR_SOURCE_LIST 
+  "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/imgui/*.cpp" "${SPIRV_REFLECT_INCLUDE_DIR}/spirv_reflect.c" "Vendor/simdjson/simdjson.cpp" "Vendor/tlsf/tlsf.c")
+
+option(HELIX_WITH_TRACY "Enable Tracy profiler integration" ON)
+
+if(HELIX_WITH_TRACY)
+    list(APPEND VENDOR_SOURCE_LIST "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/tracy/public/TracyClient.cpp")
+endif()
+
+add_executable (${PROJECT_NAME} ${SOURCE_LIST} ${VENDOR_SOURCE_LIST})
 
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/Assets/Shaders/Spirv")
 target_compile_definitions(${PROJECT_NAME} PRIVATE HOME_PATH="${CMAKE_CURRENT_SOURCE_DIR}")
@@ -65,6 +69,15 @@ add_subdirectory(Vendor/fastgltf)
 target_link_libraries(${PROJECT_NAME} PUBLIC fastgltf::fastgltf)
 # Slang
 target_link_libraries(${PROJECT_NAME} PRIVATE "${VULKAN_SDK}/Lib/slang.lib")
+#Tracy
+if(HELIX_WITH_TRACY)
+  add_subdirectory(Vendor/tracy)
+
+  option(TRACY_ENABLE "" ON)
+    target_compile_definitions(${PROJECT_NAME} PUBLIC
+      TRACY_ENABLE
+  )
+endif()
 # -------------------------
 target_include_directories(${PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/")
 target_include_directories(${PROJECT_NAME} PRIVATE "Src/")

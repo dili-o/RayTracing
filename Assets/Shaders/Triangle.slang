@@ -35,6 +35,7 @@ struct TriangleGeom {
     rec.u = u;
     rec.v = v;
 
+    float3 normal = normalize(cross(edge_1.xyz, edge_2.xyz));
     rec.set_face_normal(r, normal.xyz);
 
     return true;
@@ -43,8 +44,6 @@ struct TriangleGeom {
   float4 v0;
   float4 v1;
   float4 v2;
-  // TODO: Remove this
-  float4 normal;
 };
 
 struct TriangleShading {

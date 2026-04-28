@@ -86,9 +86,6 @@ public:
   VkQueue vk_transfer_queue{VK_NULL_HANDLE};
   VkQueue vk_compute_queue{VK_NULL_HANDLE};
   VkDescriptorPool vk_descriptor_pool{VK_NULL_HANDLE};
-  VkDescriptorPool vk_bindless_descriptor_pool{VK_NULL_HANDLE};
-  VkDescriptorSetLayout vk_bindless_set_layout{VK_NULL_HANDLE};
-  VkDescriptorSet vk_bindless_set{VK_NULL_HANDLE};
   VkCommandPool vk_command_pool{VK_NULL_HANDLE};
   std::array<VkCommandBuffer, MAX_FRAMES_IN_FLIGHT> vk_command_buffers;
   u32 current_frame{0};

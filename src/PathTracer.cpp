@@ -13,6 +13,7 @@
 #include "Vulkan/VkUtils.hpp"
 // Vendor
 #include <imgui/imgui.h>
+#include <tracy/public/tracy/Tracy.hpp>
 
 namespace hlx {
 
@@ -119,7 +120,7 @@ void PathTracer::init() {
     u32 node_id = scene_graph.add_node(cornell_box_id, "Ceiling");
 
     Transform t;
-    t.position = glm::vec3(0.0f, 1.99f, -0.025f);
+    t.position = glm::vec3(0.0f, 2.0, -0.025f);
     t.scale = glm::vec3(2.0f, 1.0f, 2.0f);
     t.rotation = glm::angleAxis(glm::pi<float>(), glm::vec3(1, 0, 0));
 
@@ -134,7 +135,7 @@ void PathTracer::init() {
     u32 node_id = scene_graph.add_node(cornell_box_id, "Back Wall");
 
     Transform t;
-    t.position = glm::vec3(0.0f, 1.0f, -1.0f);
+    t.position = glm::vec3(0.0f, 1.0f, -1.025f);
     t.scale = glm::vec3(2.0f, 1.0f, 2.0f);
     t.rotation = glm::angleAxis(-glm::half_pi<float>(), glm::vec3(1, 0, 0));
 
@@ -179,7 +180,7 @@ void PathTracer::init() {
     u32 node_id = scene_graph.add_node(cornell_box_id, "Ceiling Light");
 
     Transform t;
-    t.position = glm::vec3(0.0f, 1.98f, -0.03f);
+    t.position = glm::vec3(0.0f, 1.99f, -0.03f);
     t.scale = glm::vec3(0.5f, 1.0f, 0.4f);
     t.rotation = glm::angleAxis(glm::pi<float>(), glm::vec3(1, 0, 0));
 
@@ -393,6 +394,9 @@ void PathTracer::run() {
   cam.v_up = glm::vec3(0.f, 1.f, 0.f);
   cam.init();
   while (!end_application) {
+    ZoneScopedC(0x0000ff);
+    ZoneName("Main Loop", strlen("Main Loop"));
+
     Platform::handle_os_messages(scene_ui);
     f64 current_time = clock.get_elapsed_time_s();
     f64 delta_time = current_time - last_time;
@@ -509,6 +513,7 @@ void PathTracer::run() {
                       delta_time, renderer.total_triangle_count)
               .c_str());
     }
+    FrameMark;
   }
 
   cam.shutdown();

@@ -60,13 +60,6 @@ public:
   BufferHandle blas_instances_buffer;
   BufferHandle tri_ids_buffer;
   SamplerHandle texture_sampler;
-  VkDescriptorPool vk_lambert_descriptor_pool{VK_NULL_HANDLE};
-  VkDescriptorSetLayout vk_lambert_descriptor_set_layout{VK_NULL_HANDLE};
-  VkDescriptorSet vk_lambert_descriptor_set{VK_NULL_HANDLE};
-  BufferHandle lambert_materials_buffer;
-  BufferHandle metal_materials_buffer;
-  BufferHandle dielectric_materials_buffer;
-  BufferHandle emissive_materials_buffer;
   u32 total_triangle_count{0};
   u32 frame_index{0};
 
@@ -74,22 +67,12 @@ public:
   u32 cube_blas_index{UINT32_MAX};
   u32 plane_blas_index{UINT32_MAX};
 
-  std::unordered_set<u32> lambert_material_indices;
-  FreeIndexPool lambert_mats_index_pool;
-  std::vector<Lambert> lambert_materials;
-  std::vector<ImageViewHandle> lambert_textures;
+  LambertManager lambert_mats;
+  MetalManager metal_mats;
+  EmissiveManager emissive_mats;
+  DielectricManager dielectric_mats;
 
-  std::unordered_set<u32> metal_material_indices;
-  FreeIndexPool metal_mats_index_pool;
-  std::vector<Metal> metal_materials;
-
-  std::unordered_set<u32> emissive_material_indices;
-  FreeIndexPool emissive_mats_index_pool;
-  std::vector<Emissive> emissive_materials;
-
-  std::unordered_set<u32> dielectric_material_indices;
-  FreeIndexPool dielectric_mats_index_pool;
-  std::vector<Dielectric> dielectric_materials;
+  MaterialHandle default_material;
 
 private:
   void load_sphere_data();

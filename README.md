@@ -20,50 +20,49 @@ or <br />
 `cmake --build . --config Release` <br />
 ## Command line arguments
 ### Arguments
-
 - **`<scene_path>`**  
   Path to the scene file to render.  
   This argument is required.
-
 ### Options
-
 - **`-o <output_image_name>`**  
   Specifies the output image filename.  
   If not provided, a default name will be used.
-
 - **`-gpu`**  
   Use the GPU-based renderer.
-
 - **`-cpu`**  
   Use the CPU-based renderer.
-
 > Exactly one of `-gpu` or `-cpu` should be specified.
-
 ### Examples
-
 Render a scene using the GPU and specify an output image:
 ```bash
 renderer scenes/TestScene.json -gpu -o dragon.png
 ```
-
+## Troubleshooting
+### Tracy: Missing type errors on older Windows SDKs
+If you are on a Windows SDK older than 10.0.20348.0 and see compiler errors such as:
+```
+error C3646: 'handle': unknown override specifier
+error C4430: missing type specifier - int assumed
+```
+Add the following typedefs to `Vendor/tracy/public/client/windows/TracyETW.cpp` before the affected structs/functions:
+```cpp
+typedef TRACEHANDLE CONTROLTRACE_ID;
+typedef TRACEHANDLE PROCESSTRACE_HANDLE;
+```
+These types were introduced in newer SDK versions. Both are aliases of `TRACEHANDLE` (`ULONG64`) and are fully compatible replacements.
 ## Scene Structure
-
 A scene is defined using a JSON file with two main sections:
-
 - **`camera`**: Defines the view and rendering parameters (position, orientation, resolution, sampling, and depth of field).
 - **`models`**: An array of mesh instances, each with its own transform and model file.
-
 ### Camera
 The `camera` object specifies:
 - Position and orientation (`center`, `lookat`, `vup`)
 - Projection parameters (`vfov_deg`, `aspect_ratio`)
 - Image settings (`screen_width`, `samples_per_pixel`, `max_depth`)
 - Depth of field controls (`defocus_angle`, `focus_dist`)
-
 ### Models
 Each entry in the `models` array represents a single model instance and includes:
 - `model_path`: Path to the mesh file (Only `.obj` supported)
 - `translation`: World-space position
 - `rotation`: Axis-angle rotation `(x, y, z, angle_degrees)`
 - `scale`: Uniform scale factor
-
