@@ -42,7 +42,7 @@ struct BLAS {
 
   bool intersect(Ray ray, Interval ray_t, inout HitRecord rec, BVHNode *nodes,
                  TriangleGeom *tris, uint *tri_ids) {
-    uint node_id_stack[64];
+    uint node_id_stack[128];
     // Initialize first item in the stack to the root node
     node_id_stack[0] = bvh_nodes_offset;
     uint stack_ptr = 0;

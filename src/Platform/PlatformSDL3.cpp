@@ -73,6 +73,7 @@ void Platform::handle_os_messages(SceneUI &scene_ui) {
     case SDL_EVENT_WINDOW_ENTER_FULLSCREEN:
     case SDL_EVENT_WINDOW_LEAVE_FULLSCREEN:
     case SDL_EVENT_WINDOW_MINIMIZED:
+    case SDL_EVENT_WINDOW_RESTORED:
     case SDL_EVENT_WINDOW_MAXIMIZED:
     case SDL_EVENT_WINDOW_RESIZED: {
       SDL_GetWindowSize(window, &platform_state.width, &platform_state.height);

@@ -14,7 +14,7 @@ struct TLASNode {
 bool intersect_tlas(Ray ray, Interval ray_t, inout HitRecord rec,
 									  TLASNode *tlas_nodes, BLASInstance *blas_instances,
                     BLAS *blases, BVHNode *bvh_nodes, TriangleGeom *tris, uint *tri_ids) {
-	uint node_id_stack[64];
+	uint node_id_stack[128];
 	node_id_stack[0] = 0;
 	uint stack_ptr = 0;
 	float closest_so_far = ray_t.max;
