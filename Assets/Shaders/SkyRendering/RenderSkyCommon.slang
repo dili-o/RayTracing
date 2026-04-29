@@ -149,3 +149,19 @@ float hgPhase(float g, float cosTheta) {
 #endif
 }
 
+float mean(float3 v)
+{
+	return dot(v, float3(1.0f / 3.0f, 1.0f / 3.0f, 1.0f / 3.0f));
+}
+
+float whangHashNoise(uint u, uint v, uint s)
+{
+	uint seed = (u * 1664525u + v) + s;
+	seed = (seed ^ 61u) ^ (seed >> 16u);
+	seed *= 9u;
+	seed = seed ^ (seed >> 4u);
+	seed *= uint(0x27d4eb2d);
+	seed = seed ^ (seed >> 15u);
+	float value = float(seed) / (4294967296.0);
+	return value;
+}

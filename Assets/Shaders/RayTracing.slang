@@ -105,14 +105,15 @@ void compute_main(uint3 dispatch_thread_id: SV_DispatchThreadID,
                 data.blas_instances_buffer[rec.blas_instance_id];
 
             float3 local_normal =
-                data.triangle_shading_buffer[rec.tri_surface_id].interpolate_normal(
-                    rec.u, rec.v);
+                data.triangle_shading_buffer[rec.tri_surface_id]
+                    .interpolate_normal(rec.u, rec.v);
 
             rec.set_face_normal(
                 r, normalize(mul(transpose(blas_instance.inv_transform),
                                  float4(local_normal, 0.f))
                                  .xyz));
-            float2 uv = data.triangle_shading_buffer[rec.tri_surface_id].interpolate_uvs(rec.u, rec.v);
+            float2 uv = data.triangle_shading_buffer[rec.tri_surface_id]
+                            .interpolate_uvs(rec.u, rec.v);
 
             rec.p = mul(blas_instance.transform, float4(rec.p, 1.f)).xyz;
 
@@ -158,10 +159,29 @@ void compute_main(uint3 dispatch_thread_id: SV_DispatchThreadID,
 
           } else {
             float3 unit_direction = normalize(r.direction);
-            float a = 0.5f * (unit_direction.y + 1.f);
-            float3 sky = lerp(float3(0.7f), float3(0.5f, 0.7f, 1.f), a);
+            float3 sky;
 
-            // float3 sky = float3(0.f);
+            // Sun disk
+            float3 sun_direction =
+                float3(0.00000000f, 0.900447130f, 0.434965521f);
+            float sunCos = dot(unit_direction, sun_direction);
+            float3 sunColor = float3(1.0f, 0.9f, 0.7f);
+            float sunDisk = smoothstep(0.9998f, 0.9999f, sunCos);
+
+            // Rayleigh sky gradient
+            float upDot = unit_direction.y;
+            float3 zenithColor = float3(0.1f, 0.3f, 0.8f);
+            float3 horizonColor = float3(0.5f, 0.7f, 1.0f);
+            float3 groundColor = float3(0.1f, 0.08f, 0.05f);
+
+            if (upDot >= 0.0f)
+              sky = lerp(horizonColor, zenithColor, pow(upDot, 0.5f));
+            else
+              sky = lerp(horizonColor, groundColor, pow(-upDot, 0.5f));
+
+            // Add sun
+            sky += sunColor * sunDisk * 10.0f;
+
             sample_radiance += attenuation * sky;
             break;
           }
