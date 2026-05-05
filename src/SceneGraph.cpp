@@ -661,13 +661,13 @@ u32 render_scene_graph_nodes(const SceneGraph &scene_graph, u32 node_id,
   return selected_node_id;
 }
 
-bool DrawVec3Control(std::string_view label, glm::vec3 &values,
-                     float resetValue = 0.0f, float columnWidth = 100.0f) {
+bool draw_vec3_control(std::string_view label, glm::vec3 &values,
+                       float reset_value = 0.0f, float column_width = 100.0f) {
   bool modified = false; // Initialise the return flag
   ImGui::PushID(label.data());
 
   ImGui::Columns(2);
-  ImGui::SetColumnWidth(0, columnWidth);
+  ImGui::SetColumnWidth(0, column_width);
   ImGui::Text("%s", label.data());
   ImGui::NextColumn();
 
@@ -681,7 +681,7 @@ bool DrawVec3Control(std::string_view label, glm::vec3 &values,
   // --- X Component ---
   ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{0.8f, 0.1f, 0.15f, 1.0f});
   if (ImGui::Button("X", buttonSize)) {
-    values.x = resetValue;
+    values.x = reset_value;
     modified = true; // Flag change if reset button is clicked
   }
   ImGui::PopStyleColor();
@@ -694,7 +694,7 @@ bool DrawVec3Control(std::string_view label, glm::vec3 &values,
   // --- Y Component ---
   ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{0.2f, 0.7f, 0.2f, 1.0f});
   if (ImGui::Button("Y", buttonSize)) {
-    values.y = resetValue;
+    values.y = reset_value;
     modified = true;
   }
   ImGui::PopStyleColor();
@@ -706,7 +706,7 @@ bool DrawVec3Control(std::string_view label, glm::vec3 &values,
   // --- Z Component ---
   ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{0.1f, 0.25f, 0.8f, 1.0f});
   if (ImGui::Button("Z", buttonSize)) {
-    values.z = resetValue;
+    values.z = reset_value;
     modified = true;
   }
   ImGui::PopStyleColor();
@@ -736,8 +736,9 @@ void render_scene_graph_nodes_property(SceneGraph &scene_graph, u32 node_id,
   // modified |= ImGui::DragFloat3("Position", &local_transform.position.x,
   // 0.5f,
   //                               0.f, 0.f, "%.3f");
-  modified |= DrawVec3Control("Local Position", local_transform.position);
-  modified |= DrawVec3Control("Local Scale", local_transform.scale);
+  modified |= draw_vec3_control("Local Position", local_transform.position);
+  modified |= draw_vec3_control("Local Scale", local_transform.scale);
+  local_transform.scale = glm::max(local_transform.scale, glm::vec3(0.01f));
 
   static glm::vec3 cached_euler_deg;
   static u32 last_node = INVALID_NODE_ID;
@@ -747,7 +748,7 @@ void render_scene_graph_nodes_property(SceneGraph &scene_graph, u32 node_id,
     last_node = node_id;
   }
 
-  if (DrawVec3Control("Rotation", cached_euler_deg)) {
+  if (draw_vec3_control("Rotation", cached_euler_deg)) {
     local_transform.rotation = glm::quat(glm::radians(cached_euler_deg));
 
     modified = true;
