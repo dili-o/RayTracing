@@ -12,6 +12,7 @@
 #include <fastgltf/types.hpp>
 #include <filesystem>
 #include <imgui/imgui.h>
+#include <imgui/imgui_internal.h>
 #include <numeric>
 #include <stb_image.h>
 
@@ -657,6 +658,67 @@ u32 render_scene_graph_nodes(const SceneGraph &scene_graph, u32 node_id,
   return selected_node_id;
 }
 
+static bool draw_vec3_control(std::string_view label, glm::vec3 &values,
+                              float reset_value = 0.0f,
+                              float column_width = 100.0f) {
+  bool modified = false; // Initialise the return flag
+  ImGui::PushID(label.data());
+
+  ImGui::Columns(2);
+  ImGui::SetColumnWidth(0, column_width);
+  ImGui::Text("%s", label.data());
+  ImGui::NextColumn();
+
+  ImGui::PushMultiItemsWidths(3, ImGui::CalcItemWidth());
+  ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{0, 0});
+
+  float line_height =
+      GImGui->Font->FontSize + GImGui->Style.FramePadding.y * 2.0f;
+  ImVec2 button_size = {line_height + 3.0f, line_height};
+
+  // --- X Component ---
+  ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{0.8f, 0.1f, 0.15f, 1.0f});
+  if (ImGui::Button("X", button_size)) {
+    values.x = reset_value;
+    modified = true; // Flag change if reset button is clicked
+  }
+  ImGui::PopStyleColor();
+  ImGui::SameLine();
+  modified |=
+      ImGui::DragFloat("##X", &values.x, 0.1f); // Combine with previous changes
+  ImGui::PopItemWidth();
+  ImGui::SameLine();
+
+  // --- Y Component ---
+  ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{0.2f, 0.7f, 0.2f, 1.0f});
+  if (ImGui::Button("Y", button_size)) {
+    values.y = reset_value;
+    modified = true;
+  }
+  ImGui::PopStyleColor();
+  ImGui::SameLine();
+  modified |= ImGui::DragFloat("##Y", &values.y, 0.1f);
+  ImGui::PopItemWidth();
+  ImGui::SameLine();
+
+  // --- Z Component ---
+  ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{0.1f, 0.25f, 0.8f, 1.0f});
+  if (ImGui::Button("Z", button_size)) {
+    values.z = reset_value;
+    modified = true;
+  }
+  ImGui::PopStyleColor();
+  ImGui::SameLine();
+  modified |= ImGui::DragFloat("##Z", &values.z, 0.1f);
+  ImGui::PopItemWidth();
+
+  ImGui::PopStyleVar();
+  ImGui::Columns(1);
+  ImGui::PopID();
+
+  return modified;
+}
+
 void render_scene_graph_nodes_property(SceneGraph &scene_graph, u32 node_id,
                                        Renderer *renderer) {
   if (node_id == INVALID_NODE_ID) {
@@ -664,12 +726,28 @@ void render_scene_graph_nodes_property(SceneGraph &scene_graph, u32 node_id,
     return;
   }
 
-  glm::vec3 local_translation = scene_graph.local_transforms[node_id][3];
+  Transform local_transform;
+  local_transform.set_transform(scene_graph.local_transforms[node_id]);
+
   glm::vec3 global_translation = scene_graph.global_transforms[node_id][3];
   bool modified = false;
-  ImGui::Text("Local Translation");
-  modified |= ImGui::DragFloat3("Position", &local_translation.x, 0.5f, 0.f,
-                                0.f, "%.3f");
+  modified |= draw_vec3_control("Local Position", local_transform.position);
+  modified |= draw_vec3_control("Local Scale", local_transform.scale);
+  local_transform.scale = glm::max(local_transform.scale, glm::vec3(0.01f));
+
+  static glm::vec3 cached_euler_deg;
+  static u32 last_node = INVALID_NODE_ID;
+
+  if (node_id != last_node) {
+    cached_euler_deg = glm::degrees(glm::eulerAngles(local_transform.rotation));
+    last_node = node_id;
+  }
+
+  if (draw_vec3_control("Rotation", cached_euler_deg)) {
+    local_transform.rotation = glm::quat(glm::radians(cached_euler_deg));
+
+    modified = true;
+  }
 
   ImGui::Text("World Translation");
   ImGui::BeginDisabled();
@@ -685,25 +763,6 @@ void render_scene_graph_nodes_property(SceneGraph &scene_graph, u32 node_id,
   ImGui::PopItemWidth();
 
   ImGui::EndDisabled();
-
-  const SceneNode &node = scene_graph.nodes[node_id];
-  ImGui::Text("Parent Node: %s",
-              node.parent_node == INVALID_NODE_ID
-                  ? "INVALID_NODE_ID"
-                  : std::to_string(node.parent_node).c_str());
-  ImGui::Text("First Child: %s",
-              node.first_child == INVALID_NODE_ID
-                  ? "INVALID_NODE_ID"
-                  : std::to_string(node.first_child).c_str());
-  ImGui::Text("Next Sibling: %s",
-              node.next_sibling == INVALID_NODE_ID
-                  ? "INVALID_NODE_ID"
-                  : std::to_string(node.next_sibling).c_str());
-  ImGui::Text("Last Sibling: %s",
-              node.last_sibling == INVALID_NODE_ID
-                  ? "INVALID_NODE_ID"
-                  : std::to_string(node.last_sibling).c_str());
-  ImGui::Text("Level: %s", std::to_string(node.level).c_str());
 
   static bool add_node_clicked = false;
   if (ImGui::Button("Add Node")) {
@@ -830,9 +889,7 @@ void render_scene_graph_nodes_property(SceneGraph &scene_graph, u32 node_id,
   }
 
   if (modified) {
-    glm::mat4 new_transform = scene_graph.local_transforms[node_id];
-    new_transform[3] = glm::vec4(local_translation, 1.f);
-
+    glm::mat4 new_transform = local_transform.get_mat4();
     scene_graph.update_node_local_transform(node_id, new_transform);
   }
 }
