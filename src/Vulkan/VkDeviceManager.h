@@ -7,10 +7,37 @@
 
 #include "VkErr.h"
 // External
-#include "Vendor/vk_mem_alloc.h"
 #include <optional>
+#include <vk_mem_alloc.h>
+#ifdef HELIX_WITH_CUDA
+#include "CUDA/CudaErr.hpp"
+#include <cuda_runtime.h>
+#endif // HELIX_WITH_CUDA
 
 namespace hlx {
+
+struct VkDeviceManager;
+
+struct FrameContext {
+public:
+  void init(VkDeviceManager *p_device);
+  void shutdown(VkDeviceManager *p_device);
+
+public:
+  VkCommandBuffer main_cmd{VK_NULL_HANDLE};
+  VkFence in_flight_fence{VK_NULL_HANDLE};
+  VkSemaphore image_available_semaphore{VK_NULL_HANDLE};
+
+#ifdef HELIX_WITH_CUDA
+  VkCommandBuffer post_sumbit_cmd{VK_NULL_HANDLE};
+  VkSemaphore vk_cuda_wait_semaphore; // Vulkan signals → CUDA waits
+  VkSemaphore vk_cuda_done_semaphore; // CUDA signals → Vulkan waits
+  cudaExternalSemaphore_t cu_wait_sem;
+  cudaExternalSemaphore_t cu_done_sem;
+  bool pre_cuda_cmd_submitted{false};
+#endif // HELIX_WITH_CUDA
+};
+
 struct QueueFamilyIndices {
   std::optional<u32> graphics_family_index;
   std::optional<u32> transfer_family_index;
@@ -24,12 +51,19 @@ struct QueueFamilyIndices {
 };
 
 struct VulkanSwapchain {
+public:
+  VkSemaphore &get_current_render_finished_semaphore() {
+    return render_finished_semaphores.at(current_image_index);
+  }
+
+public:
   VkSurfaceFormatKHR vk_surface_format{};
   std::array<VkPresentModeKHR, 2> vk_present_modes;
   u32 image_count{0};
   u32 current_image_index{0};
   std::vector<VkImage> images;
   std::vector<VkImageView> image_views;
+  std::vector<VkSemaphore> render_finished_semaphores;
   VkSwapchainKHR vk_handle{VK_NULL_HANDLE};
 };
 
@@ -56,7 +90,16 @@ public:
   }
 
   VkCommandBuffer get_current_cmd_buffer() const noexcept {
-    return vk_command_buffers.at(current_frame);
+#ifdef HELIX_WITH_CUDA
+    const FrameContext &ctx = frame_contexts.at(current_frame);
+    return ctx.pre_cuda_cmd_submitted ? ctx.post_sumbit_cmd : ctx.main_cmd;
+#else
+    return frame_contexts.at(current_frame).main_cmd;
+#endif // HELIX_WITH_CUDA
+  }
+
+  FrameContext &get_current_frame_context() noexcept {
+    return frame_contexts.at(current_frame);
   }
 
   template <typename T>
@@ -82,18 +125,17 @@ public:
   VulkanSwapchain swapchain;
   VmaAllocator vma_allocator{VK_NULL_HANDLE};
   QueueFamilyIndices queue_family_indices;
+#ifdef HELIX_WITH_CUDA
+  cudaStream_t cu_stream;
+#endif // HELIX_WITH_CUDA
   VkQueue vk_graphics_queue{VK_NULL_HANDLE};
   VkQueue vk_transfer_queue{VK_NULL_HANDLE};
   VkQueue vk_compute_queue{VK_NULL_HANDLE};
   VkDescriptorPool vk_descriptor_pool{VK_NULL_HANDLE};
   VkCommandPool vk_command_pool{VK_NULL_HANDLE};
-  std::array<VkCommandBuffer, MAX_FRAMES_IN_FLIGHT> vk_command_buffers;
+  std::array<FrameContext, MAX_FRAMES_IN_FLIGHT> frame_contexts;
   u32 current_frame{0};
   u64 frame_count{0};
-  std::array<VkFence, MAX_FRAMES_IN_FLIGHT> frame_in_flight_fences{
-      VK_NULL_HANDLE};
-  std::vector<VkSemaphore> render_finished_semaphores;
-  std::array<VkSemaphore, MAX_FRAMES_IN_FLIGHT> image_available_semaphores;
 
   u32 back_buffer_width{1280};
   u32 back_buffer_height{720};

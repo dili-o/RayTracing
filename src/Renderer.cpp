@@ -1,4 +1,5 @@
 #include "Renderer.hpp"
+#include "Common.hpp"
 #include "Core/Assert.hpp"
 #include "Core/Clock.hpp"
 #include "Core/Defines.hpp"
@@ -9,6 +10,9 @@
 #include "Vulkan/VkShaderCompilation.h"
 #include "Vulkan/VkStagingBuffer.h"
 #include "Vulkan/VkUtils.hpp"
+#ifdef HELIX_WITH_CUDA
+#include "CUDA/RayTracing.cuh"
+#endif
 // Vendor
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/gtc/constants.hpp>
@@ -27,39 +31,6 @@ static constexpr size_t MAX_BLAS_COUNT = 4'000;
 static constexpr u32 BYTES_PER_PIXEL = 4u;
 
 namespace hlx {
-struct alignas(16) UniformData {
-  glm::vec4 pixel00_loc;
-  glm::vec4 pixel_delta_u;
-  glm::vec4 pixel_delta_v;
-  glm::vec4 camera_center;
-  VkDeviceAddress triangle_geom_buffer;
-  VkDeviceAddress triangle_shading_buffer;
-  VkDeviceAddress tlas_nodes_buffer;
-  VkDeviceAddress bvh_nodes_buffer;
-  VkDeviceAddress blas_buffer;
-  VkDeviceAddress blas_instances_buffer;
-  VkDeviceAddress tri_ids_buffer;
-  VkDeviceAddress lambert_materials_buffer;
-  VkDeviceAddress metal_materials_buffer;
-  VkDeviceAddress dielectric_materials_buffer;
-  VkDeviceAddress emissive_materials_buffer;
-};
-
-struct PushConstant {
-  VkDeviceAddress uniform_data_buffer;
-
-  u32 image_width;
-  u32 image_height;
-
-  u32 triangle_count;
-  u32 frame_index;
-
-  f32 pixel_sample_scale;
-  f32 recip_sqrt_spp;
-
-  u32 sqrt_spp;
-  f32 padding;
-};
 
 void generate_sphere(std::vector<glm::vec3> &out_vertices,
                      std::vector<uint32_t> &out_indices,
@@ -281,20 +252,20 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
                       VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
                       VK_BUFFER_USAGE_TRANSFER_DST_BIT;
   buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-  triangle_geom_buffer =
-      p_rm->create_buffer("TriangleGeomBuffer", buffer_info, vma_alloc_info);
+  triangle_geom_buffer = p_rm->create_buffer("TriangleGeomBuffer", buffer_info,
+                                             vma_alloc_info, true);
   tri_geom_data = static_cast<TriangleGeom *>(malloc(buffer_info.size));
 
   buffer_info.size = MAX_TRIANGLE_COUNT * sizeof(TriangleShading);
-  triangle_shading_buffer =
-      p_rm->create_buffer("TriangleShadingBuffer", buffer_info, vma_alloc_info);
+  triangle_shading_buffer = p_rm->create_buffer(
+      "TriangleShadingBuffer", buffer_info, vma_alloc_info, true);
   tri_surface_data = static_cast<TriangleShading *>(malloc(buffer_info.size));
   triangle_centroids_data =
       static_cast<glm::vec3 *>(malloc(sizeof(glm::vec3) * MAX_TRIANGLE_COUNT));
 
   buffer_info.size = MAX_TRIANGLE_COUNT * sizeof(u32);
-  tri_ids_buffer =
-      p_rm->create_buffer("TriangleIDsBuffer", buffer_info, vma_alloc_info);
+  tri_ids_buffer = p_rm->create_buffer("TriangleIDsBuffer", buffer_info,
+                                       vma_alloc_info, true);
   tri_id_allocator.init(buffer_info.size, alignof(u32));
 
   // Material buffers
@@ -306,27 +277,28 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
   // Create with upper bound limit
   buffer_info.size = (MAX_TRIANGLE_COUNT * 2 - 1) * sizeof(BVHNode);
   bvh_nodes_buffer =
-      p_rm->create_buffer("BVHNodesBuffer", buffer_info, vma_alloc_info);
+      p_rm->create_buffer("BVHNodesBuffer", buffer_info, vma_alloc_info, true);
   bvh_nodes_allocator.init(buffer_info.size, sizeof(BVHNode));
 
   // Initialize blases_index_pool, blas_buffer and blases vector
   blases_index_pool.init(MAX_BLAS_COUNT);
   buffer_info.size = MAX_BLAS_COUNT * sizeof(BLAS);
-  blas_buffer = p_rm->create_buffer("BLASBuffer", buffer_info, vma_alloc_info);
+  blas_buffer =
+      p_rm->create_buffer("BLASBuffer", buffer_info, vma_alloc_info, true);
   blases.resize(MAX_BLAS_COUNT);
 
   // Initialize blas_inst_index_pool, blas_instances_buffer and blas_instances
   // vector
   blas_inst_index_pool.init(MAX_BLAS_COUNT);
   buffer_info.size = MAX_BLAS_COUNT * sizeof(BLASInstance);
-  blas_instances_buffer =
-      p_rm->create_buffer("BLASInstancesBuffer", buffer_info, vma_alloc_info);
+  blas_instances_buffer = p_rm->create_buffer(
+      "BLASInstancesBuffer", buffer_info, vma_alloc_info, true);
   blas_instances.resize(MAX_BLAS_COUNT);
 
   // TLAS buffer
   buffer_info.size = MAX_BLAS_COUNT * sizeof(TLASNode);
   tlas_nodes_buffer =
-      p_rm->create_buffer("TLASNodesBuffer", buffer_info, vma_alloc_info);
+      p_rm->create_buffer("TLASNodesBuffer", buffer_info, vma_alloc_info, true);
 
   // Load primitive data
   load_plane_data();
@@ -334,6 +306,32 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
   load_sphere_data();
 
   // Uniform buffers
+#ifdef HELIX_WITH_CUDA
+  // Staging buffer
+  VkBufferCreateInfo staging_buffer_info{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+  staging_buffer_info.size = sizeof(UniformData);
+  staging_buffer_info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+  staging_buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+  VmaAllocationCreateInfo staging_alloc_info{};
+  staging_alloc_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                     VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+  staging_alloc_info.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+  uniform_staging_buffer = p_rm->create_buffer(
+      "UniformStagingBuffer", staging_buffer_info, staging_alloc_info, false);
+
+  // Device buffer
+  buffer_info.size = sizeof(UniformData);
+  buffer_info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                      VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+  vma_alloc_info = {}; // reset
+  vma_alloc_info.requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+  for (BufferHandle &handle : uniform_buffers) {
+    handle =
+        p_rm->create_buffer("UniformBuffer", buffer_info, vma_alloc_info, true);
+  }
+#else
   buffer_info.size = sizeof(UniformData);
   buffer_info.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
                       VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
@@ -341,8 +339,10 @@ void Renderer::init(VkDeviceManager *p_device, VkResourceManager *p_rm,
                                  VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
   vma_alloc_info.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
   for (BufferHandle &handle : uniform_buffers) {
-    handle = p_rm->create_buffer("UniformBuffer", buffer_info, vma_alloc_info);
+    handle = p_rm->create_buffer("UniformBuffer", buffer_info, vma_alloc_info,
+                                 false);
   }
+#endif
 
   // Create sampler
   VkSamplerCreateInfo sampler_info{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
@@ -418,6 +418,11 @@ void Renderer::shutdown() {
   metal_mats.shutdown(p_rm);
   dielectric_mats.shutdown(p_rm);
   emissive_mats.shutdown(p_rm);
+
+#ifdef HELIX_WITH_CUDA
+  p_rm->queue_destroy({uniform_staging_buffer});
+#endif // HELIX_WITH_CUDA
+
   for (BufferHandle &handle : uniform_buffers) {
     p_rm->queue_destroy({handle});
   }
@@ -430,6 +435,9 @@ void Renderer::shutdown() {
   p_rm->queue_destroy({triangle_geom_buffer});
   p_rm->queue_destroy({set_layout});
   p_rm->queue_destroy({output_image_view});
+#ifdef HELIX_WITH_CUDA
+  p_rm->queue_destroy({output_image_buffer});
+#endif // HELIX_WITH_CUDA
   p_rm->queue_destroy({path_tracing_pipeline});
   p_rm->queue_destroy({texture_sampler});
   staging_buffer.shutdown();
@@ -462,7 +470,9 @@ void Renderer::shutdown() {
 void Renderer::resize(u32 output_image_width, u32 output_image_height) {
   // delete the old output image
   p_rm->queue_destroy({output_image_view});
-
+#ifdef HELIX_WITH_CUDA
+  p_rm->queue_destroy({output_image_buffer});
+#endif // HELIX_WITH_CUDA
   // Recreate the output image
   create_output_image(output_image_width, output_image_height);
 
@@ -494,6 +504,7 @@ void Renderer::render(Camera &camera) {
   }
 
   lambert_mats.update(p_device);
+
   // Rebuild tlas if a change was made
   if (rebuild_tlas)
     build_tlas();
@@ -530,11 +541,35 @@ void Renderer::render(Camera &camera) {
   glm::vec3 viewport_upper_left = camera.position - (focal_length * camera.w) -
                                   0.5f * (viewport_u + viewport_v);
   UniformData uniform_data = {
-      .pixel00_loc = glm::vec4(
-          viewport_upper_left + 0.5f * (pixel_delta_u + pixel_delta_v), 1.f),
-      .pixel_delta_u = glm::vec4(pixel_delta_u, 1.f),
-      .pixel_delta_v = glm::vec4(pixel_delta_v, 1.f),
-      .camera_center = glm::vec4(camera.position, 1.f),
+      .pixel00_loc = glm::vec3(viewport_upper_left +
+                               0.5f * (pixel_delta_u + pixel_delta_v)),
+      .pixel_delta_u = glm::vec3(pixel_delta_u),
+      .pixel_delta_v = glm::vec3(pixel_delta_v),
+      .camera_center = glm::vec3(camera.position),
+#ifdef HELIX_WITH_CUDA
+      .triangle_geom_buffer = reinterpret_cast<VkDeviceAddress>(
+          p_rm->access_buffer(triangle_geom_buffer)->cu_dev_ptr),
+      .triangle_shading_buffer = reinterpret_cast<VkDeviceAddress>(
+          p_rm->access_buffer(triangle_shading_buffer)->cu_dev_ptr),
+      .tlas_nodes_buffer = reinterpret_cast<VkDeviceAddress>(
+          p_rm->access_buffer(tlas_nodes_buffer)->cu_dev_ptr),
+      .bvh_nodes_buffer = reinterpret_cast<VkDeviceAddress>(
+          p_rm->access_buffer(bvh_nodes_buffer)->cu_dev_ptr),
+      .blas_buffer = reinterpret_cast<VkDeviceAddress>(
+          p_rm->access_buffer(blas_buffer)->cu_dev_ptr),
+      .blas_instances_buffer = reinterpret_cast<VkDeviceAddress>(
+          p_rm->access_buffer(blas_instances_buffer)->cu_dev_ptr),
+      .tri_ids_buffer = reinterpret_cast<VkDeviceAddress>(
+          p_rm->access_buffer(tri_ids_buffer)->cu_dev_ptr),
+      .lambert_materials_buffer = reinterpret_cast<VkDeviceAddress>(
+          p_rm->access_buffer(lambert_mats.buffer)->cu_dev_ptr),
+      .metal_materials_buffer = reinterpret_cast<VkDeviceAddress>(
+          p_rm->access_buffer(metal_mats.buffer)->cu_dev_ptr),
+      .dielectric_materials_buffer = reinterpret_cast<VkDeviceAddress>(
+          p_rm->access_buffer(dielectric_mats.buffer)->cu_dev_ptr),
+      .emissive_materials_buffer = reinterpret_cast<VkDeviceAddress>(
+          p_rm->access_buffer(emissive_mats.buffer)->cu_dev_ptr),
+#else
       .triangle_geom_buffer =
           p_rm->access_buffer(triangle_geom_buffer)->vk_device_address,
       .triangle_shading_buffer =
@@ -555,15 +590,102 @@ void Renderer::render(Camera &camera) {
           p_rm->access_buffer(dielectric_mats.buffer)->vk_device_address,
       .emissive_materials_buffer =
           p_rm->access_buffer(emissive_mats.buffer)->vk_device_address,
+#endif // HELIX_WITH_CUDA
   };
-  VulkanBuffer *uniform_buffer =
+
+  FrameContext &frame_ctx = p_device->get_current_frame_context();
+  VkCommandBuffer cmd = frame_ctx.main_cmd;
+
+  VulkanBuffer *vk_uniform_buffer =
       p_rm->access_buffer(uniform_buffers.at(p_device->current_frame));
-  std::memcpy(uniform_buffer->p_data, &uniform_data, sizeof(UniformData));
 
-  VkCommandBuffer cmd = p_device->get_current_cmd_buffer();
+#ifdef HELIX_WITH_CUDA
+  VulkanBuffer *vk_uniform_staging_buffer =
+      p_rm->access_buffer(uniform_staging_buffer);
+  std::memcpy(vk_uniform_staging_buffer->p_data, &uniform_data,
+              sizeof(UniformData));
 
+  VkBufferCopy copy{};
+  copy.size = sizeof(UniformData);
+  vkCmdCopyBuffer(cmd, vk_uniform_staging_buffer->vk_handle,
+                  vk_uniform_buffer->vk_handle, 1, &copy);
+
+  VkBufferMemoryBarrier2 buffer_barrier{
+      VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2};
+  buffer_barrier.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+  buffer_barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+  buffer_barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+  buffer_barrier.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT;
+  buffer_barrier.buffer = vk_uniform_buffer->vk_handle;
+  buffer_barrier.offset = 0;
+  buffer_barrier.size = vk_uniform_buffer->vk_device_size;
+
+  VkDependencyInfo dep{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+  dep.imageMemoryBarrierCount = 0;
+  dep.pImageMemoryBarriers = nullptr;
+  dep.bufferMemoryBarrierCount = 1;
+  dep.pBufferMemoryBarriers = &buffer_barrier;
+  vkCmdPipelineBarrier2(cmd, &dep);
+#else
+  std::memcpy(vk_uniform_buffer->p_data, &uniform_data, sizeof(UniformData));
+#endif // HELIX_WITH_CUDA
+
+  // Ray tracing parameters
+  PushConstant push_constant;
+#ifdef HELIX_WITH_CUDA
+  push_constant.albedo_textures_buffer = reinterpret_cast<VkDeviceAddress>(
+      p_rm->access_buffer(lambert_mats.albedo_texture_objects)->cu_dev_ptr);
+  push_constant.uniform_data_buffer =
+      reinterpret_cast<VkDeviceAddress>(vk_uniform_buffer->cu_dev_ptr);
+#else
+  push_constant.uniform_data_buffer = vk_uniform_buffer->vk_device_address;
+#endif // HELIX_WITH_CUDA
+  push_constant.image_width = screen_extents.width;
+  push_constant.image_height = screen_extents.height;
+  push_constant.frame_index = frame_index;
+  push_constant.triangle_count = total_triangle_count;
+  push_constant.sqrt_spp = u32(std::sqrt(samples_per_pixel));
+  push_constant.pixel_sample_scale =
+      1.f / (push_constant.sqrt_spp * push_constant.sqrt_spp);
+  push_constant.recip_sqrt_spp = 1.f / push_constant.sqrt_spp;
+
+#ifdef HELIX_WITH_CUDA
+  push_debug_label(cmd, "Compute Pre Pass");
+#else
   push_debug_label(cmd, "Compute Pass");
+#endif // HELIX_WITH_CUDA
 
+  VkDependencyInfo dependency_info{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+  dependency_info.dependencyFlags = 0;
+#ifdef HELIX_WITH_CUDA
+  VulkanBuffer *vk_output_buffer = p_rm->access_buffer(output_image_buffer);
+  // Barrier for output_image_buffer
+  buffer_barrier.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+  buffer_barrier.srcAccessMask = VK_ACCESS_2_MEMORY_READ_BIT;
+  buffer_barrier.buffer = vk_output_buffer->vk_handle;
+  buffer_barrier.offset = 0;
+  buffer_barrier.size = vk_output_buffer->vk_device_size;
+
+  dependency_info.pBufferMemoryBarriers = &buffer_barrier;
+  dependency_info.bufferMemoryBarrierCount = 1;
+  // Clear the image if something has changed
+  if (frame_index == 0) {
+    // Trasition to transfer dst layout
+    buffer_barrier.dstStageMask = VK_PIPELINE_STAGE_2_CLEAR_BIT;
+    buffer_barrier.dstAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
+    vkCmdPipelineBarrier2(cmd, &dependency_info);
+
+    vkCmdFillBuffer(cmd, vk_output_buffer->vk_handle, 0,
+                    vk_output_buffer->vk_device_size, 0);
+
+    // Set the src for transitioning to compute
+    buffer_barrier.srcStageMask = VK_PIPELINE_STAGE_2_CLEAR_BIT;
+    buffer_barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+  }
+  buffer_barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+  buffer_barrier.dstAccessMask =
+      VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_READ_BIT;
+#else
   // Transition output image to compute write bit
   VkImageMemoryBarrier2 image_barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
   image_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -575,11 +697,9 @@ void Renderer::render(Camera &camera) {
   image_barrier.srcStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
   image_barrier.srcAccessMask = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
   image_barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-  VkDependencyInfo dependency_info{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
-  dependency_info.dependencyFlags = 0;
   dependency_info.imageMemoryBarrierCount = 1;
   dependency_info.pImageMemoryBarriers = &image_barrier;
+
   // Clear the image if something has changed
   if (frame_index == 0) {
     // Trasition to transfer dst layout
@@ -604,28 +724,74 @@ void Renderer::render(Camera &camera) {
     image_barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
     image_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
   }
-
   image_barrier.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
   image_barrier.dstAccessMask =
       VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT;
   image_barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+#endif // HELIX_WITH_CUDA
 
   vkCmdPipelineBarrier2(cmd, &dependency_info);
 
+#ifdef HELIX_WITH_CUDA
+  // Submit the initial buffer
+  pop_debug_label(cmd);
+  VK_CHECK(vkEndCommandBuffer(cmd));
+
+  const VkSemaphoreSubmitInfo wait_info{
+      .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+      .pNext = nullptr,
+      .semaphore = frame_ctx.image_available_semaphore,
+      .value = 0,
+      .stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+      .deviceIndex = 0};
+
+  VkSemaphoreSubmitInfo signal_sem_info{
+      VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
+  signal_sem_info.semaphore = frame_ctx.vk_cuda_wait_semaphore;
+  signal_sem_info.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+
+  VkCommandBufferSubmitInfo cmd_submit{
+      VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO};
+  cmd_submit.commandBuffer = cmd;
+
+  VkSubmitInfo2 pre_submit{VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
+  pre_submit.commandBufferInfoCount = 1;
+  pre_submit.pCommandBufferInfos = &cmd_submit;
+  pre_submit.signalSemaphoreInfoCount = 1;
+  pre_submit.pSignalSemaphoreInfos = &signal_sem_info;
+  pre_submit.waitSemaphoreInfoCount = 1;
+  pre_submit.pWaitSemaphoreInfos = &wait_info;
+  VK_CHECK(vkQueueSubmit2(p_device->vk_graphics_queue, 1, &pre_submit,
+                          VK_NULL_HANDLE));
+  frame_ctx.pre_cuda_cmd_submitted = true;
+
+  // Wait for the signaled semaphore on cuda's side
+  cudaExternalSemaphoreWaitParams wait_params{};
+  CUDA_CHECK(cudaWaitExternalSemaphoresAsync(
+      &frame_ctx.cu_wait_sem, &wait_params, 1, p_device->cu_stream));
+
+  dim3 block(32, 32);
+  dim3 grid((vk_output_image->width() + block.x - 1) / block.x,
+            (vk_output_image->height() + block.y - 1) / block.y);
+
+  launch_trace_world(push_constant, p_device->cu_stream,
+                     vk_output_buffer->cu_dev_ptr);
+#ifdef _DEBUG
+  cudaStreamSynchronize(p_device->cu_stream);
+  cudaError_t err = cudaGetLastError();
+  if (err != cudaSuccess) {
+    HERROR("Kernel error: {}", cudaGetErrorString(err));
+  }
+#endif // _DEBUG
+
+  // Signal the done semaphore
+  cudaExternalSemaphoreSignalParams signal_params{};
+  CUDA_CHECK(cudaSignalExternalSemaphoresAsync(
+      &frame_ctx.cu_done_sem, &signal_params, 1, p_device->cu_stream));
+#else
   const VulkanPipeline *pipeline = p_rm->access_pipeline(path_tracing_pipeline);
   vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline->vk_handle);
 
-  // Ray tracing parameters
-  PushConstant push_constant;
-  push_constant.image_width = screen_extents.width;
-  push_constant.image_height = screen_extents.height;
-  push_constant.frame_index = frame_index;
-  push_constant.triangle_count = total_triangle_count;
-  push_constant.uniform_data_buffer = uniform_buffer->vk_device_address;
-  push_constant.sqrt_spp = u32(std::sqrt(samples_per_pixel));
-  push_constant.pixel_sample_scale =
-      1.f / (push_constant.sqrt_spp * push_constant.sqrt_spp);
-  push_constant.recip_sqrt_spp = 1.f / push_constant.sqrt_spp;
   vkCmdPushConstants(cmd, pipeline->vk_pipeline_layout,
                      VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstant),
                      &push_constant);
@@ -648,6 +814,8 @@ void Renderer::render(Camera &camera) {
       1);
 
   pop_debug_label(cmd);
+#endif // HELIX_WITH_CUDA
+
   ++frame_index;
 } // namespace hlx
 
@@ -679,8 +847,20 @@ void Renderer::create_output_image(u32 width, u32 height) {
   view_info.subresourceRange.baseArrayLayer = 0;
   view_info.subresourceRange.layerCount = 1;
 
-  output_image_view = p_rm->create_image_view(
-      "OutputImageView", "OutputImage", image_info, vma_alloc_info, view_info);
+  output_image_view =
+      p_rm->create_image_view("OutputImageView", "OutputImage", image_info,
+                              vma_alloc_info, view_info, true);
+
+#ifdef HELIX_WITH_CUDA
+  VkBufferCreateInfo buffer_info{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+  buffer_info.size = width * height * sizeof(glm::vec4);
+  buffer_info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                      VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                      VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+  buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+  output_image_buffer = p_rm->create_buffer("OutputImageBuffer", buffer_info,
+                                            vma_alloc_info, true);
+#endif // HELIX_WITH_CUDA
 }
 
 MaterialHandle Renderer::add_lambert_material(i32 width, i32 height,
@@ -1003,8 +1183,6 @@ void Renderer::build_tlas() {
                    reinterpret_cast<BVHNode *>(bvh_nodes_allocator.memory),
                    bvh_nodes_allocator.max_size / sizeof(BVHNode)));
     HINFO("TLAS build time: {}s", clock.get_elapsed_time_s());
-
-    VulkanBuffer *vk_tlas_nodes = p_rm->access_buffer(tlas_nodes_buffer);
 
     staging_buffer.stage(tlas_nodes.data(), tlas_nodes_buffer, 0,
                          tlas.node_count * sizeof(TLASNode));

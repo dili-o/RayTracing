@@ -24,18 +24,21 @@ public:
   // Create functions
   BufferHandle create_buffer(std::string_view name,
                              VkBufferCreateInfo &create_info,
-                             const VmaAllocationCreateInfo &vma_create_info);
+                             const VmaAllocationCreateInfo &vma_create_info,
+                             bool cuda_export = false);
   ImageHandle create_image(std::string_view name,
-                           const VkImageCreateInfo &image_create_info,
-                           const VmaAllocationCreateInfo &vma_create_info);
+                           VkImageCreateInfo &image_create_info,
+                           VmaAllocationCreateInfo &vma_create_info,
+                           bool cuda_export = false);
   ImageViewHandle create_image_view(std::string_view name,
                                     ImageHandle image_handle,
                                     VkImageViewCreateInfo &view_create_info);
-  ImageViewHandle
-  create_image_view(std::string_view view_name, std::string_view image_name,
-                    const VkImageCreateInfo &image_create_info,
-                    const VmaAllocationCreateInfo &vma_create_info,
-                    VkImageViewCreateInfo &view_create_info);
+  ImageViewHandle create_image_view(std::string_view view_name,
+                                    std::string_view image_name,
+                                    VkImageCreateInfo &image_create_info,
+                                    VmaAllocationCreateInfo &vma_create_info,
+                                    VkImageViewCreateInfo &view_create_info,
+                                    bool cuda_export = false);
   PipelineHandle create_graphics_pipeline(
       std::string_view name, VkGraphicsPipelineCreateInfo &pipeline_info,
       const VkPipelineLayoutCreateInfo &pipeline_layout_info);
@@ -86,5 +89,13 @@ public:
   ResourcePool<SamplerHandle, VulkanSampler> sampler_pool;
   ResourcePool<ShaderHandle, VulkanShader> shader_pool;
   ResourcePool<SetLayoutHandle, VulkanSetLayout> set_layout_pool;
+#ifdef HELIX_WITH_CUDA
+  struct ExportPool {
+    VmaPool pool;
+    VkExportMemoryAllocateInfo export_mem_info; // keep alive with the pool
+  };
+
+  std::unordered_map<u32, ExportPool> export_pools;
+#endif // HELIX_WITH_CUDA
 };
 } // namespace hlx

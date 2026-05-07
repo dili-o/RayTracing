@@ -228,6 +228,86 @@ static VkPhysicalDevice select_physical_device(
   return VK_NULL_HANDLE;
 }
 
+void FrameContext::init(VkDeviceManager *p_device) {
+  // Allocate command buffers
+  VkCommandBufferAllocateInfo cb_alloc_info{
+      VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+  cb_alloc_info.commandPool = p_device->vk_command_pool;
+  cb_alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+  cb_alloc_info.commandBufferCount = 1;
+  VK_CHECK(
+      vkAllocateCommandBuffers(p_device->vk_device, &cb_alloc_info, &main_cmd));
+  p_device->set_resource_name<VkCommandBuffer>(VK_OBJECT_TYPE_COMMAND_BUFFER,
+                                               main_cmd, "MainCommandBuffer");
+
+#ifdef HELIX_WITH_CUDA
+  VK_CHECK(vkAllocateCommandBuffers(p_device->vk_device, &cb_alloc_info,
+                                    &post_sumbit_cmd));
+  p_device->set_resource_name<VkCommandBuffer>(VK_OBJECT_TYPE_COMMAND_BUFFER,
+                                               post_sumbit_cmd,
+                                               "PostSubmitCommandBuffer");
+#endif // HELIX_WITH_CUDA
+  // Create Semaphore
+  VkSemaphoreCreateInfo semaphore_info{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+  VK_CHECK(vkCreateSemaphore(p_device->vk_device, &semaphore_info, nullptr,
+                             &image_available_semaphore));
+  p_device->set_resource_name<VkSemaphore>(VK_OBJECT_TYPE_SEMAPHORE,
+                                           image_available_semaphore,
+                                           "ImageAvailableSemaphore");
+  // Create fence
+  VkFenceCreateInfo fence_info{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+  fence_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+  VK_CHECK(vkCreateFence(p_device->vk_device, &fence_info, nullptr,
+                         &in_flight_fence));
+  p_device->set_resource_name<VkFence>(VK_OBJECT_TYPE_FENCE, in_flight_fence,
+                                       "FrameInFlightFence");
+#ifdef HELIX_WITH_CUDA
+  // Create cuda semaphores
+  VkExportSemaphoreCreateInfo export_sem_info{
+      VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO};
+  export_sem_info.handleTypes =
+      VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT;
+
+  semaphore_info.pNext = &export_sem_info;
+  VK_CHECK(vkCreateSemaphore(p_device->vk_device, &semaphore_info, nullptr,
+                             &vk_cuda_wait_semaphore));
+  VK_CHECK(vkCreateSemaphore(p_device->vk_device, &semaphore_info, nullptr,
+                             &vk_cuda_done_semaphore));
+  // Export and import into CUDA
+  auto import_semaphore = [&](VkSemaphore vk_sem) {
+    VkSemaphoreGetWin32HandleInfoKHR get_handle{
+        VK_STRUCTURE_TYPE_SEMAPHORE_GET_WIN32_HANDLE_INFO_KHR};
+    get_handle.semaphore = vk_sem;
+    get_handle.handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT;
+    HANDLE win_handle;
+    VK_CHECK(vkGetSemaphoreWin32HandleKHR(p_device->vk_device, &get_handle,
+                                          &win_handle));
+
+    cudaExternalSemaphoreHandleDesc desc{};
+    desc.type = cudaExternalSemaphoreHandleTypeOpaqueWin32;
+    desc.handle.win32.handle = win_handle;
+    cudaExternalSemaphore_t cuda_sem;
+    CUDA_CHECK(cudaImportExternalSemaphore(&cuda_sem, &desc));
+    CloseHandle(win_handle);
+    return cuda_sem;
+  };
+
+  cu_wait_sem = import_semaphore(vk_cuda_wait_semaphore);
+  cu_done_sem = import_semaphore(vk_cuda_done_semaphore);
+#endif // HELIX_WITH_CUDA
+}
+
+void FrameContext::shutdown(VkDeviceManager *p_device) {
+  vkDestroySemaphore(p_device->vk_device, image_available_semaphore, nullptr);
+  vkDestroyFence(p_device->vk_device, in_flight_fence, nullptr);
+#ifdef HELIX_WITH_CUDA
+  vkDestroySemaphore(p_device->vk_device, vk_cuda_wait_semaphore, nullptr);
+  vkDestroySemaphore(p_device->vk_device, vk_cuda_done_semaphore, nullptr);
+  CUDA_CHECK(cudaDestroyExternalSemaphore(cu_wait_sem));
+  CUDA_CHECK(cudaDestroyExternalSemaphore(cu_done_sem));
+#endif // HELIX_WITH_CUDA
+}
+
 void VkDeviceManager::init() {
   const VkResult res = volkInitialize();
   if (res != VK_SUCCESS) {
@@ -359,6 +439,10 @@ void VkDeviceManager::init() {
   device_extensions.push_back(VK_EXT_DEPTH_CLIP_CONTROL_EXTENSION_NAME);
   device_extensions.push_back(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME);
   device_extensions.push_back(VK_KHR_COMPUTE_SHADER_DERIVATIVES_EXTENSION_NAME);
+#ifdef HELIX_WITH_CUDA
+  device_extensions.push_back(VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME);
+  device_extensions.push_back(VK_KHR_EXTERNAL_SEMAPHORE_WIN32_EXTENSION_NAME);
+#endif // HELIX_WITH_CUDA
 #ifdef VULKAN_EXTRA_VALIDATION
   // device_extensions.push_back(VK_EXT_DEVICE_FAULT_EXTENSION_NAME);
 #endif // VULKAN_EXTRA_VALIDATION
@@ -598,7 +682,7 @@ void VkDeviceManager::init() {
   set_resource_name<VkDescriptorPool>(VK_OBJECT_TYPE_DESCRIPTOR_POOL,
                                       vk_descriptor_pool, "MainDescriptorPool");
 
-  // Create Command pool and buffers
+  // Create Command pool
   VkCommandPoolCreateInfo pool_info{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
   pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
   pool_info.queueFamilyIndex =
@@ -609,48 +693,26 @@ void VkDeviceManager::init() {
   set_resource_name<VkCommandPool>(VK_OBJECT_TYPE_COMMAND_POOL, vk_command_pool,
                                    "MainCommandPool");
 
-  VkCommandBufferAllocateInfo cb_alloc_info{
-      VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
-  cb_alloc_info.commandPool = vk_command_pool;
-  cb_alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-  cb_alloc_info.commandBufferCount = vk_command_buffers.size();
-  VK_CHECK(vkAllocateCommandBuffers(vk_device, &cb_alloc_info,
-                                    vk_command_buffers.data()));
-  for (size_t i = 0; i < vk_command_buffers.size(); ++i) {
-    VkCommandBuffer cmd = vk_command_buffers.at(i);
-    std::string name = "CommandBuffer_" + std::to_string(i);
-    set_resource_name<VkCommandBuffer>(VK_OBJECT_TYPE_COMMAND_BUFFER, cmd,
-                                       name);
+  // Create FrameContexts
+  for (FrameContext &frame_ctx : frame_contexts) {
+    frame_ctx.init(this);
   }
-
   // Create Swapchain
   create_swapchain();
-
-  // Create Semaphores
+  // Create render finished semaphores
   VkSemaphoreCreateInfo semaphore_info{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
-  render_finished_semaphores.resize(swapchain.image_count);
+  swapchain.render_finished_semaphores.resize(swapchain.image_count);
   i32 index = 0;
-  for (auto &semaphore : render_finished_semaphores) {
+  for (auto &semaphore : swapchain.render_finished_semaphores) {
     VK_CHECK(
         vkCreateSemaphore(vk_device, &semaphore_info, nullptr, &semaphore));
     std::string name = "RenderFinishedSemaphore_" + std::to_string(index++);
     set_resource_name<VkSemaphore>(VK_OBJECT_TYPE_SEMAPHORE, semaphore, name);
   }
-  index = 0;
-  for (auto &semaphore : image_available_semaphores) {
-    VK_CHECK(
-        vkCreateSemaphore(vk_device, &semaphore_info, nullptr, &semaphore));
-    std::string name = "ImageAvailableSemaphore_" + std::to_string(index++);
-    set_resource_name<VkSemaphore>(VK_OBJECT_TYPE_SEMAPHORE, semaphore, name);
-  }
-  VkFenceCreateInfo fence_info{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
-  fence_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-  index = 0;
-  for (auto &fence : frame_in_flight_fences) {
-    VK_CHECK(vkCreateFence(vk_device, &fence_info, nullptr, &fence));
-    std::string name = "FrameInFlightFence_" + std::to_string(index++);
-    set_resource_name<VkFence>(VK_OBJECT_TYPE_FENCE, fence, name);
-  }
+
+#ifdef HELIX_WITH_CUDA
+  CUDA_CHECK(cudaStreamCreate(&cu_stream));
+#endif // HELIX_WITH_CUDA
 }
 
 void VkDeviceManager::create_swapchain() {
@@ -767,14 +829,14 @@ void VkDeviceManager::destroy_swapchain() noexcept {
 void VkDeviceManager::shutdown() {
   vkDeviceWaitIdle(vk_device);
 
-  for (auto &semaphore : render_finished_semaphores) {
-    vkDestroySemaphore(vk_device, semaphore, nullptr);
+#ifdef HELIX_WITH_CUDA
+  CUDA_CHECK(cudaStreamDestroy(cu_stream));
+#endif // HELIX_WITH_CUDA
+  for (FrameContext &frame_ctx : frame_contexts) {
+    frame_ctx.shutdown(this);
   }
-  for (auto &semaphore : image_available_semaphores) {
+  for (auto &semaphore : swapchain.render_finished_semaphores) {
     vkDestroySemaphore(vk_device, semaphore, nullptr);
-  }
-  for (auto &fence : frame_in_flight_fences) {
-    vkDestroyFence(vk_device, fence, nullptr);
   }
   destroy_swapchain();
 
@@ -809,26 +871,30 @@ void VkDeviceManager::begin_frame() {
   if (vsync_changed) {
     reset();
   }
+
+  FrameContext &frame_ctx = frame_contexts.at(current_frame);
+#ifdef HELIX_WITH_CUDA
+  frame_ctx.pre_cuda_cmd_submitted = false;
+#endif // HELIX_WITH_CUDA
+
   // Wait for the frame's fence
-  VK_CHECK(vkWaitForFences(vk_device, 1,
-                           &frame_in_flight_fences.at(current_frame), VK_TRUE,
+  VK_CHECK(vkWaitForFences(vk_device, 1, &frame_ctx.in_flight_fence, VK_TRUE,
                            UINT64_MAX));
-  VK_CHECK(
-      vkResetFences(vk_device, 1, &frame_in_flight_fences.at(current_frame)));
+  VK_CHECK(vkResetFences(vk_device, 1, &frame_ctx.in_flight_fence));
 
   // Acquire the next swapchain image
   const VkResult result =
       vkAcquireNextImageKHR(vk_device, swapchain.vk_handle, UINT64_MAX,
-                            image_available_semaphores.at(current_frame),
-                            VK_NULL_HANDLE, &swapchain.current_image_index);
+                            frame_ctx.image_available_semaphore, VK_NULL_HANDLE,
+                            &swapchain.current_image_index);
 
   if (result == VK_ERROR_OUT_OF_DATE_KHR) {
     reset();
   }
 
   // Start the command buffer
-  VkCommandBuffer cmd = vk_command_buffers.at(current_frame);
-  vkResetCommandBuffer(cmd, 0);
+  VkCommandBuffer cmd = get_current_cmd_buffer();
+  VK_CHECK(vkResetCommandBuffer(cmd, 0));
   const VkCommandBufferBeginInfo begin_info{
       VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
   VK_CHECK(vkBeginCommandBuffer(cmd, &begin_info));
@@ -857,7 +923,8 @@ void VkDeviceManager::begin_frame() {
 }
 
 void VkDeviceManager::end_frame() {
-  VkCommandBuffer cmd = vk_command_buffers.at(current_frame);
+  FrameContext &frame_ctx = frame_contexts.at(current_frame);
+  VkCommandBuffer cmd = get_current_cmd_buffer();
 
   // Transition swapchain to present mode
   VkImageMemoryBarrier2 image_barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
@@ -888,18 +955,32 @@ void VkDeviceManager::end_frame() {
       VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO};
   command_submit_info.commandBuffer = cmd;
 
+#ifdef HELIX_WITH_CUDA
+
   const VkSemaphoreSubmitInfo wait_info{
       .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
       .pNext = nullptr,
-      .semaphore = image_available_semaphores.at(current_frame),
+      .semaphore = frame_ctx.vk_cuda_done_semaphore,
+      .value = 0,
+      .stageMask =
+          frame_ctx.pre_cuda_cmd_submitted
+              ? VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT // wait before sampling
+              : VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+      .deviceIndex = 0};
+#else
+  const VkSemaphoreSubmitInfo wait_info{
+      .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+      .pNext = nullptr,
+      .semaphore = frame_ctx.image_available_semaphore,
       .value = 0,
       .stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
       .deviceIndex = 0};
+#endif // HELIX_WITH_CUDA
 
   const std::array<VkSemaphoreSubmitInfo, 1> signal_infos{VkSemaphoreSubmitInfo{
       .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
       .pNext = nullptr,
-      .semaphore = render_finished_semaphores.at(swapchain.current_image_index),
+      .semaphore = swapchain.get_current_render_finished_semaphore(),
       .value = 0,
       .stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
       .deviceIndex = 0}};
@@ -912,11 +993,8 @@ void VkDeviceManager::end_frame() {
   submit_info.signalSemaphoreInfoCount = signal_infos.size();
   submit_info.pSignalSemaphoreInfos = signal_infos.data();
 
-  // VK_CHECK(vkQueueSubmit2(vk_graphics_queue, 1, &submit_info,
-  // frame_in_flight_fences.at(current_frame)));
-  VkResult res = vkQueueSubmit2(vk_graphics_queue, 1, &submit_info,
-                                frame_in_flight_fences.at(current_frame));
-  VK_CHECK(res);
+  VK_CHECK(vkQueueSubmit2(vk_graphics_queue, 1, &submit_info,
+                          frame_ctx.in_flight_fence));
 }
 
 void VkDeviceManager::present() {
@@ -928,7 +1006,7 @@ void VkDeviceManager::present() {
   VkPresentInfoKHR present_info{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
   present_info.waitSemaphoreCount = 1;
   present_info.pWaitSemaphores =
-      &render_finished_semaphores.at(swapchain.current_image_index);
+      &swapchain.get_current_render_finished_semaphore();
 
   present_info.swapchainCount = 1;
   present_info.pSwapchains = &swapchain.vk_handle;

@@ -4,8 +4,20 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Release>:Release>")
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-project(RayTracer)
+option(HELIX_WITH_CUDA "Enable CUDA path tracing backend" ON)
+
+if(HELIX_WITH_CUDA)
+  project(RayTracer C CXX CUDA)
+else()
+  project(RayTracer C CXX)
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
+
+if(HELIX_WITH_CUDA)
+  set(CMAKE_CUDA_STANDARD 20)
+  find_package(CUDAToolkit REQUIRED)
+endif()
 
 # Ensure Vulkan SDK environment variable is correctly normalized
 file(TO_CMAKE_PATH "$ENV{VULKAN_SDK}" VULKAN_SDK)
@@ -14,6 +26,15 @@ file(TO_CMAKE_PATH "$ENV{VULKAN_SDK}" VULKAN_SDK)
 set(SPIRV_REFLECT_INCLUDE_DIR "${VULKAN_SDK}/Source/SPIRV-Reflect")
 
 file(GLOB_RECURSE SOURCE_LIST "Src/*.h" "Src/*.hpp" "Src/*.cpp")
+
+if(HELIX_WITH_CUDA)
+file(GLOB_RECURSE CUDA_SOURCE_LIST "Src/*.cu")
+  set_source_files_properties(${CUDA_SOURCE_LIST} PROPERTIES
+    LANGUAGE CUDA
+    SKIP_PRECOMPILE_HEADERS ON
+  )
+  list(APPEND SOURCE_LIST ${CUDA_SOURCE_LIST})
+endif()
 
 # Imgui
 file(GLOB VENDOR_SOURCE_LIST 
@@ -77,6 +98,20 @@ if(HELIX_WITH_TRACY)
     target_compile_definitions(${PROJECT_NAME} PUBLIC
       TRACY_ENABLE
   )
+endif()
+# CUDA
+if(HELIX_WITH_CUDA)
+  set_target_properties(${PROJECT_NAME} PROPERTIES
+    CUDA_SEPARABLE_COMPILATION ON
+    CUDA_ARCHITECTURES "75;86;89;120" 
+  )
+
+  target_link_libraries(${PROJECT_NAME} PRIVATE
+    CUDA::cudart
+    CUDA::cuda_driver
+  )
+
+  target_compile_definitions(${PROJECT_NAME} PRIVATE HELIX_WITH_CUDA)
 endif()
 # -------------------------
 target_include_directories(${PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/")

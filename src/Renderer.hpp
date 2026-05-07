@@ -47,9 +47,15 @@ public:
   VkResourceManager *p_rm{nullptr};
   VkStagingBuffer staging_buffer;
   ImageViewHandle output_image_view;
+#ifdef HELIX_WITH_CUDA
+  BufferHandle output_image_buffer;
+#endif // HELIX_WITH_CUDA
   PipelineHandle path_tracing_pipeline;
   SetLayoutHandle set_layout;
   VkDescriptorSet vk_set;
+#ifdef HELIX_WITH_CUDA
+  BufferHandle uniform_staging_buffer;
+#endif // HELIX_WITH_CUDA
   std::array<BufferHandle, MAX_FRAMES_IN_FLIGHT> uniform_buffers;
   BufferHandle triangle_geom_buffer;
   BufferHandle triangle_shading_buffer;

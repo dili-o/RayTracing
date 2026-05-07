@@ -24,7 +24,7 @@ void MaterialManager::init(u32 max_material_count, u32 sizeof_material,
                       VK_BUFFER_USAGE_TRANSFER_DST_BIT;
   buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
   buffer_info.size = max_material_count * sizeof_material;
-  buffer = p_rm->create_buffer(buffer_name, buffer_info, vma_alloc_info);
+  buffer = p_rm->create_buffer(buffer_name, buffer_info, vma_alloc_info, true);
 }
 
 void MaterialManager::shutdown(VkResourceManager *p_rm) {
@@ -127,12 +127,28 @@ void LambertManager::init(u32 max_material_count, VkResourceManager *p_rm) {
   sampler_info.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
   sampler_info.unnormalizedCoordinates = VK_FALSE;
   texture_sampler = p_rm->create_sampler("TextureSampler", sampler_info);
+
+#ifdef HELIX_WITH_CUDA
+  VmaAllocationCreateInfo vma_alloc_info{
+      .requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT};
+  VkBufferCreateInfo buffer_info{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+  buffer_info.usage = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+                      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                      VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+  buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+  buffer_info.size = max_material_count * sizeof(cudaTextureObject_t);
+  albedo_texture_objects = p_rm->create_buffer(
+      "AlbedoTextureObjectsBuffer", buffer_info, vma_alloc_info, true);
+#endif // HELIX_WITH_CUDA
 }
 
 void LambertManager::shutdown(VkResourceManager *p_rm) {
   vkDeviceWaitIdle(p_rm->p_device->vk_device);
   index_pool.release_all();
   p_rm->queue_destroy({texture_sampler});
+#ifdef HELIX_WITH_CUDA
+  p_rm->queue_destroy({albedo_texture_objects});
+#endif // HELIX_WITH_CUDA
 
   // Destroy remaining textures
   for (u32 index : material_indices) {
@@ -189,8 +205,9 @@ MaterialHandle LambertManager::add_material(VkStagingBuffer &staging_buffer,
 
   std::string name = "Lambert " + std::to_string(index) + "Image";
   std::string view_name = name + "View";
-  lambert_textures[index] = p_rm->create_image_view(view_name, name, image_info,
-                                                    vma_alloc_info, view_info);
+  lambert_textures[index] = p_rm->create_image_view(
+      view_name, name, image_info, vma_alloc_info, view_info, true);
+
   materials[index] = {index};
   material_indices.insert(index);
   // Stage pixel data
@@ -199,6 +216,16 @@ MaterialHandle LambertManager::add_material(VkStagingBuffer &staging_buffer,
   // Stage buffer change
   staging_buffer.stage(&materials[index], buffer, index * sizeof(Lambert),
                        sizeof(Lambert));
+  // Stage albedo_texture_objects change
+  VulkanImageView *vk_lambert_image_view =
+      p_rm->access_image_view(lambert_textures[index]);
+  VulkanImage *vk_lambert_image =
+      p_rm->access_image(vk_lambert_image_view->image_handle);
+#ifdef HELIX_WITH_CUDA
+  staging_buffer.stage(
+      &vk_lambert_image->cu_texture_obj, albedo_texture_objects,
+      index * sizeof(cudaTextureObject_t), sizeof(cudaTextureObject_t));
+#endif // HELIX_WITH_CUDA
   // Descriptor update write
   const VkDescriptorImageInfo descriptor_image_info{
       .sampler = p_rm->access_sampler(texture_sampler)->vk_handle,

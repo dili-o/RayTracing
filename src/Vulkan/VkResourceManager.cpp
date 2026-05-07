@@ -2,6 +2,9 @@
 #include "Platform/FileIO.h"
 #include "VkDeviceManager.h"
 #include "VkShaderCompilation.h"
+#ifdef HELIX_WITH_CUDA
+#include "CUDA/CudaErr.hpp"
+#endif // HELIX_WITH_CUDA
 
 static const std::string base_cache_dir = "PipelineCache\\";
 #if _DEBUG
@@ -75,6 +78,31 @@ void VkResourceManager::init(VkDeviceManager *p_device) {
 }
 
 void VkResourceManager::update(u64 current_frame_index) {
+  auto destroy_image_internal = [&](ImageHandle handle) {
+    VulkanImage *image = access_image(handle);
+    if (!image)
+      return;
+
+    // Only destroy if no views are referencing it anymore
+    if (image->view_count == 0) {
+      vmaDestroyImage(p_device->vma_allocator, image->vk_handle,
+                      image->vma_allocation);
+
+#ifdef HELIX_WITH_CUDA
+      // Clean up CUDA resources
+      if (image->cu_mip_array)
+        CUDA_CHECK(cudaFreeMipmappedArray(image->cu_mip_array));
+      if (image->cu_ext_mem)
+        CUDA_CHECK(cudaDestroyExternalMemory(image->cu_ext_mem));
+      if (image->cu_surface_obj)
+        CUDA_CHECK(cudaDestroySurfaceObject(image->cu_surface_obj));
+      if (image->cu_texture_obj)
+        CUDA_CHECK(cudaDestroyTextureObject(image->cu_texture_obj));
+#endif // HELIX_WITH_CUDA
+      image_pool.release(handle);
+    }
+  };
+
   for (int i = deletion_entries.size() - 1; i >= 0; --i) {
     const DeletionEntry &entry = deletion_entries[i];
 
@@ -91,16 +119,14 @@ void VkResourceManager::update(u64 current_frame_index) {
               }
               vmaDestroyBuffer(p_device->vma_allocator, buffer->vk_handle,
                                buffer->vma_allocation);
+#ifdef HELIX_WITH_CUDA
+              if (buffer->cu_ext_mem)
+                CUDA_CHECK(cudaDestroyExternalMemory(buffer->cu_ext_mem));
+#endif // HELIX_WITH_CUDA
+
               buffer_pool.release(handle);
             } else if constexpr (std::is_same_v<T, ImageHandle>) {
-              VulkanImage *image = access_image(handle);
-              if (!image)
-                return;
-              if (image->view_count == 0) {
-                vmaDestroyImage(p_device->vma_allocator, image->vk_handle,
-                                image->vma_allocation);
-                image_pool.release(handle);
-              }
+              destroy_image_internal(handle);
             } else if constexpr (std::is_same_v<T, ImageViewHandle>) {
               VulkanImageView *image_view = access_image_view(handle);
               if (!image_view)
@@ -108,9 +134,7 @@ void VkResourceManager::update(u64 current_frame_index) {
               VulkanImage *image = access_image(image_view->image_handle);
               HASSERT(image);
               if (--image->view_count == 0) {
-                vmaDestroyImage(p_device->vma_allocator, image->vk_handle,
-                                image->vma_allocation);
-                image_pool.release(image_view->image_handle);
+                destroy_image_internal(image_view->image_handle);
               }
               vkDestroyImageView(p_device->vk_device, image_view->vk_handle,
                                  nullptr);
@@ -157,32 +181,73 @@ void VkResourceManager::update(u64 current_frame_index) {
 // Create functions
 BufferHandle VkResourceManager::create_buffer(
     std::string_view name, VkBufferCreateInfo &create_info,
-    const VmaAllocationCreateInfo &vma_create_info) {
+    const VmaAllocationCreateInfo &vma_create_info, bool cuda_export) {
   BufferHandle handle = buffer_pool.obtain_new();
   if (!is_handle_valid(handle)) {
     HERROR("Failed to obtain a Vulkan buffer Resource!");
     return handle;
   }
-
   VulkanBuffer *buffer = buffer_pool.obtain(handle);
   *buffer = {};
-
   if (create_info.size == 0) {
     HWARN("VkBufferCreateInfo.size was set to 0, creating {} with a size of 4 "
           "instead",
           name);
     create_info.size = 4;
   }
+
+#ifdef HELIX_WITH_CUDA
+  VmaAllocationCreateInfo vma_create_info_copy = vma_create_info;
+  if (cuda_export) {
+    VkExternalMemoryBufferCreateInfo external_mem_info{
+        VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_BUFFER_CREATE_INFO};
+    external_mem_info.handleTypes =
+        VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT;
+    create_info.pNext = &external_mem_info;
+
+    u32 mem_type_index;
+    VK_CHECK(vmaFindMemoryTypeIndexForBufferInfo(
+        p_device->vma_allocator, &create_info, &vma_create_info_copy,
+        &mem_type_index));
+
+    auto export_pool_it = export_pools.find(mem_type_index);
+    if (export_pool_it == export_pools.end()) {
+      export_pools[mem_type_index] = {};
+      ExportPool &export_pool_ref = export_pools[mem_type_index];
+      export_pool_ref.export_mem_info = VkExportMemoryAllocateInfo{
+          .sType = VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO,
+          .handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT};
+
+      VmaPoolCreateInfo pool_info{};
+      pool_info.memoryTypeIndex = mem_type_index;
+      pool_info.pMemoryAllocateNext = &export_pool_ref.export_mem_info;
+      VK_CHECK(vmaCreatePool(p_device->vma_allocator, &pool_info,
+                             &export_pool_ref.pool));
+    }
+    vma_create_info_copy.pool = export_pools[mem_type_index].pool;
+    vma_create_info_copy.flags |= VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
+
+    VK_CHECK(vmaCreateBuffer(p_device->vma_allocator, &create_info,
+                             &vma_create_info_copy, &buffer->vk_handle,
+                             &buffer->vma_allocation, nullptr));
+  } else {
+    VK_CHECK(vmaCreateBuffer(p_device->vma_allocator, &create_info,
+                             &vma_create_info, &buffer->vk_handle,
+                             &buffer->vma_allocation, nullptr));
+  }
+#else
   VK_CHECK(vmaCreateBuffer(p_device->vma_allocator, &create_info,
                            &vma_create_info, &buffer->vk_handle,
                            &buffer->vma_allocation, nullptr));
+#endif
+
   p_device->set_resource_name<VkBuffer>(VK_OBJECT_TYPE_BUFFER,
                                         buffer->vk_handle, name);
+
   if (vma_create_info.flags & VMA_ALLOCATION_CREATE_MAPPED_BIT) {
     vmaMapMemory(p_device->vma_allocator, buffer->vma_allocation,
                  &buffer->p_data);
   }
-
   if (create_info.usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) {
     VkBufferDeviceAddressInfo address_info{
         VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO};
@@ -191,14 +256,48 @@ BufferHandle VkResourceManager::create_buffer(
         vkGetBufferDeviceAddress(p_device->vk_device, &address_info);
   }
 
-  buffer->vk_device_size = create_info.size;
+#ifdef HELIX_WITH_CUDA
+  if (cuda_export) {
+    VmaAllocationInfo vma_allocation_info{};
+    vmaGetAllocationInfo(p_device->vma_allocator, buffer->vma_allocation,
+                         &vma_allocation_info);
 
+    VkMemoryGetWin32HandleInfoKHR handle_info{
+        VK_STRUCTURE_TYPE_MEMORY_GET_WIN32_HANDLE_INFO_KHR};
+    handle_info.memory = vma_allocation_info.deviceMemory;
+    handle_info.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT;
+
+    HANDLE win_handle;
+    VK_CHECK(vkGetMemoryWin32HandleKHR(p_device->vk_device, &handle_info,
+                                       &win_handle));
+
+    cudaExternalMemoryHandleDesc ext_mem_desc{};
+    ext_mem_desc.type = cudaExternalMemoryHandleTypeOpaqueWin32;
+    ext_mem_desc.handle.win32.handle = win_handle;
+    ext_mem_desc.size = vma_allocation_info.size;
+    ext_mem_desc.flags = cudaExternalMemoryDedicated;
+
+    CUDA_CHECK(cudaImportExternalMemory(&buffer->cu_ext_mem, &ext_mem_desc));
+    CloseHandle(win_handle);
+
+    // Map directly to a device pointer — no mip array needed for buffers
+    cudaExternalMemoryBufferDesc buf_desc{};
+    buf_desc.offset = vma_allocation_info.offset;
+    buf_desc.size = create_info.size;
+    buf_desc.flags = 0;
+
+    CUDA_CHECK(cudaExternalMemoryGetMappedBuffer(
+        &buffer->cu_dev_ptr, buffer->cu_ext_mem, &buf_desc));
+  }
+#endif
+
+  buffer->vk_device_size = create_info.size;
   return handle;
 }
 
 ImageHandle VkResourceManager::create_image(
-    std::string_view name, const VkImageCreateInfo &image_create_info,
-    const VmaAllocationCreateInfo &vma_create_info) {
+    std::string_view name, VkImageCreateInfo &image_create_info,
+    VmaAllocationCreateInfo &vma_create_info, bool cuda_export) {
   ImageHandle handle = image_pool.obtain_new();
   if (!is_handle_valid(handle)) {
     HERROR("Failed to obtain a Vulkan image Resource!");
@@ -207,12 +306,158 @@ ImageHandle VkResourceManager::create_image(
 
   VulkanImage *image = image_pool.obtain(handle);
   *image = {};
+#ifdef HELIX_WITH_CUDA
+  if (cuda_export) {
+    VkExternalMemoryImageCreateInfo external_mem_info{
+        VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO};
+    external_mem_info.handleTypes =
+        VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT; // Windows
+    image_create_info.pNext = &external_mem_info;
+
+    // Find the right memory type index for device local memory
+    u32 mem_type_index;
+    VK_CHECK(vmaFindMemoryTypeIndexForImageInfo(
+        p_device->vma_allocator, &image_create_info, &vma_create_info,
+        &mem_type_index));
+
+    auto export_pool_it = export_pools.find(mem_type_index);
+    ExportPool export_pool;
+    if (export_pool_it != export_pools.end()) {
+      export_pool = export_pools[mem_type_index];
+    } else {
+      export_pools[mem_type_index] = {};
+
+      ExportPool &export_pool_ref = export_pools[mem_type_index];
+      export_pool_ref.export_mem_info = VkExportMemoryAllocateInfo{
+          .sType = VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO,
+          .handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT};
+
+      VmaPoolCreateInfo pool_info{};
+      pool_info.memoryTypeIndex = mem_type_index;
+      pool_info.pMemoryAllocateNext = &export_pool_ref.export_mem_info;
+
+      VK_CHECK(vmaCreatePool(p_device->vma_allocator, &pool_info,
+                             &export_pool_ref.pool));
+
+      // Now allocate into the export pool
+      export_pool = export_pool_ref;
+    }
+    vma_create_info.pool = export_pool.pool;
+    vma_create_info.flags |= VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
+  }
+#endif // HELIX_WITH_CUDA
 
   VK_CHECK(vmaCreateImage(p_device->vma_allocator, &image_create_info,
                           &vma_create_info, &image->vk_handle,
                           &image->vma_allocation, nullptr));
   p_device->set_resource_name<VkImage>(VK_OBJECT_TYPE_IMAGE, image->vk_handle,
                                        name);
+#ifdef HELIX_WITH_CUDA
+  if (cuda_export) {
+    VmaAllocationInfo vma_allocation_info{};
+    vmaGetAllocationInfo(p_device->vma_allocator, image->vma_allocation,
+                         &vma_allocation_info);
+    VkMemoryGetWin32HandleInfoKHR handle_info{
+        VK_STRUCTURE_TYPE_MEMORY_GET_WIN32_HANDLE_INFO_KHR};
+    handle_info.memory = vma_allocation_info.deviceMemory;
+    handle_info.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT;
+
+    HANDLE win_handle;
+    VK_CHECK(vkGetMemoryWin32HandleKHR(p_device->vk_device, &handle_info,
+                                       &win_handle));
+
+    // Import cuda memory
+    VkMemoryRequirements mem_req{};
+    vkGetImageMemoryRequirements(p_device->vk_device, image->vk_handle,
+                                 &mem_req);
+    cudaExternalMemoryHandleDesc ext_mem_desc{};
+    ext_mem_desc.type = cudaExternalMemoryHandleTypeOpaqueWin32;
+    ext_mem_desc.handle.win32.handle = win_handle;
+    ext_mem_desc.size = mem_req.size;
+    ext_mem_desc.flags = cudaExternalMemoryDedicated;
+
+    CUDA_CHECK(cudaImportExternalMemory(&image->cu_ext_mem, &ext_mem_desc));
+
+    // Get Mipped array
+    cudaChannelFormatDesc channel_desc;
+    switch (image_create_info.format) {
+    case VK_FORMAT_R32G32B32A32_SFLOAT:
+      channel_desc = cudaCreateChannelDesc<float4>();
+      break;
+    case VK_FORMAT_R8G8B8A8_UNORM:
+      channel_desc = cudaCreateChannelDesc<uchar4>();
+      break;
+    case VK_FORMAT_R16G16B16A16_SFLOAT:
+      channel_desc =
+          cudaCreateChannelDesc(16, 16, 16, 16, cudaChannelFormatKindFloat);
+      break;
+    default:
+      HERROR("Unsupported format for CUDA export");
+      break;
+    }
+    cudaExternalMemoryMipmappedArrayDesc mip_desc{};
+    mip_desc.offset = vma_allocation_info.offset; // not 0!
+    mip_desc.formatDesc = channel_desc;
+    mip_desc.extent = make_cudaExtent(image_create_info.extent.width,
+                                      image_create_info.extent.height, 0);
+    mip_desc.flags = cudaArraySurfaceLoadStore;
+    mip_desc.numLevels = 1;
+
+    CUDA_CHECK(cudaExternalMemoryGetMappedMipmappedArray(
+        &image->cu_mip_array, image->cu_ext_mem, &mip_desc));
+
+    // Create surface and/or texture object
+    cudaArray_t cuda_array;
+    CUDA_CHECK(cudaGetMipmappedArrayLevel(&cuda_array, image->cu_mip_array, 0));
+
+    cudaResourceDesc res_desc{};
+    res_desc.resType = cudaResourceTypeArray;
+    res_desc.res.array.array = cuda_array;
+    if (image_create_info.usage & VK_IMAGE_USAGE_STORAGE_BIT) {
+      CUDA_CHECK(cudaCreateSurfaceObject(&image->cu_surface_obj, &res_desc));
+    }
+    if (image_create_info.usage & VK_IMAGE_USAGE_SAMPLED_BIT) {
+      cudaTextureDesc tex_desc{};
+      // Make configurable
+      tex_desc.addressMode[0] = cudaAddressModeClamp;
+      tex_desc.addressMode[1] = cudaAddressModeClamp;
+      switch (image_create_info.format) {
+      case VK_FORMAT_R32G32B32A32_SFLOAT:
+        tex_desc.filterMode = cudaFilterModePoint;
+        break;
+      case VK_FORMAT_R8G8B8A8_UNORM:
+        tex_desc.filterMode = cudaFilterModePoint;
+        break;
+      case VK_FORMAT_R16G16B16A16_SFLOAT:
+        tex_desc.filterMode = cudaFilterModePoint;
+        break;
+      default:
+        HERROR("Unsupported format for CUDA export");
+        break;
+      }
+
+      switch (image_create_info.format) {
+      case VK_FORMAT_R32G32B32A32_SFLOAT:
+        tex_desc.readMode = cudaReadModeElementType; // already float
+        break;
+      case VK_FORMAT_R8G8B8A8_UNORM:
+        tex_desc.readMode = cudaReadModeNormalizedFloat; // u8 → float [0,1]
+        break;
+      case VK_FORMAT_R16G16B16A16_SFLOAT:
+        tex_desc.readMode = cudaReadModeElementType;
+        break;
+      default:
+        HERROR("Unsupported format for CUDA export");
+        break;
+      }
+      tex_desc.normalizedCoords = 0; // use pixel coords not [0,1]
+
+      CUDA_CHECK(cudaCreateTextureObject(&image->cu_texture_obj, &res_desc,
+                                         &tex_desc, nullptr));
+    }
+    CloseHandle(win_handle);
+  }
+#endif // HELIX_WITH_CUDA
 
   image->vk_extent.width = image_create_info.extent.width;
   image->vk_extent.height = image_create_info.extent.height;
@@ -257,11 +502,12 @@ VkResourceManager::create_image_view(std::string_view name,
 
 ImageViewHandle VkResourceManager::create_image_view(
     std::string_view view_name, std::string_view image_name,
-    const VkImageCreateInfo &image_create_info,
-    const VmaAllocationCreateInfo &vma_create_info,
-    VkImageViewCreateInfo &view_create_info) {
+    VkImageCreateInfo &image_create_info,
+    VmaAllocationCreateInfo &vma_create_info,
+    VkImageViewCreateInfo &view_create_info, bool cuda_export) {
   return create_image_view(
-      view_name, create_image(image_name, image_create_info, vma_create_info),
+      view_name,
+      create_image(image_name, image_create_info, vma_create_info, cuda_export),
       view_create_info);
 }
 
@@ -411,6 +657,13 @@ void VkResourceManager::shutdown() {
     cache_file.Write(cache_size, cache_data.data());
   }
   vkDestroyPipelineCache(p_device->vk_device, vk_pipeline_cache, nullptr);
+
+#ifdef HELIX_WITH_CUDA
+  // Destroy vma pools
+  for (auto &it : export_pools) {
+    vmaDestroyPool(p_device->vma_allocator, it.second.pool);
+  }
+#endif // HELIX_WITH_CUDA
 
   buffer_pool.shutdown();
   image_pool.shutdown();

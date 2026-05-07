@@ -406,16 +406,90 @@ void PathTracer::run() {
       cam.update(delta_time);
       scene_graph.update_transforms(&renderer);
       device.begin_frame();
-      VkCommandBuffer cmd = device.get_current_cmd_buffer();
 
       renderer.render(cam);
 
-      push_debug_label(cmd, "Fullscreen");
+      VkCommandBuffer cmd = device.get_current_cmd_buffer();
       // Transition the output image to sampled layout
       VulkanImageView *vk_output_image_view =
           rm.access_image_view(renderer.output_image_view);
       VulkanImage *vk_output_image =
           rm.access_image(vk_output_image_view->image_handle);
+#ifdef HELIX_WITH_CUDA
+      // cmd should be post_sumbit_cmd
+      VK_CHECK(vkResetCommandBuffer(cmd, 0));
+      const VkCommandBufferBeginInfo begin_info{
+          VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+      VK_CHECK(vkBeginCommandBuffer(cmd, &begin_info));
+
+      VkImageMemoryBarrier2 post_barrier{
+          VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+      post_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+      post_barrier.subresourceRange.baseMipLevel = 0;
+      post_barrier.subresourceRange.levelCount = 1;
+      post_barrier.subresourceRange.baseArrayLayer = 0;
+      post_barrier.subresourceRange.layerCount = 1;
+      post_barrier.image = vk_output_image->vk_handle;
+      post_barrier.srcStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+      post_barrier.srcAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
+      post_barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+      post_barrier.dstStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+      post_barrier.dstAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
+      post_barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+
+      VulkanBuffer *vk_output_buffer =
+          rm.access_buffer(renderer.output_image_buffer);
+      VkBufferMemoryBarrier2 buffer_barrier{
+          VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2};
+      buffer_barrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+      buffer_barrier.srcAccessMask =
+          VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
+      buffer_barrier.dstStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+      buffer_barrier.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT;
+      buffer_barrier.buffer = vk_output_buffer->vk_handle;
+      buffer_barrier.offset = 0;
+      buffer_barrier.size = vk_output_buffer->vk_device_size;
+
+      VkDependencyInfo post_dep{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+      post_dep.imageMemoryBarrierCount = 1;
+      post_dep.pImageMemoryBarriers = &post_barrier;
+      post_dep.bufferMemoryBarrierCount = 1;
+      post_dep.pBufferMemoryBarriers = &buffer_barrier;
+      vkCmdPipelineBarrier2(cmd, &post_dep);
+
+      VkBufferImageCopy2 region{VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2};
+      region.bufferOffset = 0;
+      region.bufferRowLength = 0;
+      region.bufferImageHeight = 0;
+      region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+      region.imageSubresource.mipLevel = 0;
+      region.imageSubresource.baseArrayLayer = 0;
+      region.imageSubresource.layerCount = 1;
+      region.imageOffset = {0, 0, 0};
+      region.imageExtent = {vk_output_image->width(), vk_output_image->height(),
+                            1};
+
+      VkCopyBufferToImageInfo2 buffer_image_info{
+          VK_STRUCTURE_TYPE_COPY_BUFFER_TO_IMAGE_INFO_2};
+      buffer_image_info.srcBuffer = vk_output_buffer->vk_handle;
+      buffer_image_info.dstImage = vk_output_image->vk_handle;
+      buffer_image_info.dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+      buffer_image_info.regionCount = 1;
+      buffer_image_info.pRegions = &region;
+      vkCmdCopyBufferToImage2(cmd, &buffer_image_info);
+
+      post_barrier.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+      post_barrier.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
+      post_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+      post_barrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+      post_barrier.dstAccessMask = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
+      post_barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+      post_dep.bufferMemoryBarrierCount = 0;
+      post_dep.pBufferMemoryBarriers = nullptr;
+      vkCmdPipelineBarrier2(cmd, &post_dep);
+
+#else
       VkImageMemoryBarrier2 image_barrier{
           VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
       image_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -438,6 +512,9 @@ void PathTracer::run() {
       dependency_info.imageMemoryBarrierCount = 1;
       dependency_info.pImageMemoryBarriers = &image_barrier;
       vkCmdPipelineBarrier2(cmd, &dependency_info);
+
+#endif // HELIX_WITH_CUDA
+      push_debug_label(cmd, "Fullscreen");
 
       const VkExtent2D screen_extents{.width = device.back_buffer_width,
                                       .height = device.back_buffer_height};

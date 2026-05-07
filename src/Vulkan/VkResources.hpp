@@ -1,8 +1,12 @@
 #pragma once
 
 #include "Core/ResourcePool.hpp"
-#include "Vendor/vk_mem_alloc.h"
-#include "Vendor/volk/volk.h"
+// Vendor
+#include <vk_mem_alloc.h>
+#include <volk/volk.h>
+#ifdef HELIX_WITH_CUDA
+#include <cuda_runtime.h>
+#endif // HELIX_WITH_CUDA
 
 namespace hlx {
 struct BufferTag {};
@@ -29,6 +33,10 @@ public:
   VmaAllocation vma_allocation{VK_NULL_HANDLE};
   VkDeviceAddress vk_device_address{0};
   void *p_data{nullptr};
+#ifdef HELIX_WITH_CUDA
+  cudaExternalMemory_t cu_ext_mem{0};
+  void *cu_dev_ptr{nullptr};
+#endif
 };
 
 struct VulkanImage {
@@ -45,6 +53,12 @@ public:
   VkPipelineStageFlags2 current_stage{VK_PIPELINE_STAGE_2_NONE};
   VkAccessFlags2 current_access{VK_ACCESS_2_NONE};
   u32 view_count{0};
+#ifdef HELIX_WITH_CUDA
+  cudaSurfaceObject_t cu_surface_obj{0};
+  cudaTextureObject_t cu_texture_obj{0};
+  cudaMipmappedArray_t cu_mip_array{0};
+  cudaExternalMemory_t cu_ext_mem{0};
+#endif // HELIX_WITH_CUDA
 };
 
 struct VulkanImageView {

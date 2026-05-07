@@ -69,6 +69,9 @@ public:
   std::vector<ImageViewHandle> lambert_textures;
   std::vector<VkDescriptorImageInfo> image_infos;
   std::vector<VkWriteDescriptorSet> write_infos;
+#ifdef HELIX_WITH_CUDA
+  BufferHandle albedo_texture_objects;
+#endif // HELIX_WITH_CUDA
   SamplerHandle texture_sampler;
   bool update_descriptor{false};
 };
