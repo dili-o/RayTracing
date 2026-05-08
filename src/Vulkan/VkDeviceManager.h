@@ -126,7 +126,7 @@ public:
   VmaAllocator vma_allocator{VK_NULL_HANDLE};
   QueueFamilyIndices queue_family_indices;
 #ifdef HELIX_WITH_CUDA
-  cudaStream_t cu_stream;
+  cudaStream_t cu_render_stream;
 #endif // HELIX_WITH_CUDA
   VkQueue vk_graphics_queue{VK_NULL_HANDLE};
   VkQueue vk_transfer_queue{VK_NULL_HANDLE};

@@ -111,7 +111,10 @@ if(HELIX_WITH_CUDA)
     CUDA::cuda_driver
   )
 
-  target_compile_definitions(${PROJECT_NAME} PRIVATE HELIX_WITH_CUDA)
+  target_compile_definitions(${PROJECT_NAME} PRIVATE 
+    # $<$<COMPILE_LANGUAGE:CUDA>:-lineinfo>
+    HELIX_WITH_CUDA
+  )
 endif()
 # -------------------------
 target_include_directories(${PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/")

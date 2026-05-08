@@ -768,16 +768,12 @@ void Renderer::render(Camera &camera) {
   // Wait for the signaled semaphore on cuda's side
   cudaExternalSemaphoreWaitParams wait_params{};
   CUDA_CHECK(cudaWaitExternalSemaphoresAsync(
-      &frame_ctx.cu_wait_sem, &wait_params, 1, p_device->cu_stream));
+      &frame_ctx.cu_wait_sem, &wait_params, 1, p_device->cu_render_stream));
 
-  dim3 block(32, 32);
-  dim3 grid((vk_output_image->width() + block.x - 1) / block.x,
-            (vk_output_image->height() + block.y - 1) / block.y);
-
-  launch_trace_world(push_constant, p_device->cu_stream,
+  launch_trace_world(push_constant, p_device->cu_render_stream,
                      vk_output_buffer->cu_dev_ptr);
 #ifdef _DEBUG
-  cudaStreamSynchronize(p_device->cu_stream);
+  cudaStreamSynchronize(p_device->cu_render_stream);
   cudaError_t err = cudaGetLastError();
   if (err != cudaSuccess) {
     HERROR("Kernel error: {}", cudaGetErrorString(err));
@@ -787,7 +783,7 @@ void Renderer::render(Camera &camera) {
   // Signal the done semaphore
   cudaExternalSemaphoreSignalParams signal_params{};
   CUDA_CHECK(cudaSignalExternalSemaphoresAsync(
-      &frame_ctx.cu_done_sem, &signal_params, 1, p_device->cu_stream));
+      &frame_ctx.cu_done_sem, &signal_params, 1, p_device->cu_render_stream));
 #else
   const VulkanPipeline *pipeline = p_rm->access_pipeline(path_tracing_pipeline);
   vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline->vk_handle);

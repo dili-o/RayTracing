@@ -90,10 +90,8 @@ void VkResourceManager::update(u64 current_frame_index) {
 
 #ifdef HELIX_WITH_CUDA
       // Clean up CUDA resources
-      if (image->cu_native_array) {
+      if (image->cu_native_array)
         CUDA_CHECK(cudaFreeArray(image->cu_native_array));
-        image->cu_native_array = nullptr;
-      }
       if (image->cu_mip_array)
         CUDA_CHECK(cudaFreeMipmappedArray(image->cu_mip_array));
       if (image->cu_ext_mem)
@@ -103,6 +101,9 @@ void VkResourceManager::update(u64 current_frame_index) {
       if (image->cu_texture_obj)
         CUDA_CHECK(cudaDestroyTextureObject(image->cu_texture_obj));
 #endif // HELIX_WITH_CUDA
+
+      // Reset it's values
+      *image = {};
       image_pool.release(handle);
     }
   };
@@ -414,10 +415,10 @@ ImageHandle VkResourceManager::create_image(
         &image->cu_mip_array, image->cu_ext_mem, &mip_desc));
 
     // Create surface and/or texture object
-    // TODO: Only create a VkImage and not a vma allocation
-    cudaMallocArray(&image->cu_native_array, &channel_desc,
-                    image_create_info.extent.width,
-                    image_create_info.extent.height);
+    CUDA_CHECK(cudaMallocArray(&image->cu_native_array, &channel_desc,
+                               image_create_info.extent.width,
+                               image_create_info.extent.height));
+
     cudaResourceDesc res_desc{};
     res_desc.resType = cudaResourceTypeArray;
     res_desc.res.array.array = image->cu_native_array;

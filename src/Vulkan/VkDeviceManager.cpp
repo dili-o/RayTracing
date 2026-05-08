@@ -711,7 +711,7 @@ void VkDeviceManager::init() {
   }
 
 #ifdef HELIX_WITH_CUDA
-  CUDA_CHECK(cudaStreamCreate(&cu_stream));
+  CUDA_CHECK(cudaStreamCreate(&cu_render_stream));
 #endif // HELIX_WITH_CUDA
 }
 
@@ -830,7 +830,7 @@ void VkDeviceManager::shutdown() {
   vkDeviceWaitIdle(vk_device);
 
 #ifdef HELIX_WITH_CUDA
-  CUDA_CHECK(cudaStreamDestroy(cu_stream));
+  CUDA_CHECK(cudaStreamDestroy(cu_render_stream));
 #endif // HELIX_WITH_CUDA
   for (FrameContext &frame_ctx : frame_contexts) {
     frame_ctx.shutdown(this);

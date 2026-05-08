@@ -94,10 +94,8 @@ void PathTracer::init() {
   u32 cornell_box_id = scene_graph.add_node(0, "Cornell Box");
   // Materials
   MaterialHandle red_mat = renderer.add_lambert_material({0.65f, 0.05f, 0.05f});
-  MaterialHandle white_mat = renderer.add_lambert_material(
-      ASSETS_PATH
-      "/Textures/Bricks102_4K-JPG_Color.jpg"); // renderer.add_lambert_material({0.73f,
-                                               // 0.73f, 0.73f});
+  MaterialHandle white_mat =
+      renderer.add_lambert_material({0.73f, 0.73f, 0.73f});
   MaterialHandle green_mat =
       renderer.add_lambert_material({0.12f, 0.45f, 0.15f});
   MaterialHandle emissive_mat =

@@ -31,7 +31,11 @@ public:
   VkCommandPool vk_command_pool{VK_NULL_HANDLE};
   VkCommandBuffer vk_command_buffer{VK_NULL_HANDLE};
   VkQueue vk_queue{VK_NULL_HANDLE};
+#ifdef HELIX_WITH_CUDA
+  cudaStream_t cu_stream{0};
+#endif // HELIX_WITH_CUDA
   bool is_recording{false};
+  bool cuda_upload_staged{false};
 
 private:
   void begin();

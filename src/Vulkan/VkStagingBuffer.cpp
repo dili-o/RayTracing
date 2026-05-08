@@ -16,6 +16,8 @@ void VkStagingBuffer::shutdown() {
 
   p_resource_manager->queue_destroy({buffer_handle, 0});
 
+  CUDA_CHECK(cudaStreamDestroy(cu_stream));
+
   p_device = nullptr;
   p_resource_manager = nullptr;
   vk_command_pool = VK_NULL_HANDLE;
@@ -84,6 +86,9 @@ void VkStagingBuffer::init(VkDeviceManager *p_device,
   cb_alloc_info.commandBufferCount = 1;
   VK_CHECK(vkAllocateCommandBuffers(p_device->vk_device, &cb_alloc_info,
                                     &vk_command_buffer));
+#ifdef HELIX_WITH_CUDA
+  CUDA_CHECK(cudaStreamCreate(&cu_stream));
+#endif // HELIX_WITH_CUDA
 }
 
 void VkStagingBuffer::stage(const void *p_data, BufferHandle dst_buffer_handle,
@@ -213,6 +218,17 @@ void VkStagingBuffer::stage(const void *p_data,
   vkCmdPipelineBarrier2(vk_command_buffer, &dependency_info);
 
   buffer->current_size += size;
+#ifdef HELIX_WITH_CUDA
+  // TODO: Assumes 4 bytes per pixel
+  if (image->cu_native_array) {
+    CUDA_CHECK(cudaMemcpy2DToArrayAsync(image->cu_native_array, 0, 0, p_data,
+                                        image->width() * 4, // src pitch
+                                        image->width() * 4, // width in bytes
+                                        image->height(),
+                                        cudaMemcpyHostToDevice));
+    cuda_upload_staged = true;
+  }
+#endif // HELIX_WITH_CUDA
 }
 
 void VkStagingBuffer::copy_data(const void *p_data, size_t size,
@@ -254,6 +270,13 @@ void VkStagingBuffer::flush() {
 
   vkQueueSubmit2(vk_queue, 1, &submit_info, VK_NULL_HANDLE);
   vkQueueWaitIdle(vk_queue);
+
+#ifdef HELIX_WITH_CUDA
+  if (cuda_upload_staged) {
+    CUDA_CHECK(cudaStreamSynchronize(cu_stream));
+    cuda_upload_staged = false;
+  }
+#endif // HELIX_WITH_CUDA
 
   VulkanBuffer *buffer = p_resource_manager->access_buffer(buffer_handle);
   buffer->current_size = 0;

@@ -213,23 +213,14 @@ MaterialHandle LambertManager::add_material(VkStagingBuffer &staging_buffer,
   // Stage pixel data
   staging_buffer.stage(pixels, lambert_textures[index],
                        image_info.extent.width * image_info.extent.height * 4);
-#ifdef HELIX_WITH_CUDA
-  VulkanImageView *vk_image_view =
-      p_rm->access_image_view(lambert_textures[index]);
-  VulkanImage *vk_image = p_rm->access_image(vk_image_view->image_handle);
-  cudaMemcpy2DToArray(vk_image->cu_native_array, 0, 0, pixels,
-                      width * 4, // src pitch
-                      width * 4, // width in bytes
-                      height, cudaMemcpyHostToDevice);
-#endif // HELIX_WITH_CUDA
-  // Stage buffer change
-  staging_buffer.stage(&materials[index], buffer, index * sizeof(Lambert),
-                       sizeof(Lambert));
-  // Stage albedo_texture_objects change
   VulkanImageView *vk_lambert_image_view =
       p_rm->access_image_view(lambert_textures[index]);
   VulkanImage *vk_lambert_image =
       p_rm->access_image(vk_lambert_image_view->image_handle);
+  // Stage buffer change
+  staging_buffer.stage(&materials[index], buffer, index * sizeof(Lambert),
+                       sizeof(Lambert));
+  // Stage albedo_texture_objects change
 #ifdef HELIX_WITH_CUDA
   staging_buffer.stage(
       &vk_lambert_image->cu_texture_obj, albedo_texture_objects,

@@ -143,6 +143,11 @@ __global__ void trace_world(void *raw_buf, const PushConstant constant_data) {
             break;
 
           attenuation *= material_attenuation;
+
+          // Early termination for very low contribution
+          if (fmaxf(attenuation.x, fmaxf(attenuation.y, attenuation.z)) <
+              0.001f)
+            break;
           // attenuation *= float3(uv.x, uv.y, 0.f);
           r = r_out;
 
@@ -151,6 +156,7 @@ __global__ void trace_world(void *raw_buf, const PushConstant constant_data) {
           float a = 0.5f * (unit_direction.y + 1.f);
           float3 sky =
               lerp(float3(0.7f, 0.7f, 0.7f), float3(0.5f, 0.7f, 1.f), a);
+          // float3 sky = float3(0.f);
 
           sample_radiance += attenuation * sky;
           break;
@@ -176,8 +182,7 @@ __global__ void trace_world(void *raw_buf, const PushConstant constant_data) {
 
 void launch_trace_world(PushConstant &constant_data, cudaStream_t cu_stream,
                         void *output_buffer) {
-  // dim3 block(32, 32);
-  dim3 block(8, 8);
+  dim3 block(16, 16);
   dim3 grid((constant_data.image_width + block.x - 1) / block.x,
             (constant_data.image_height + block.y - 1) / block.y);
   trace_world<<<grid, block, 0, cu_stream>>>(output_buffer, constant_data);
