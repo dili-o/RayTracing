@@ -428,8 +428,8 @@ ImageHandle VkResourceManager::create_image(
     if (image_create_info.usage & VK_IMAGE_USAGE_SAMPLED_BIT) {
       cudaTextureDesc tex_desc{};
       // Make configurable
-      tex_desc.addressMode[0] = cudaAddressModeClamp;
-      tex_desc.addressMode[1] = cudaAddressModeClamp;
+      tex_desc.addressMode[0] = cudaAddressModeWrap;
+      tex_desc.addressMode[1] = cudaAddressModeWrap;
       switch (image_create_info.format) {
       case VK_FORMAT_R32G32B32A32_SFLOAT:
         tex_desc.filterMode = cudaFilterModePoint;

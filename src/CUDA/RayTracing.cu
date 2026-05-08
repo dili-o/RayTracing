@@ -182,7 +182,7 @@ __global__ void trace_world(void *raw_buf, const PushConstant constant_data) {
 
 void launch_trace_world(PushConstant &constant_data, cudaStream_t cu_stream,
                         void *output_buffer) {
-  dim3 block(16, 16);
+  dim3 block(8, 8);
   dim3 grid((constant_data.image_width + block.x - 1) / block.x,
             (constant_data.image_height + block.y - 1) / block.y);
   trace_world<<<grid, block, 0, cu_stream>>>(output_buffer, constant_data);
