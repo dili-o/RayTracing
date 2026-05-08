@@ -90,6 +90,10 @@ void VkResourceManager::update(u64 current_frame_index) {
 
 #ifdef HELIX_WITH_CUDA
       // Clean up CUDA resources
+      if (image->cu_native_array) {
+        CUDA_CHECK(cudaFreeArray(image->cu_native_array));
+        image->cu_native_array = nullptr;
+      }
       if (image->cu_mip_array)
         CUDA_CHECK(cudaFreeMipmappedArray(image->cu_mip_array));
       if (image->cu_ext_mem)
@@ -396,23 +400,27 @@ ImageHandle VkResourceManager::create_image(
       break;
     }
     cudaExternalMemoryMipmappedArrayDesc mip_desc{};
-    mip_desc.offset = vma_allocation_info.offset; // not 0!
+    mip_desc.offset = 0;
     mip_desc.formatDesc = channel_desc;
     mip_desc.extent = make_cudaExtent(image_create_info.extent.width,
                                       image_create_info.extent.height, 0);
-    mip_desc.flags = cudaArraySurfaceLoadStore;
+    mip_desc.flags = 0;
+    if (image_create_info.usage & VK_IMAGE_USAGE_STORAGE_BIT) {
+      mip_desc.flags = cudaArraySurfaceLoadStore;
+    }
     mip_desc.numLevels = 1;
 
     CUDA_CHECK(cudaExternalMemoryGetMappedMipmappedArray(
         &image->cu_mip_array, image->cu_ext_mem, &mip_desc));
 
     // Create surface and/or texture object
-    cudaArray_t cuda_array;
-    CUDA_CHECK(cudaGetMipmappedArrayLevel(&cuda_array, image->cu_mip_array, 0));
-
+    // TODO: Only create a VkImage and not a vma allocation
+    cudaMallocArray(&image->cu_native_array, &channel_desc,
+                    image_create_info.extent.width,
+                    image_create_info.extent.height);
     cudaResourceDesc res_desc{};
     res_desc.resType = cudaResourceTypeArray;
-    res_desc.res.array.array = cuda_array;
+    res_desc.res.array.array = image->cu_native_array;
     if (image_create_info.usage & VK_IMAGE_USAGE_STORAGE_BIT) {
       CUDA_CHECK(cudaCreateSurfaceObject(&image->cu_surface_obj, &res_desc));
     }
@@ -424,33 +432,23 @@ ImageHandle VkResourceManager::create_image(
       switch (image_create_info.format) {
       case VK_FORMAT_R32G32B32A32_SFLOAT:
         tex_desc.filterMode = cudaFilterModePoint;
-        break;
-      case VK_FORMAT_R8G8B8A8_UNORM:
-        tex_desc.filterMode = cudaFilterModePoint;
-        break;
-      case VK_FORMAT_R16G16B16A16_SFLOAT:
-        tex_desc.filterMode = cudaFilterModePoint;
-        break;
-      default:
-        HERROR("Unsupported format for CUDA export");
-        break;
-      }
-
-      switch (image_create_info.format) {
-      case VK_FORMAT_R32G32B32A32_SFLOAT:
-        tex_desc.readMode = cudaReadModeElementType; // already float
-        break;
-      case VK_FORMAT_R8G8B8A8_UNORM:
-        tex_desc.readMode = cudaReadModeNormalizedFloat; // u8 → float [0,1]
-        break;
-      case VK_FORMAT_R16G16B16A16_SFLOAT:
         tex_desc.readMode = cudaReadModeElementType;
+        tex_desc.normalizedCoords = 0;
+        break;
+      case VK_FORMAT_R8G8B8A8_UNORM:
+        tex_desc.filterMode = cudaFilterModePoint;
+        tex_desc.readMode = cudaReadModeNormalizedFloat;
+        tex_desc.normalizedCoords = 1;
+        break;
+      case VK_FORMAT_R16G16B16A16_SFLOAT:
+        tex_desc.filterMode = cudaFilterModePoint;
+        tex_desc.readMode = cudaReadModeElementType;
+        tex_desc.normalizedCoords = 0;
         break;
       default:
         HERROR("Unsupported format for CUDA export");
         break;
       }
-      tex_desc.normalizedCoords = 0; // use pixel coords not [0,1]
 
       CUDA_CHECK(cudaCreateTextureObject(&image->cu_texture_obj, &res_desc,
                                          &tex_desc, nullptr));

@@ -143,6 +143,7 @@ __global__ void trace_world(void *raw_buf, const PushConstant constant_data) {
             break;
 
           attenuation *= material_attenuation;
+          // attenuation *= float3(uv.x, uv.y, 0.f);
           r = r_out;
 
         } else {

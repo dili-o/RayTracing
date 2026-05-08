@@ -57,7 +57,7 @@ struct alignas(16) TriangleShading {
 
   __device__ float2 interpolate_uvs(float u, float v) {
     float alpha = 1.f - u - v;
-    return alpha * uv0 + u * uv1 + v * uv2;
+    return (alpha * uv0) + (u * uv1) + (v * uv2);
   }
 
   float3 n0;
@@ -69,6 +69,7 @@ struct alignas(16) TriangleShading {
 
   float2 uv0;
   float2 uv1;
+
   float2 uv2;
   float2 padding;
 };

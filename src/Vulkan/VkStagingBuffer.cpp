@@ -136,6 +136,7 @@ void VkStagingBuffer::stage(const void *p_data, BufferHandle dst_buffer_handle,
 void VkStagingBuffer::stage(const void *p_data,
                             ImageViewHandle image_view_handle, size_t size,
                             size_t alignment) {
+
   begin();
 
   VulkanBuffer *buffer = p_resource_manager->access_buffer(buffer_handle);
