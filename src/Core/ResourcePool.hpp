@@ -142,7 +142,7 @@ inline TResource *ResourcePool<THandle, TResource>::obtain(THandle handle) {
       return nullptr;
     }
   }
-  HERROR("Invalid Handle index!");
+  HWARN("Invalid Handle index!");
   return nullptr;
 }
 
@@ -157,7 +157,7 @@ ResourcePool<THandle, TResource>::obtain(THandle handle) const {
       return nullptr;
     }
   }
-  HERROR("Invalid Handle index!");
+  HWARN("Invalid Handle index!");
   return nullptr;
 }
 
