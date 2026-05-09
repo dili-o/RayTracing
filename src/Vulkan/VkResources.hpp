@@ -54,10 +54,7 @@ public:
   VkAccessFlags2 current_access{VK_ACCESS_2_NONE};
   u32 view_count{0};
 #ifdef HELIX_WITH_CUDA
-  cudaSurfaceObject_t cu_surface_obj{0};
   cudaTextureObject_t cu_texture_obj{0};
-  cudaMipmappedArray_t cu_mip_array{0};
-  cudaExternalMemory_t cu_ext_mem{0};
   cudaArray_t cu_native_array{0};
 #endif // HELIX_WITH_CUDA
 };

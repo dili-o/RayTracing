@@ -432,7 +432,7 @@ void PathTracer::run() {
       post_barrier.image = vk_output_image->vk_handle;
       post_barrier.srcStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
       post_barrier.srcAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
-      post_barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+      post_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
       post_barrier.dstStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
       post_barrier.dstAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
       post_barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
