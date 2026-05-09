@@ -16,7 +16,9 @@ void VkStagingBuffer::shutdown() {
 
   p_resource_manager->queue_destroy({buffer_handle, 0});
 
+#ifdef HELIX_WITH_CUDA
   CUDA_CHECK(cudaStreamDestroy(cu_stream));
+#endif // HELIX_WITH_CUDA
 
   p_device = nullptr;
   p_resource_manager = nullptr;

@@ -579,6 +579,22 @@ void PathTracer::run() {
                                         &renderer);
       render_materials_window(&renderer, current_material_handle);
       ImGui::End();
+
+      i32 window_width, window_height;
+      Platform::get_window_size(&window_width, &window_height);
+
+#ifdef HELIX_WITH_CUDA
+      cstring backend_text = "Backend: Cuda";
+#else
+      cstring backend_text = "Backend: Vulkan";
+#endif // HELIX_WITH_CUDA
+      ImVec2 text_size = ImGui::CalcTextSize(backend_text);
+      f32 margin = 10.f;
+      ImVec2 pos = ImVec2(margin, window_height - text_size.y - margin);
+
+      ImGui::GetForegroundDrawList()->AddText(pos, IM_COL32(255, 255, 0, 255),
+                                              backend_text);
+
       scene_ui.end_frame();
 
       vkCmdEndRendering(cmd);
