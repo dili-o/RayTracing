@@ -57,13 +57,11 @@ public:
   BufferHandle uniform_staging_buffer;
 #endif // HELIX_WITH_CUDA
   std::array<BufferHandle, MAX_FRAMES_IN_FLIGHT> uniform_buffers;
-  BufferHandle triangle_geom_buffer;
   BufferHandle triangle_shading_buffer;
   BufferHandle tlas_nodes_buffer;
-  BufferHandle bvh_nodes_buffer;
+  BufferHandle bvh4_data_buffer;
   BufferHandle blas_buffer;
   BufferHandle blas_instances_buffer;
-  BufferHandle tri_ids_buffer;
   SamplerHandle texture_sampler;
   u32 total_triangle_count{0};
   u32 frame_index{0};
@@ -87,23 +85,17 @@ private:
 
 private:
   struct BLAS_Allocation {
-    void *tri_id_allocation;
-    void *bvh_nodes_allocation;
+    void *tri_surf_data_allocation;
+    void *bvh4_data_allocation;
   };
 
   // Tracks how many blas instances are using a blas
   std::vector<u32> blas_use_count;
 
-  // NOTE: This is only used for creating bvh_nodes
-  glm::vec3 *triangle_centroids_data;
+  // CPU-side data allocators uploaded to the gpu
+  TlsfAllocator tri_surface_data_allocator;
+  TlsfAllocator bvh4_data_allocator;
 
-  // CPU-side triangle data uploaded to the gpu
-  TriangleGeom *tri_geom_data;
-  TriangleShading *tri_surface_data;
-  TlsfAllocator tri_id_allocator;
-
-  // CPU-side acceleration structure data uploaded to the gpu
-  TlsfAllocator bvh_nodes_allocator;
   std::unordered_map<u32, BLAS_Allocation> blas_allocations_map;
   FreeIndexPool blases_index_pool;
   std::vector<BLAS> blases;
@@ -112,7 +104,6 @@ private:
   std::vector<BLASInstance> blas_instances;
   std::vector<TLASNode> tlas_nodes;
 
-  u32 bvh_nodes_size{0};
   TLAS tlas;
 
   bool rebuild_tlas{false};

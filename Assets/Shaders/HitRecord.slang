@@ -5,8 +5,7 @@
 struct HitRecord {
   float3 p;       
   float3 normal; 
-  uint tri_geom_id;
-  uint tri_surface_id;
+  uint tri_surface_offset; // Offset into tri_surfaces data, stored as float4s
   uint blas_instance_id;
   float t;
   bool front_face;

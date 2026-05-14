@@ -13,7 +13,7 @@ struct TLASNode {
 
 bool intersect_tlas(Ray ray, Interval ray_t, inout HitRecord rec,
 									  TLASNode *tlas_nodes, BLASInstance *blas_instances,
-                    BLAS *blases, BVHNode *bvh_nodes, TriangleGeom *tris, uint *tri_ids) {
+                    BLAS *blases, float4 *bvh4_data) {
 	uint node_id_stack[128];
 	node_id_stack[0] = 0;
 	uint stack_ptr = 0;
@@ -25,7 +25,7 @@ bool intersect_tlas(Ray ray, Interval ray_t, inout HitRecord rec,
 		if (node.is_leaf()) {
       BLASInstance blas_instance = blas_instances[node.blas_instance_idx];
 			if (blas_instance.intersect(ray, Interval(ray_t.min, closest_so_far),
-                                  rec, blases, bvh_nodes, tris, tri_ids)) {
+                                  rec, blases, bvh4_data)) {
 				hit = true;
 				closest_so_far = rec.t;
         rec.blas_instance_id = node.blas_instance_idx;

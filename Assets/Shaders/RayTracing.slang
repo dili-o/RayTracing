@@ -13,17 +13,20 @@ struct UniformData {
   float3 camera_center;
   float pad_3;
 
-  TriangleGeom *triangle_geom_buffer;
-  TriangleShading *triangle_shading_buffer;
+  float4 *bvh4_data_buffer;
+  float4 *triangle_shading_buffer;
+
   TLASNode *tlas_nodes_buffer;
-  BVHNode *bvh_nodes_buffer;
   BLAS *blas_buffer;
+
   BLASInstance *blas_instances_buffer;
-  uint *tri_ids_buffer;
   LambertMaterial *lambert_materials_buffer;
+
   MetalMaterial *metal_materials_buffer;
   DielectricMaterial *dielectric_materials_buffer;
+
   EmissiveMaterial *emissive_materials_buffer;
+  uint *padding;
 };
 
 struct PushConstants {
@@ -96,25 +99,32 @@ void compute_main(uint3 dispatch_thread_id: SV_DispatchThreadID,
           float3 emission = float3(0.f);
 
           bool hit_anything = intersect_tlas(
-              r, ray_t, rec, data.tlas_nodes_buffer, data.blas_instances_buffer,
-              data.blas_buffer, data.bvh_nodes_buffer,
-              data.triangle_geom_buffer, data.tri_ids_buffer);
+            r, ray_t, rec, data.tlas_nodes_buffer, data.blas_instances_buffer,
+            data.blas_buffer, data.bvh4_data_buffer);
 
           if (hit_anything) {
             BLASInstance blas_instance =
                 data.blas_instances_buffer[rec.blas_instance_id];
 
-            float3 local_normal =
-                data.triangle_shading_buffer[rec.tri_surface_id].interpolate_normal(
-                    rec.u, rec.v);
+            // Transform hit position
+            rec.p = mul(blas_instance.transform, float4(rec.p, 1.f)).xyz;
 
+            // Load TriangleShading data as a set of float4s
+            float4 row0 = data.triangle_shading_buffer[rec.tri_surface_offset + 0];
+            float4 row1 = data.triangle_shading_buffer[rec.tri_surface_offset + 1];
+            float4 row2 = data.triangle_shading_buffer[rec.tri_surface_offset + 2];
+            float4 row3 = data.triangle_shading_buffer[rec.tri_surface_offset + 3];
+            float4 row4 = data.triangle_shading_buffer[rec.tri_surface_offset + 4];
+
+            float3 local_normal =
+                interpolate_normal(row0.xyz, row1.xyz, row2.xyz,
+                    rec.u, rec.v);
             rec.set_face_normal(
                 r, normalize(mul(transpose(blas_instance.inv_transform),
                                  float4(local_normal, 0.f))
                                  .xyz));
-            float2 uv = data.triangle_shading_buffer[rec.tri_surface_id].interpolate_uvs(rec.u, rec.v);
 
-            rec.p = mul(blas_instance.transform, float4(rec.p, 1.f)).xyz;
+            float2 uv = interpolate_uvs(row3.xy, row3.zw, row4.xy, rec.u, rec.v);
 
             bool ray_scattered = false;
             Ray r_out;

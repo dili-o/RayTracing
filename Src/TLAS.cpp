@@ -6,18 +6,24 @@ namespace hlx {
 void TLAS::build(std::span<TLASNode> tlas_nodes,
                  const std::span<BLASInstance> blas_instances,
                  const std::span<u32> blas_instance_indices,
-                 const std::span<BLAS> blas,
-                 const std::span<BVHNode> bvh_nodes) {
+                 const std::span<BLAS> blases,
+                 const std::span<glm::vec4> bvh4_data) {
   node_count = 1;
   std::vector<i32> node_ids(blas_instance_indices.size());
   i32 node_indices = node_ids.size();
   // Assign a TLASleaf node to each BLAS
   for (u32 i = 0; i < blas_instance_indices.size(); ++i) {
     // Find the bounds (in world space)
-    u32 blas_inst_id = blas_instance_indices[i];
-    u32 blas_idx = blas_instances[blas_inst_id].blas_id;
-    glm::vec3 bmin = bvh_nodes[blas[blas_idx].bvh_nodes_offset].aabb_min,
-              bmax = bvh_nodes[blas[blas_idx].bvh_nodes_offset].aabb_max;
+    const u32 blas_inst_id = blas_instance_indices[i];
+    const u32 blas_idx = blas_instances[blas_inst_id].blas_id;
+    const BLAS &blas = blases[blas_idx];
+
+    glm::vec4 data0 = bvh4_data[blas.bvh4_data_offset];
+    glm::vec4 data1 = bvh4_data[blas.bvh4_data_offset + 1];
+
+    glm::vec3 bmin = glm::vec3(data0.x, data0.y, data0.z);
+    glm::vec3 bmax =
+        bmin + (glm::vec3(data1.x * 255.f, data1.y * 255.f, data1.z * 255.f));
     AABB bounds = AABB();
     glm::mat4 transform =
         glm::inverse(blas_instances[blas_inst_id].inv_transform);

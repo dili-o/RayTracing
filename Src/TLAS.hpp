@@ -16,7 +16,8 @@ public:
   void build(std::span<TLASNode> tlas_nodes,
              const std::span<BLASInstance> blas_instances,
              const std::span<u32> blas_instance_indices,
-             const std::span<BLAS> blas, const std::span<BVHNode> bvh_nodes);
+             const std::span<BLAS> blases,
+             const std::span<glm::vec4> bvh4_data);
   u32 node_count;
 
 private:

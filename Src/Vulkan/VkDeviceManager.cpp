@@ -511,6 +511,8 @@ void VkDeviceManager::init() {
   features_12.bufferDeviceAddress = VK_TRUE;
   features_12.timelineSemaphore = VK_TRUE;
   features_12.drawIndirectCount = VK_TRUE;
+  features_12.shaderInt8 = VK_TRUE;
+  features_12.storageBuffer8BitAccess = VK_TRUE;
   // Bindless
   features_12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
   features_12.runtimeDescriptorArray = VK_TRUE;

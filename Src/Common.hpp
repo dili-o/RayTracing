@@ -21,17 +21,20 @@ struct alignas(16) UniformData {
   vec3 camera_center;
   u32 padding3;
 
-  VkDeviceAddress triangle_geom_buffer;
+  VkDeviceAddress bvh4_data_buffer;
   VkDeviceAddress triangle_shading_buffer;
+
   VkDeviceAddress tlas_nodes_buffer;
-  VkDeviceAddress bvh_nodes_buffer;
   VkDeviceAddress blas_buffer;
+
   VkDeviceAddress blas_instances_buffer;
-  VkDeviceAddress tri_ids_buffer;
   VkDeviceAddress lambert_materials_buffer;
+
   VkDeviceAddress metal_materials_buffer;
   VkDeviceAddress dielectric_materials_buffer;
+
   VkDeviceAddress emissive_materials_buffer;
+  VkDeviceAddress padding;
 };
 
 struct PushConstant {

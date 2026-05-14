@@ -1,8 +1,10 @@
 #define VOLK_IMPLEMENTATION
-#include <Vendor/volk/volk.h>
+#include <volk/volk.h>
 #define VMA_IMPLEMENTATION
 #include <vk_mem_alloc.h>
 #define STB_IMAGE_WRITE_IMPLEMENTATION
-#include <Vendor/stb_image_write.h>
+#include <stb_image_write.h>
 #define STB_IMAGE_IMPLEMENTATION
-#include <Vendor/stb_image.h>
+#include <stb_image.h>
+#define TINYBVH_IMPLEMENTATION
+#include <tiny_bvh/tiny_bvh.h>

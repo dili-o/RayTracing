@@ -1,49 +1,18 @@
 #pragma once
 #include "Material.hpp"
-#include "Triangle.hpp"
 // Vendor
 #include <glm/mat4x4.hpp>
 #include <glm/vec3.hpp>
 
 namespace hlx {
-struct alignas(16) BVHNode {
-  glm::vec3 aabb_min;
-  u32 local_left_first; // Points to the left node if tri_count is 0, else first
-                        // id in a tri_id array.
-  glm::vec3 aabb_max;
-  u32 tri_count;
-};
-
 struct alignas(16) BLAS {
 public:
-  /**
-   * @brief Builds a BLAS.
-   *
-   * @param bvh_nodes A pre-allocated span of BVHNodes. This is a local view of
-   * a global BVHNode buffer
-   * @param bvh_nodes_offset The offset into the global BVHNode buffer. This
-   * offset is not used to index into bvh_nodes
-   */
-  void build(std::span<BVHNode> bvh_nodes, u32 bvh_nodes_offset,
-             std::span<TriangleGeom> tris, std::span<glm::vec3> centroids,
-             std::span<u32> tri_ids, u32 tri_count, u32 tri_id_offset);
-  void refit(std::span<BVHNode> bvh_nodes, std::span<TriangleGeom> tris,
-             std::span<u32> tri_ids);
-
-public:
-  // Offset into global BVHNode buffer
-  u32 bvh_nodes_offset = 0;
-  u32 nodes_count = 0;
-  u32 tri_count_ = 0;
-  u32 padding;
-
-private:
-  void update_node_bounds(std::span<BVHNode> bvh_nodes,
-                          std::span<TriangleGeom> tris, std::span<u32> tri_ids,
-                          u32 node_idx);
-  void subdivide(std::span<BVHNode> bvh_nodes, std::span<TriangleGeom> tris,
-                 std::span<glm::vec3> centroids, std::span<u32> tri_ids,
-                 u32 node_idx);
+  // Offset into global BVH4Data buffer (stored as vec4s)
+  u32 bvh4_data_offset{0};
+  // Offset into global TriangleShadingData buffer (stored as vec4s)
+  u32 tri_surface_data_offset{0};
+  u32 padding_0{0};
+  u32 padding_1{0};
 };
 
 struct alignas(16) BLASInstance {
