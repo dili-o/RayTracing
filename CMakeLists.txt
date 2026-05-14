@@ -4,7 +4,7 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Release>:Release>")
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-option(HELIX_WITH_CUDA "Enable CUDA path tracing backend" ON)
+option(HELIX_WITH_CUDA "Enable CUDA path tracing backend" OFF)
 
 if(HELIX_WITH_CUDA)
   project(RayTracer C CXX CUDA)

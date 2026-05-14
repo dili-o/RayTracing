@@ -172,6 +172,12 @@ static bool load_gltf_scene(SceneGraph &scene_graph, Renderer *renderer,
   fs::path cwd = fs::current_path();
   fs::current_path(path);
 
+  // Restore CWD on any exit path
+  struct CwdGuard {
+    fs::path prev;
+    ~CwdGuard() { fs::current_path(prev); }
+  } cwd_guard{cwd};
+
   fs::path std_path = fs::path(path) / file_name;
 
   // Parse the glTF file and get the constructed asset
@@ -403,7 +409,6 @@ static bool load_gltf_scene(SceneGraph &scene_graph, Renderer *renderer,
   scene_graph.update_node_local_transform(root_node_parent, glm::mat4(1.f));
 
   gltf_node_queue.shutdown();
-  fs::current_path(cwd);
   return true;
 }
 
