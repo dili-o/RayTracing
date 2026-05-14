@@ -28,7 +28,7 @@ struct LambertMaterial {
       scattered_direction = rec.normal;
     }
 
-    r_out = Ray(rec.p, scattered_direction);
+    r_out = Ray(rec.p + (scattered_direction * 0.0001f), scattered_direction);
     attenuation = albedo_textures[NonUniformResourceIndex(index)]
                  .Sample(float2(tex_coord.x, tex_coord.y)).xyz;
   }
