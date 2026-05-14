@@ -533,28 +533,21 @@ void Renderer::render(Camera &camera) {
       .pixel_delta_v = glm::vec3(pixel_delta_v),
       .camera_center = glm::vec3(camera.position),
 #ifdef HELIX_WITH_CUDA
-      .triangle_geom_buffer = reinterpret_cast<VkDeviceAddress>(
-          p_rm->access_buffer(triangle_geom_buffer)->cu_dev_ptr),
-      .triangle_shading_buffer = reinterpret_cast<VkDeviceAddress>(
-          p_rm->access_buffer(triangle_shading_buffer)->cu_dev_ptr),
-      .tlas_nodes_buffer = reinterpret_cast<VkDeviceAddress>(
-          p_rm->access_buffer(tlas_nodes_buffer)->cu_dev_ptr),
-      .bvh_nodes_buffer = reinterpret_cast<VkDeviceAddress>(
-          p_rm->access_buffer(bvh_nodes_buffer)->cu_dev_ptr),
-      .blas_buffer = reinterpret_cast<VkDeviceAddress>(
-          p_rm->access_buffer(blas_buffer)->cu_dev_ptr),
-      .blas_instances_buffer = reinterpret_cast<VkDeviceAddress>(
-          p_rm->access_buffer(blas_instances_buffer)->cu_dev_ptr),
-      .tri_ids_buffer = reinterpret_cast<VkDeviceAddress>(
-          p_rm->access_buffer(tri_ids_buffer)->cu_dev_ptr),
-      .lambert_materials_buffer = reinterpret_cast<VkDeviceAddress>(
-          p_rm->access_buffer(lambert_mats.buffer)->cu_dev_ptr),
-      .metal_materials_buffer = reinterpret_cast<VkDeviceAddress>(
-          p_rm->access_buffer(metal_mats.buffer)->cu_dev_ptr),
-      .dielectric_materials_buffer = reinterpret_cast<VkDeviceAddress>(
-          p_rm->access_buffer(dielectric_mats.buffer)->cu_dev_ptr),
-      .emissive_materials_buffer = reinterpret_cast<VkDeviceAddress>(
-          p_rm->access_buffer(emissive_mats.buffer)->cu_dev_ptr),
+      .bvh4_data_buffer = p_rm->access_buffer(bvh4_data_buffer)->cu_dev_ptr,
+      .triangle_shading_buffer =
+          p_rm->access_buffer(triangle_shading_buffer)->cu_dev_ptr,
+      .tlas_nodes_buffer = p_rm->access_buffer(tlas_nodes_buffer)->cu_dev_ptr,
+      .blas_buffer = p_rm->access_buffer(blas_buffer)->cu_dev_ptr,
+      .blas_instances_buffer =
+          p_rm->access_buffer(blas_instances_buffer)->cu_dev_ptr,
+      .lambert_materials_buffer =
+          p_rm->access_buffer(lambert_mats.buffer)->cu_dev_ptr,
+      .metal_materials_buffer =
+          p_rm->access_buffer(metal_mats.buffer)->cu_dev_ptr,
+      .dielectric_materials_buffer =
+          p_rm->access_buffer(dielectric_mats.buffer)->cu_dev_ptr,
+      .emissive_materials_buffer =
+          p_rm->access_buffer(emissive_mats.buffer)->cu_dev_ptr,
 #else
       .bvh4_data_buffer =
           p_rm->access_buffer(bvh4_data_buffer)->vk_device_address,
@@ -616,10 +609,9 @@ void Renderer::render(Camera &camera) {
   // Ray tracing parameters
   PushConstant push_constant;
 #ifdef HELIX_WITH_CUDA
-  push_constant.albedo_textures_buffer = reinterpret_cast<VkDeviceAddress>(
-      p_rm->access_buffer(lambert_mats.albedo_texture_objects)->cu_dev_ptr);
-  push_constant.uniform_data_buffer =
-      reinterpret_cast<VkDeviceAddress>(vk_uniform_buffer->cu_dev_ptr);
+  push_constant.albedo_textures_buffer =
+      p_rm->access_buffer(lambert_mats.albedo_texture_objects)->cu_dev_ptr;
+  push_constant.uniform_data_buffer = vk_uniform_buffer->cu_dev_ptr;
 #else
   push_constant.uniform_data_buffer = vk_uniform_buffer->vk_device_address;
 #endif // HELIX_WITH_CUDA

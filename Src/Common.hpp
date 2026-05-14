@@ -11,6 +11,12 @@ typedef float3 vec3;
 typedef glm::vec3 vec3;
 #endif // USE_CUDA_MATH
 
+#ifdef HELIX_WITH_CUDA
+typedef void *BufferPtr;
+#else
+typedef VkDeviceAddress BufferPtr;
+#endif // HELIX_WITH_CUDA
+
 struct alignas(16) UniformData {
   vec3 pixel00_loc;
   u32 padding0;
@@ -21,26 +27,26 @@ struct alignas(16) UniformData {
   vec3 camera_center;
   u32 padding3;
 
-  VkDeviceAddress bvh4_data_buffer;
-  VkDeviceAddress triangle_shading_buffer;
+  BufferPtr bvh4_data_buffer;
+  BufferPtr triangle_shading_buffer;
 
-  VkDeviceAddress tlas_nodes_buffer;
-  VkDeviceAddress blas_buffer;
+  BufferPtr tlas_nodes_buffer;
+  BufferPtr blas_buffer;
 
-  VkDeviceAddress blas_instances_buffer;
-  VkDeviceAddress lambert_materials_buffer;
+  BufferPtr blas_instances_buffer;
+  BufferPtr lambert_materials_buffer;
 
-  VkDeviceAddress metal_materials_buffer;
-  VkDeviceAddress dielectric_materials_buffer;
+  BufferPtr metal_materials_buffer;
+  BufferPtr dielectric_materials_buffer;
 
-  VkDeviceAddress emissive_materials_buffer;
-  VkDeviceAddress padding;
+  BufferPtr emissive_materials_buffer;
+  BufferPtr padding;
 };
 
 struct PushConstant {
-  VkDeviceAddress uniform_data_buffer;
+  BufferPtr uniform_data_buffer;
 #ifdef HELIX_WITH_CUDA
-  VkDeviceAddress albedo_textures_buffer;
+  BufferPtr albedo_textures_buffer;
 #endif // HELIX_WITH_CUDA
 
   u32 image_width;

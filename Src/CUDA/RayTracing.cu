@@ -40,12 +40,9 @@ __global__ void trace_world(void *raw_buf, const PushConstant constant_data) {
   BLASInstance *blas_instances =
       reinterpret_cast<BLASInstance *>(data->blas_instances_buffer);
   BLAS *blases = reinterpret_cast<BLAS *>(data->blas_buffer);
-  BVHNode *bvh_nodes = reinterpret_cast<BVHNode *>(data->bvh_nodes_buffer);
-  TriangleGeom *triangle_geoms =
-      reinterpret_cast<TriangleGeom *>(data->triangle_geom_buffer);
-  uint32_t *tri_ids = reinterpret_cast<uint32_t *>(data->tri_ids_buffer);
-  TriangleShading *tri_shading_data =
-      reinterpret_cast<TriangleShading *>(data->triangle_shading_buffer);
+  float4 *bvh4_data = reinterpret_cast<float4 *>(data->bvh4_data_buffer);
+  float4 *tri_shading_data =
+      reinterpret_cast<float4 *>(data->triangle_shading_buffer);
 
   LambertMaterial *lambert_materials =
       reinterpret_cast<LambertMaterial *>(data->lambert_materials_buffer);
@@ -85,25 +82,25 @@ __global__ void trace_world(void *raw_buf, const PushConstant constant_data) {
         rec.t = 1000.f;
         float3 emission = float3(0.f);
 
-        bool hit_anything =
-            intersect_tlas(r, ray_t, rec, tlas_nodes, blas_instances, blases,
-                           bvh_nodes, triangle_geoms, tri_ids);
+        bool hit_anything = intersect_tlas(r, ray_t, rec, tlas_nodes,
+                                           blas_instances, blases, bvh4_data);
 
         if (hit_anything) {
           BLASInstance blas_instance = blas_instances[rec.blas_instance_id];
 
-          float3 local_normal =
-              tri_shading_data[rec.tri_surface_id].interpolate_normal(rec.u,
-                                                                      rec.v);
-          rec.set_face_normal(
-              r, normalize(to_float3(transpose(blas_instance.inv_transform) *
-                                     float4(local_normal.x, local_normal.y,
-                                            local_normal.z, 0.f))));
-          float2 uv = tri_shading_data[rec.tri_surface_id].interpolate_uvs(
-              rec.u, rec.v);
+          // Transform hit position
+          rec.p = make_float3(blas_instance.transform *
+                              float4(rec.p.x, rec.p.y, rec.p.z, 1.f));
 
-          rec.p = to_float3(blas_instance.transform *
-                            float4(rec.p.x, rec.p.y, rec.p.z, 1.f));
+          TriangleShading *shading_data = reinterpret_cast<TriangleShading *>(
+              &tri_shading_data[rec.tri_surface_offset]);
+
+          float3 local_normal = shading_data->interpolate_normal(rec.u, rec.v);
+          rec.set_face_normal(
+              r, normalize(make_float3(transpose(blas_instance.inv_transform) *
+                                       float4(local_normal.x, local_normal.y,
+                                              local_normal.z, 0.f))));
+          float2 uv = shading_data->interpolate_uvs(rec.u, rec.v);
 
           bool ray_scattered = false;
           Ray r_out;

@@ -4,6 +4,54 @@
 #include "Material.cuh"
 #include "Ray.cuh"
 #include "Triangle.cuh"
+// Vendor
+#include <cuda/std/bit>
+
+#define HD __host__ __device__
+
+HD static uchar4 as_uchar4(const float v) {
+  return cuda::std::bit_cast<uchar4>(v);
+}
+
+__device__ static const float BVH_FAR = 1e30f;
+
+HD float safe_rcp(float x) {
+  return (abs(x) > 1e-12f) ? (1.0f / x) : (x >= 0 ? BVH_FAR : -BVH_FAR);
+}
+
+HD float3 safe_rcp(float3 a) {
+  return float3(safe_rcp(a.x), safe_rcp(a.y), safe_rcp(a.z));
+}
+
+HD uint32_t as_uint(const float v) { return cuda::std::bit_cast<uint32_t>(v); }
+
+#define SWAP(A, B, C, D)                                                       \
+  do {                                                                         \
+    tmp = A;                                                                   \
+    A = B;                                                                     \
+    B = tmp;                                                                   \
+    tmp2 = C;                                                                  \
+    C = D;                                                                     \
+    D = tmp2;                                                                  \
+  } while (false)
+
+// code compaction: Moeller-Trumbore ray/tri test.
+#define MOLLER_TRUMBORE_TEST(tmax, exit)                                       \
+  const float3 h = cross(ray.direction, e2);                                   \
+  const float a = dot(e1, h);                                                  \
+  if (fabs(a) < 0.000001f)                                                     \
+    exit;                                                                      \
+  const float f = 1 / a;                                                       \
+  const float3 s = ray.origin - v0;                                            \
+  const float u = f * dot(s, h);                                               \
+  const float3 q = cross(s, e1);                                               \
+  const float v = f * dot(ray.direction, q);                                   \
+  const bool miss = u < 0 || v < 0 || u + v > 1;                               \
+  if (miss)                                                                    \
+    exit;                                                                      \
+  const float t = f * dot(e2, q);                                              \
+  if (t < 0 || t > tmax)                                                       \
+    exit;
 
 __device__ float intersect_aabb(const Ray &ray, const float3 &bmin,
                                 const float3 &bmax, const float t) {
@@ -25,98 +73,176 @@ __device__ float intersect_aabb(const Ray &ray, const float3 &bmin,
     return 1e30f;
 }
 
-struct alignas(16) BVHNode {
-  float3 aabb_min;
-  uint32_t local_left_first; // Points to the left node or the first prim
-
-  float3 aabb_max;
-  uint32_t tri_count;
+// From tiny_bvh::BVH4_GPU
+struct BVH4Node {
+  struct aabb8 {
+    uint8_t xmin, ymin, zmin, xmax, ymax, zmax;
+  }; // quantized
+  float3 aabbMin;
+  uint32_t c0Info; // 16
+  float3 aabbExt;
+  uint32_t c1Info; // 16
+  aabb8 c0bounds, c1bounds;
+  uint32_t c2Info; // 16
+  aabb8 c2bounds, c3bounds;
+  uint32_t c3Info; // 16; total: 64 bytes
 };
 
 struct alignas(16) BLAS {
-  uint32_t bvh_nodes_offset;
-  uint32_t nodes_count;
-  // uint32_t tri_ids_offset;
-  uint32_t tri_count_;
-  uint32_t padding;
+  uint32_t bvh4_data_offset;
+  uint32_t tri_surf_data_offset;
+  uint32_t padding_0;
+  uint32_t padding_1;
 
-  __device__ bool intersect(const Ray &ray, Interval ray_t, HitRecord &rec,
-                            BVHNode *nodes, TriangleGeom *tris,
-                            uint32_t *tri_ids) {
-    uint32_t node_id_stack[128];
-    // Initialize first item in the stack to the root node
-    node_id_stack[0] = bvh_nodes_offset;
-    uint32_t stack_ptr = 0;
-    float closest_so_far = ray_t.max;
+  __device__ bool intersect4(const Ray &ray, const Interval &ray_t,
+                             HitRecord &rec, float4 *bvh4_data) {
     bool hit = false;
+    float closest_so_far = ray_t.max;
 
+    // traverse a blas
+    uint offset = 0, stack[128], stackPtr = 0, tmp2 /* for SWAP macro */;
     while (true) {
-      BVHNode node = nodes[node_id_stack[stack_ptr]];
-      if (node.tri_count > 0) { // The node is a leaf
-        for (uint32_t i = 0; i < node.tri_count; ++i) {
-          uint32_t tri_id_index = node.local_left_first + i;
-          uint32_t tri_index = tri_ids[tri_id_index];
-          if ((tris[tri_index].hit(ray, Interval(ray_t.min, closest_so_far),
-                                   rec))) {
-            hit = true;
-            // TODO: Fix
-            rec.tri_geom_id = tri_index /**/;
-            rec.tri_surface_id = tri_index;
-            closest_so_far = rec.t;
-          }
-        }
+      // NOTE: Adding the bvh4_data_offset
+      offset += bvh4_data_offset;
 
-        // Terminate when stack is empty
-        if (stack_ptr == 0)
-          break;
-        else
-          --stack_ptr;
-      } else { // The node has children
-        uint32_t child1_idx = bvh_nodes_offset + node.local_left_first;
-        uint32_t child2_idx = child1_idx + 1;
-        BVHNode child1 = nodes[child1_idx];
-        BVHNode child2 = nodes[child2_idx];
-        float dist1 = intersect_aabb(ray, child1.aabb_min, child1.aabb_max,
-                                     closest_so_far);
-        float dist2 = intersect_aabb(ray, child2.aabb_min, child2.aabb_max,
-                                     closest_so_far);
+      // fetch the node
+      const float4 &data0 = bvh4_data[offset + 0],
+                   &data1 = bvh4_data[offset + 1];
+      const float4 &data2 = bvh4_data[offset + 2],
+                   &data3 = bvh4_data[offset + 3];
+      // extract aabb
+      const float3 bmin = float3(data0.x, data0.y, data0.z),
+                   extent = float3(data1.x, data1.y,
+                                   data1.z); // pre-scaled by 1 / 255
 
-        if (dist1 > dist2) {
-          // Swap
-          float temp = dist1;
-          dist1 = dist2;
-          dist2 = temp;
-          // Swap
-          uint32_t temp_c = child1_idx;
-          child1_idx = child2_idx;
-          child2_idx = temp_c;
-        }
+      // reconstruct conservative child aabbs
+      const uchar4 d0 = as_uchar4(data0.w), d1 = as_uchar4(data1.w),
+                   d2 = as_uchar4(data2.x);
+      const uchar4 d3 = as_uchar4(data2.y), d4 = as_uchar4(data2.z),
+                   d5 = as_uchar4(data2.w);
+      const float3 c0min = bmin + extent * float3(d0.x, d2.x, d4.x),
+                   c0max = bmin + extent * float3(d1.x, d3.x, d5.x);
+      const float3 c1min = bmin + extent * float3(d0.y, d2.y, d4.y),
+                   c1max = bmin + extent * float3(d1.y, d3.y, d5.y);
+      const float3 c2min = bmin + extent * float3(d0.z, d2.z, d4.z),
+                   c2max = bmin + extent * float3(d1.z, d3.z, d5.z);
+      const float3 c3min = bmin + extent * float3(d0.w, d2.w, d4.w),
+                   c3max = bmin + extent * float3(d1.w, d3.w, d5.w);
 
-        if (dist1 == 1e30f) { // None of the aabbs were hit
-          if (stack_ptr == 0)
-            break;
-          else
-            --stack_ptr;
-        } else {
-          if (dist2 != 1e30f) {
-            node_id_stack[stack_ptr++] = child2_idx;
-          }
-          node_id_stack[stack_ptr] = child1_idx;
+      // intersect child aabbs
+      const float3 r_direction = safe_rcp(ray.direction);
+      const float3 t1a = (c0min - ray.origin) * r_direction,
+                   t2a = (c0max - ray.origin) * r_direction;
+      const float3 t1b = (c1min - ray.origin) * r_direction,
+                   t2b = (c1max - ray.origin) * r_direction;
+      const float3 t1c = (c2min - ray.origin) * r_direction,
+                   t2c = (c2max - ray.origin) * r_direction;
+      const float3 t1d = (c3min - ray.origin) * r_direction,
+                   t2d = (c3max - ray.origin) * r_direction;
+      const float3 minta = fminf(t1a, t2a), maxta = fmaxf(t1a, t2a);
+      const float3 mintb = fminf(t1b, t2b), maxtb = fmaxf(t1b, t2b);
+      const float3 mintc = fminf(t1c, t2c), maxtc = fmaxf(t1c, t2c);
+      const float3 mintd = fminf(t1d, t2d), maxtd = fmaxf(t1d, t2d);
+
+      const float tmina = fmaxf(fmaxf(fmaxf(minta.x, minta.y), minta.z), 0.0f);
+      const float tminb = fmaxf(fmaxf(fmaxf(mintb.x, mintb.y), mintb.z), 0.0f);
+      const float tminc = fmaxf(fmaxf(fmaxf(mintc.x, mintc.y), mintc.z), 0.0f);
+      const float tmind = fmaxf(fmaxf(fmaxf(mintd.x, mintd.y), mintd.z), 0.0f);
+      const float tmaxa = fminf(fminf(fminf(maxta.x, maxta.y), maxta.z), rec.t);
+      const float tmaxb = fminf(fminf(fminf(maxtb.x, maxtb.y), maxtb.z), rec.t);
+      const float tmaxc = fminf(fminf(fminf(maxtc.x, maxtc.y), maxtc.z), rec.t);
+      const float tmaxd = fminf(fminf(fminf(maxtd.x, maxtd.y), maxtd.z), rec.t);
+      float dist0 = tmina > tmaxa ? BVH_FAR : tmina,
+            dist1 = tminb > tmaxb ? BVH_FAR : tminb;
+      float dist2 = tminc > tmaxc ? BVH_FAR : tminc,
+            dist3 = tmind > tmaxd ? BVH_FAR : tmind, tmp;
+      // get child node info fields
+      uint c0info = as_uint(data3.x), c1info = as_uint(data3.y);
+      uint c2info = as_uint(data3.z), c3info = as_uint(data3.w);
+      if (dist0 < dist2)
+        SWAP(dist0, dist2, c0info, c2info);
+      if (dist1 < dist3)
+        SWAP(dist1, dist3, c1info, c3info);
+      if (dist0 < dist1)
+        SWAP(dist0, dist1, c0info, c1info);
+      if (dist2 < dist3)
+        SWAP(dist2, dist3, c2info, c3info);
+      if (dist1 < dist2)
+        SWAP(dist1, dist2, c1info, c2info);
+      // process results, starting with farthest child, so nearest ends on top
+      // of stack
+
+      uint nextNode = 0;
+      uint leaf[4] = {0, 0, 0, 0}, leafs = 0;
+      if (dist0 < BVH_FAR) {
+        if (bool(c0info & 0x80000000))
+          leaf[leafs++] = c0info;
+        else if (bool(c0info))
+          stack[stackPtr++] = c0info;
+      }
+      if (dist1 < BVH_FAR) {
+        if (bool(c1info & 0x80000000))
+          leaf[leafs++] = c1info;
+        else if (bool(c1info))
+          stack[stackPtr++] = c1info;
+      }
+      if (dist2 < BVH_FAR) {
+        if (bool(c2info & 0x80000000))
+          leaf[leafs++] = c2info;
+        else if (bool(c2info))
+          stack[stackPtr++] = c2info;
+      }
+      if (dist3 < BVH_FAR) {
+        if (bool(c3info & 0x80000000))
+          leaf[leafs++] = c3info;
+        else if (bool(c3info))
+          stack[stackPtr++] = c3info;
+      }
+
+      // process encountered leafs, if any
+      for (uint i = 0; i < leafs; i++) {
+        const uint N = (leaf[i] >> 16) & 0x7fff;
+        uint triStart = offset + (leaf[i] & 0xffff);
+        for (uint j = 0; j < N; j++, triStart += 3) {
+          // cost += c_int;
+          const float3 e2 = make_float3(bvh4_data[triStart + 2]);
+          const float3 e1 = make_float3(bvh4_data[triStart + 1]);
+          const float3 v0 = make_float3(bvh4_data[triStart + 0]);
+          MOLLER_TRUMBORE_TEST(closest_so_far, continue);
+          rec.t = t;
+          rec.p = ray.at(t);
+          rec.u = u;
+          rec.v = v;
+          float3 normal = normalize(cross(e1, e2));
+          rec.set_face_normal(ray, normal);
+
+          hit = true;
+          closest_so_far = rec.t;
+          uint tri_id = as_uint(bvh4_data[triStart + 0].w);
+          rec.tri_surface_offset =
+              tri_surf_data_offset +
+              (sizeof(TriangleShading) / sizeof(float4)) * tri_id;
         }
       }
-    }
 
+      // continue with nearest node or first node on the stack
+      if (bool(nextNode))
+        offset = nextNode;
+      else {
+        if (!bool(stackPtr))
+          break;
+        offset = stack[--stackPtr];
+      }
+    }
     return hit;
   }
 };
 
-#define HD __host__ __device__
-
-__host__ __device__ struct float4x4 {
+HD struct float4x4 {
   float4 cols[4]; // Each float4 is a COLUMN
 
   // Constructor: Matches GLM's column-by-column initialization
-  __host__ __device__ float4x4(float4 c0, float4 c1, float4 c2, float4 c3) {
+  HD float4x4(float4 c0, float4 c1, float4 c2, float4 c3) {
     cols[0] = c0;
     cols[1] = c1;
     cols[2] = c2;
@@ -124,11 +250,10 @@ __host__ __device__ struct float4x4 {
   }
 
   // Standard constructor using 16 floats (column-major order)
-  __host__ __device__
-  float4x4(float m00, float m10, float m20, float m30, // Col 0
-           float m01, float m11, float m21, float m31, // Col 1
-           float m02, float m12, float m22, float m32, // Col 2
-           float m03, float m13, float m23, float m33) // Col 3
+  HD float4x4(float m00, float m10, float m20, float m30, // Col 0
+              float m01, float m11, float m21, float m31, // Col 1
+              float m02, float m12, float m22, float m32, // Col 2
+              float m03, float m13, float m23, float m33) // Col 3
   {
     cols[0] = make_float4(m00, m10, m20, m30);
     cols[1] = make_float4(m01, m11, m21, m31);
@@ -139,8 +264,7 @@ __host__ __device__ struct float4x4 {
 
 // Overload for Matrix * Vector (float4x4 * float4)
 // This implementation is efficient for column-major storage
-__host__ __device__ inline float4 operator*(const float4x4 &m,
-                                            const float4 &v) {
+HD inline float4 operator*(const float4x4 &m, const float4 &v) {
   return make_float4(m.cols[0].x * v.x + m.cols[1].x * v.y + m.cols[2].x * v.z +
                          m.cols[3].x * v.w,
                      m.cols[0].y * v.x + m.cols[1].y * v.y + m.cols[2].y * v.z +
@@ -151,15 +275,11 @@ __host__ __device__ inline float4 operator*(const float4x4 &m,
                          m.cols[3].w * v.w);
 }
 
-__host__ __device__ inline float4x4 transpose(const float4x4 &m) {
+HD inline float4x4 transpose(const float4x4 &m) {
   return float4x4(m.cols[0].x, m.cols[1].x, m.cols[2].x, m.cols[3].x,
                   m.cols[0].y, m.cols[1].y, m.cols[2].y, m.cols[3].y,
                   m.cols[0].z, m.cols[1].z, m.cols[2].z, m.cols[3].z,
                   m.cols[0].w, m.cols[1].w, m.cols[2].w, m.cols[3].w);
-}
-
-__host__ __device__ inline float3 to_float3(const float4 &v) {
-  return make_float3(v.x, v.y, v.z);
 }
 
 struct alignas(16) BLASInstance {
@@ -171,8 +291,7 @@ struct alignas(16) BLASInstance {
   uint32_t padding;
 
   __device__ bool intersect(const Ray &ray, const Interval ray_t,
-                            HitRecord &rec, BLAS *blases, BVHNode *bvh_nodes,
-                            TriangleGeom *tris, uint32_t *tri_ids) {
+                            HitRecord &rec, BLAS *blases, float4 *bvh4_data) {
     float4 transformed_origin =
         inv_transform * float4(ray.origin.x, ray.origin.y, ray.origin.z, 1.f);
     float4 transformed_dir =
@@ -184,7 +303,6 @@ struct alignas(16) BLASInstance {
                transformed_origin.z),
         float3(transformed_dir.x, transformed_dir.y, transformed_dir.z));
 
-    return blases[blas_index].intersect(world_ray, ray_t, rec, bvh_nodes, tris,
-                                        tri_ids);
+    return blases[blas_index].intersect4(world_ray, ray_t, rec, bvh4_data);
   }
 };

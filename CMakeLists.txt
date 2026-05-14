@@ -4,7 +4,7 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Release>:Release>")
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-option(HELIX_WITH_CUDA "Enable CUDA path tracing backend" OFF)
+option(HELIX_WITH_CUDA "Enable CUDA path tracing backend" ON)
 
 if(HELIX_WITH_CUDA)
   project(RayTracer C CXX CUDA)
@@ -52,7 +52,9 @@ file(MAKE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/Assets/Shaders/Spirv")
 target_compile_definitions(${PROJECT_NAME} PRIVATE HOME_PATH="${CMAKE_CURRENT_SOURCE_DIR}")
 target_compile_definitions(${PROJECT_NAME} PRIVATE ASSETS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/Assets")
 target_compile_definitions(${PROJECT_NAME} PRIVATE SHADER_PATH="${CMAKE_CURRENT_SOURCE_DIR}/Assets/Shaders/")
-target_compile_options(${PROJECT_NAME} PRIVATE /arch:AVX2)
+target_compile_options(${PROJECT_NAME} PRIVATE
+  $<$<COMPILE_LANGUAGE:CXX>:/arch:AVX2>
+)
 
 find_package(Vulkan REQUIRED)
 
