@@ -4,7 +4,7 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Release>:Release>")
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-option(HELIX_WITH_CUDA "Enable CUDA path tracing backend" ON)
+option(HELIX_WITH_CUDA "Enable CUDA path tracing backend" OFF)
 
 if(HELIX_WITH_CUDA)
   project(RayTracer C CXX CUDA)
@@ -72,6 +72,9 @@ if(WIN32)
   set(VOLK_STATIC_DEFINES VK_USE_PLATFORM_WIN32_KHR)
 endif()
 # spdlog
+set(SPDLOG_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(SPDLOG_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(SPDLOG_USE_STD_FORMAT ON CACHE BOOL "" FORCE)
 add_subdirectory(Vendor/spdlog)
 target_link_libraries(${PROJECT_NAME} PRIVATE spdlog::spdlog)
 # sdl
@@ -79,6 +82,11 @@ set(SDL_STATIC OFF CACHE BOOL "" FORCE)
 set(SDL_SHARED ON CACHE BOOL "" FORCE)
 set(SDL_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(SDL_TEST OFF CACHE BOOL "" FORCE)
+set(SDL_AUDIO OFF CACHE BOOL "" FORCE)
+set(SDL_JOYSTICK OFF CACHE BOOL "" FORCE)
+set(SDL_HAPTIC OFF CACHE BOOL "" FORCE)
+set(SDL_SENSOR OFF CACHE BOOL "" FORCE)
+set(SDL_CAMERA OFF CACHE BOOL "" FORCE)
 add_subdirectory(Vendor/sdl EXCLUDE_FROM_ALL)
 target_link_libraries(${PROJECT_NAME} PUBLIC SDL3-shared)
 # GLM
@@ -106,7 +114,7 @@ endif()
 if(HELIX_WITH_CUDA)
   set_target_properties(${PROJECT_NAME} PROPERTIES
     CUDA_SEPARABLE_COMPILATION ON
-    CUDA_ARCHITECTURES "75;86;89;120" 
+    CUDA_ARCHITECTURES "75" 
   )
 
   target_link_libraries(${PROJECT_NAME} PRIVATE
