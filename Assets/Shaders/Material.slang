@@ -20,6 +20,8 @@ struct MaterialHandle {
 [[vk::binding(0, 1)]]
 Sampler2D albedo_textures[ALBEDO_TEXTURE_COUNT];
 
+#define RAY_BIAS 0.0001f
+
 struct LambertMaterial {
   void scatter_ray(inout uint seed, in HitRecord rec, in float2 tex_coord,
   out float3 attenuation, out Ray r_out) {
@@ -27,8 +29,9 @@ struct LambertMaterial {
     if (near_zero(scattered_direction)) {
       scattered_direction = rec.normal;
     }
+    EPSILON;
 
-    r_out = Ray(rec.p + (scattered_direction * 0.0001f), scattered_direction);
+    r_out = Ray(rec.p + (scattered_direction * RAY_BIAS), scattered_direction);
     attenuation = albedo_textures[NonUniformResourceIndex(index)]
                  .Sample(float2(tex_coord.x, tex_coord.y)).xyz;
   }
@@ -45,12 +48,12 @@ struct MetalMaterial {
 
 #ifdef NORMALIZE_REFLECTION
     reflected += (fuzz * rand_unit_vector(seed));
-    r_out = Ray(rec.p, reflected);
+    r_out = Ray(rec.p + (reflected * RAY_BIAS), reflected);
     attenuation = albedo;
 #else
     reflected = normalize(reflected) + 
                 (fuzz * rand_unit_vector(seed));
-    r_out = Ray(rec.p, reflected);
+    r_out = Ray(rec.p + (reflected * RAY_BIAS), reflected);
     if (dot(r_out.direction, rec.normal) > 0)
       attenuation = albedo;
 #endif // NORMALIZE_REFLECTION
@@ -93,7 +96,7 @@ struct DielectricMaterial {
     else
       direction = rtiow_refract(unit_direction, rec.normal, ri);
 
-    r_out = Ray(rec.p, direction);
+    r_out = Ray(rec.p + (direction * RAY_BIAS), direction);
   }
 
   float refraction_index;
