@@ -397,7 +397,7 @@ void PathTracer::run() {
     ZoneScopedC(0x0000ff);
     ZoneName("Main Loop", strlen("Main Loop"));
 
-    Platform::handle_os_messages(scene_ui);
+    Platform::handle_os_messages(&scene_ui);
     f64 current_time = clock.get_elapsed_time_s();
     f64 delta_time = current_time - last_time;
     last_time = current_time;

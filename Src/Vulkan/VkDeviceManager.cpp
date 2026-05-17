@@ -436,7 +436,6 @@ void VkDeviceManager::init() {
 #endif // VULKAN_DEBUG_REPORT
   std::vector<cstring> device_extensions{};
   device_extensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
-  device_extensions.push_back(VK_EXT_DEPTH_CLIP_CONTROL_EXTENSION_NAME);
   device_extensions.push_back(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME);
   device_extensions.push_back(VK_KHR_COMPUTE_SHADER_DERIVATIVES_EXTENSION_NAME);
 #ifdef HELIX_WITH_CUDA
@@ -863,6 +862,11 @@ void VkDeviceManager::set_vsync(bool enable) {
 }
 
 void VkDeviceManager::reset() {
+  // Stall here until window is resized
+  while (Platform::is_suspended()) {
+    Platform::handle_os_messages(nullptr);
+  }
+
   vkDeviceWaitIdle(vk_device);
 
   destroy_swapchain();

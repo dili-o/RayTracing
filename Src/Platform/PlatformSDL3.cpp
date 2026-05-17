@@ -14,7 +14,6 @@
 namespace hlx {
 
 struct PlatformState {
-  bool is_suspended{false};
   bool is_fullscreen{false};
   i32 width{0};
   i32 height{0};
@@ -54,16 +53,19 @@ void Platform::init(const PlatformConfiguration &config) {
 
 void *Platform::get_platform_handle() { return window; }
 
-bool Platform::is_suspended() { return platform_state.is_suspended; }
+bool Platform::is_suspended() {
+  return (SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED);
+}
 
-void Platform::handle_os_messages(SceneUI &scene_ui) {
+void Platform::handle_os_messages(SceneUI *scene_ui) {
   HASSERT(is_initialized);
   SDL_Event e;
   SDL_zero(e);
 
   while (SDL_PollEvent(&e)) {
-    if (scene_ui.handle_events(&e))
-      continue;
+    if (scene_ui)
+      if (scene_ui->handle_events(&e))
+        continue;
 
     switch (e.type) {
     case SDL_EVENT_QUIT: {
@@ -77,8 +79,6 @@ void Platform::handle_os_messages(SceneUI &scene_ui) {
     case SDL_EVENT_WINDOW_MAXIMIZED:
     case SDL_EVENT_WINDOW_RESIZED: {
       SDL_GetWindowSize(window, &platform_state.width, &platform_state.height);
-      platform_state.is_suspended =
-          e.type == SDL_EVENT_WINDOW_MINIMIZED ? true : false;
       EventContext context{};
       context.data.i32[0] = platform_state.width;
       context.data.i32[1] = platform_state.height;
@@ -126,10 +126,11 @@ void Platform::get_mouse_position(f32 *mouseX, f32 *mouseY) {
   SDL_GetMouseState(mouseX, mouseY);
 }
 
-void Platform::get_window_size(i32 *width_, i32 *height_) {
-  *width_ = platform_state.width;
-  *height_ = platform_state.height;
+void Platform::get_window_size(i32 *width, i32 *height) {
+  SDL_GetWindowSize(window, width, height);
 }
+
+void Platform::wait_on_events() { SDL_WaitEvent(0); }
 
 void Platform::sleep(u64 ms) { SDL_Delay(ms); }
 

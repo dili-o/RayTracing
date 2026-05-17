@@ -1003,6 +1003,23 @@ u32 Renderer::add_blas_instance(u32 blas_index, const glm::mat4 &transform,
   inst.material_handle = material;
   staging_buffer.stage(&inst, blas_instances_buffer,
                        sizeof(BLASInstance) * index, sizeof(BLASInstance));
+  // Memory barrier for updating the buffer in case we re-update the same region
+  // within the same frame
+  VkBufferMemoryBarrier2 buffer_barrier{
+      VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2};
+  buffer_barrier.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+  buffer_barrier.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
+  buffer_barrier.dstStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+  buffer_barrier.dstAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
+  buffer_barrier.buffer = p_rm->access_buffer(blas_instances_buffer)->vk_handle;
+  buffer_barrier.offset = index * sizeof(BLASInstance);
+  buffer_barrier.size = sizeof(BLASInstance);
+
+  VkDependencyInfo dep_info{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+  dep_info.bufferMemoryBarrierCount = 1;
+  dep_info.pBufferMemoryBarriers = &buffer_barrier;
+  vkCmdPipelineBarrier2(staging_buffer.vk_command_buffer, &dep_info);
+
   rebuild_tlas = true;
   blas_instance_ids.insert(index);
 
@@ -1048,6 +1065,22 @@ void Renderer::set_blas_instance_transform(u32 blas_instance_id,
   staging_buffer.stage(&inst, blas_instances_buffer,
                        sizeof(BLASInstance) * blas_instance_id,
                        sizeof(BLASInstance));
+  // Memory barrier for updating the buffer in case we re-update the same region
+  // within the same frame
+  VkBufferMemoryBarrier2 buffer_barrier{
+      VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2};
+  buffer_barrier.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+  buffer_barrier.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
+  buffer_barrier.dstStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+  buffer_barrier.dstAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
+  buffer_barrier.buffer = p_rm->access_buffer(blas_instances_buffer)->vk_handle;
+  buffer_barrier.offset = blas_instance_id * sizeof(BLASInstance);
+  buffer_barrier.size = sizeof(BLASInstance);
+
+  VkDependencyInfo dep_info{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+  dep_info.bufferMemoryBarrierCount = 1;
+  dep_info.pBufferMemoryBarriers = &buffer_barrier;
+  vkCmdPipelineBarrier2(staging_buffer.vk_command_buffer, &dep_info);
 
   rebuild_tlas = true;
 }

@@ -2,7 +2,7 @@
 
 #ifdef _DEBUG
 #define VULKAN_DEBUG_REPORT
-// #define VULKAN_EXTRA_VALIDATION
+#define VULKAN_EXTRA_VALIDATION
 #endif // _DEBUG
 
 #include "VkErr.h"
